@@ -16,8 +16,7 @@ def generate(path):
     # nixos_version = config["cluster"]["versions"]["nixos"]
     host_definitions = get_nix_definitions(path)
     for definition in host_definitions:
-        print(get_host_information(definition))
-
+        print(generate_stage_zero_nix(definition))
 
 
 def generate_stage_zero_nix(definition):
@@ -28,14 +27,15 @@ let
     import ({crawler_path}) {{
       inherit pkgs lib;
       host-definition = "{definition}";
-    }};
+    }}.config;
 in {{
   imports = [ {stages_path + "/0-iso.nix"} ];
-  config = {{}} // machine-config;
+  config = machine-config;
 }}
 """
 
-def generate_stage_three_nix(definition):
+
+def generate_stage_two_nix(definition):
     return f"""# This is an auto generated file.
 {{
   meta.nixpkgs = import (
@@ -50,6 +50,7 @@ def generate_stage_three_nix(definition):
             + populate_host(host_name, host_config, config["cluster"], is_hive=True)
             + ";\n"
         )
+
 
 # get all nix definitions from the directory
 # returns all default.nix files from the first folder level
