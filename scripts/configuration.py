@@ -4,6 +4,7 @@ import sys
 import subprocess
 from pathlib import Path
 import json
+from pprint import pprint
 
 
 script_path = os.path.abspath(os.path.dirname(__file__))
@@ -14,9 +15,17 @@ stages_path = os.path.abspath(script_path + "/../stages")
 def generate(path):
     # TODO: get nixos version for hive.nix
     # nixos_version = config["cluster"]["versions"]["nixos"]
-    host_definitions = get_nix_definitions(path)
-    for definition in host_definitions:
-        print(generate_stage_zero_nix(definition))
+    host_data = [
+        (path, get_host_information(path)) for (path) in get_nix_definitions(path)
+    ]
+    for file, config in host_data:
+        print(definition_path_to_name(file))
+        pprint(config)
+        print(generate_stage_zero_nix(file))
+
+
+def generate_host_list(host_definitions):
+    return None
 
 
 def generate_stage_zero_nix(definition):
@@ -55,16 +64,29 @@ def generate_stage_two_nix(definition):
 # get all nix definitions from the directory
 # returns all default.nix files from the first folder level
 def get_nix_definitions(path):
-    nix_files = list(Path(path).glob("*.nix"))
-    folders = [path for path in Path(path).glob("*") if path.is_dir()]
-    for folder in [path for path in folders if not (path / "default.nix").exists()]:
+    nix_files = list(Path(path).glob("*.nix"))  # list all nix files
+    nix_files = [(path) for path in nix_files]  # make (filename, path) pairs
+    folders = [(path) for path in Path(path).glob("*") if path.is_dir()]
+    for folder in [
+        path for path in folders if not (path / "default.nix").exists()
+    ]:
         print(
             f"Warning: no default.nix found in {folder}; ignoring folder.",
             file=sys.stderr,
         )
-    return nix_files + [
+    folders = [
         path / "default.nix" for path in folders if (path / "default.nix").exists()
-    ]
+    ]  # filter folders that have no default.nix
+    return nix_files + folders
+
+
+# returns the folder name from a path with a default nix or the nix file base name
+def definition_path_to_name(path):
+    path = Path(path)
+    if path.is_dir():
+        return path.name
+    if path.is_file():
+        return path.stem
 
 
 def get_host_information(nix_definition_file):
@@ -75,13 +97,14 @@ def nix_eval(path, attribute, args):
     args = " ".join(
         [f"--argstr {name} {value}" for (name, value) in args]
     )  # format arguments
+    cmd = f"nix-instantiate --eval --strict --json {path} {args} -A {attribute}"
     result = subprocess.run(
-        f"nix-instantiate --eval --strict --json {path} {args} -A {attribute}".split(),
+        cmd.split(),
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        print(f"Error evaluating {path}: {result.stderr}", file=sys.stderr)
+        print(f"Error running '{cmd}': {result.stderr}", file=sys.stderr)
         exit(1)
     else:
         return json.loads(result.stdout.strip())
@@ -109,17 +132,6 @@ def get_init_token():
         print(f"Error: {token_path} is not a file", file=sys.stderr)
         sys.exit(1)
     return token_path.read_text()
-
-
-def get_ssh_keys(hostname: str):
-    keys = []
-    keys.extend(secrets_dir.glob("*all*.pub"))
-    keys.extend(secrets_dir.glob("*All*.pub"))
-    keys.extend(secrets_dir.glob("*ALL*.pub"))
-    keys.extend(secrets_dir.glob(f"*{hostname}*.pub"))
-    if len(keys) == 0:
-        print(f"Warning: no ssh keys found for host {hostname}", file=sys.stderr)
-    return [f"{key.read_text()}" for key in keys]
 
 
 def get_manifests(path):
