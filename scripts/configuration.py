@@ -5,37 +5,51 @@ import subprocess
 from pathlib import Path
 import json
 from pprint import pprint
+from fnmatch import fnmatch
 
-
+# static paths
 script_path = os.path.abspath(os.path.dirname(__file__))
 crawler_path = os.path.abspath(script_path + "/config-crawler.nix")
 stages_path = os.path.abspath(script_path + "/../stages")
 
 
-def generate(path):
+def generate(path: Path, nixos_version="nixos-23.05"):
     # TODO: get nixos version for hive.nix
     # nixos_version = config["cluster"]["versions"]["nixos"]
+    # nix_configs = [path for path in path.glob("*") if fnmatch(path.as_posix(), "*/[nN]ix[cC]onfigs")]
+    nix_configs = list(path.glob("*[nN]ix[cC]onfigs"))
+    if not nix_configs:
+        print(f"No 'nixConfigs' folder found in '{path}'", file=sys.stderr)
+        exit(1)
+    nix_configs = nix_configs[0]
     host_data = [
-        (path, get_host_information(path)) for (path) in get_nix_definitions(path)
+        {"file": config, "config": get_host_information(config)}
+        for config in get_nix_definitions(nix_configs)
     ]
-    for file, config in host_data:
-        print(definition_path_to_name(file))
-        pprint(config)
-        print(generate_stage_zero_nix(file))
+    for data in host_data:
+        # make a folder for each definition
+        folder = path / "generated" / definition_path_to_name(data["file"])
+        folder.mkdir(parents=True, exist_ok=True)
+        # get_hardware_configuration(data["config"])
+        iso = folder / "iso.nix"
+        iso.write_text(generate_stage_zero_nix(data))
+        mini_sys = folder / "mini_sys.nix"
+        mini_sys.write_text(generate_stage_one_nix(data))
+    generate_stage_two_nix(nixos_version, host_data)
 
 
 def generate_host_list(host_definitions):
     return None
 
 
-def generate_stage_zero_nix(definition):
+def generate_stage_zero_nix(host_data):
     return f"""# This is an auto generated file.
 {{pkgs, lib, ... }}:
 let
   machine-config =
     import ({crawler_path}) {{
       inherit pkgs lib;
-      host-definition = "{definition}";
+      host-definition = "{host_data["file"]}";
     }}.config;
 in {{
   imports = [ {stages_path + "/0-iso.nix"} ];
@@ -44,7 +58,11 @@ in {{
 """
 
 
-def generate_stage_two_nix(definition):
+def generate_stage_one_nix(host_data):
+    return f"""# This is an auto generated file."""
+
+
+def generate_stage_two_nix(nixos_version, host_data):
     return f"""# This is an auto generated file.
 {{
   meta.nixpkgs = import (
@@ -67,9 +85,7 @@ def get_nix_definitions(path):
     nix_files = list(Path(path).glob("*.nix"))  # list all nix files
     nix_files = [(path) for path in nix_files]  # make (filename, path) pairs
     folders = [(path) for path in Path(path).glob("*") if path.is_dir()]
-    for folder in [
-        path for path in folders if not (path / "default.nix").exists()
-    ]:
+    for folder in [path for path in folders if not (path / "default.nix").exists()]:
         print(
             f"Warning: no default.nix found in {folder}; ignoring folder.",
             file=sys.stderr,
@@ -149,4 +165,4 @@ if __name__ == "__main__":
     path = None
     if len(sys.argv) > 1:
         path = Path(sys.argv[1])
-    print(main(path))
+    main(path)
