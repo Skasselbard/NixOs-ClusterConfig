@@ -1,4 +1,4 @@
 #!/bin/bash
 
 CMD="staged-hive ${@:1}"
-nix-shell --run "$CMD"
+nix-shell --run "$CMD" # uses configuration from shell.nix

@@ -11,7 +11,7 @@ def build_host(args, nixos_version="nixos-23.05"):
     # acquire sudo if needed
     os.system('sudo echo ""') if not args.dry and args.device else None
     name = args.name
-    configuration.generate(Path.cwd(), nixos_version)
+    configuration.generate(Path.cwd(), nixos_version, args.efi_boot)
     if not args.dry:
         # cmds
         generate_iso = f"nixos-generate --format iso --configuration generated/{name}/iso.nix -o generated/{name}/iso -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/{nixos_version}.tar.gz"
@@ -41,9 +41,9 @@ def get_parser() -> argparse.ArgumentParser:
         "-n", "--name", required=True, help="Name of the machine to prepare. The name will be the stem of your nix definition in the nixConfigs folder (e.g. 'machine' for 'machine.nix') or the folder name for definitions in a folder."
     )
     parser.add_argument(
-        "-l",
-        "--legacy-boot",
-        help="If this flag is set the installation iso is built for MBR legacy boot (see nixos manual)",
+        "-e",
+        "--efi-boot",
+        help="If this flag is set the installation iso is built for efi systems instead of MBR legacy systems (see nixos manual)",
         action="store_true",
     )
     parser.add_argument(

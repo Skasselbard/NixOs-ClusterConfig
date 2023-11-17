@@ -19,10 +19,7 @@ def deploy():
     return
 
 
-def generate(path: Path, nixos_version="nixos-23.05"):
-    # TODO: get nixos version for hive.nix
-    # nixos_version = config["cluster"]["versions"]["nixos"]
-    # nix_configs = [path for path in path.glob("*") if fnmatch(path.as_posix(), "*/[nN]ix[cC]onfigs")]
+def generate(path: Path, nixos_version="nixos-23.05", efi_boot=True):
     nix_configs = list(path.glob("*[nN]ix[cC]onfigs"))
     if not nix_configs:
         print(f"No 'nixConfigs' folder found in '{path}'", file=sys.stderr)
@@ -34,15 +31,18 @@ def generate(path: Path, nixos_version="nixos-23.05"):
     ]
     for data in host_data:
         folders = generate_folders(path, data)
-        folders["iso"].write_text(generate_iso_nix(data))
-        folders["mini_sys"].write_text(generate_mini_sys(path, data))
+        folders["iso"].write_text(generate_iso_nix(path, data, nixos_version))
+        nixfmt(folders["iso"])
+        folders["mini_sys"].write_text(generate_mini_sys(data, efi_boot))
+        nixfmt(folders["mini_sys"])
         # TODO: run nixfmt
-    (path / "generated/hive.nix").write_text(
-        generate_hive(path, nixos_version, host_data)
-    )
+    hive_nix = path / "generated/hive.nix"
+    hive_nix.write_text(generate_hive(path, nixos_version, host_data))
+    nixfmt(hive_nix)
 
 
-def generate_iso_nix(host_data):
+def generate_iso_nix(path, host_data, nixos_version):
+    mini_sys = generate_folders(path, host_data)["mini_sys"]
     return f"""# This is an auto generated file.
 {{pkgs, lib, ... }}:
 let
@@ -53,27 +53,40 @@ let
     }};
 in {{
   imports = [ {stages_path + "/0-iso.nix"} ];
-  config = machine-config;
+  config = machine-config //{{
+    environment.etc = {{
+      "nixos/configuration.nix" = {{ source = {mini_sys}; }};
+      "nixos/version" = {{ text = "{nixos_version}"; }};
+    }};
+    environment.systemPackages =
+      let 
+        nixos_version = pkgs.writeScriptBin "nixos_version" "cat /etc/nixos/version";
+      in [ nixos_version ];
+  }};
 }}
 """
 
 
-def generate_mini_sys(path, host_data, efi_boot=True):
+def generate_mini_sys(host_data, efi_boot):
+    # format ssh key list for nix
+    sshKeys = ""
+    for key in host_data["config"]["admin"]["sshKeys"]:
+        sshKeys += f"\n''{key.strip()}''"
     return f"""# This is an auto generated file.
-    {{pkgs, lib, ... }}:
+    {{pkgs, lib, config, ... }}:
 {{
   imports = [ 
-    /etcd/nixos/{host_data["config"]["hostname"]}-mini-sys.nix
-    /etcd/nixos/hardware-configuration.nix
-    /etcd/nixos/modules
-    ];
-  hostname = "{{hostname}}";
-  interface= "{{host.interface}}";
-  ip = "{{host.ip}}";
+    ./hardware-configuration.nix
+    ./modules
+  ];
+  hostname = "{host_data["config"]["hostname"]}";
+  interface= "{host_data["config"]["interface"]}";
+  ip = "{host_data["config"]["ip"]}";
   admin = {{
     hashedPwd = ''{host_data["config"]["admin"]["hashedPwd"]}'';
     name = "{host_data["config"]["admin"]["name"]}";
-    sshKeys = [{host_data["config"]["admin"]["sshKeys"]}];
+    sshKeys = [{sshKeys}
+    ];
   }};
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = config.services.openssh.ports;
@@ -166,6 +179,17 @@ def nix_eval(path, attribute="", args=[]):
         exit(1)
     else:
         return json.loads(result.stdout.strip())
+
+
+def nixfmt(file):
+    cmd = f"nixfmt {file}"
+    result = subprocess.run(
+        cmd.split(),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Warning: '{cmd}' failed with: {result.stderr}", file=sys.stderr)
 
 
 def get_hardware_configuration(hostname, host_config):

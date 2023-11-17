@@ -10,6 +10,7 @@ in pkgs.mkShell {
     k3s
     python3
     nixos-generators
+    nixfmt
     git
     coreutils
     # scripts
