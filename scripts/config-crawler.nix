@@ -11,7 +11,6 @@ let
     ] ++ (import <nixpkgs/nixos/modules/module-list.nix>);
   });
 in {
-  config = {
     # networking.interfaces.ens3 = eval.config.networking.ens3;
     admin = eval.config.admin;
     hostname = eval.config.networking.hostName;
@@ -29,5 +28,4 @@ in {
     # }
     # nixos_version
     # targetHost
-  };
 }

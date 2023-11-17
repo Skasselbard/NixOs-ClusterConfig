@@ -10,6 +10,7 @@
   #   "nixos/modules" = { source = modules; };
   #   "nixos/partitioning.nix" = { source = ../../partitioning/{{hostname}}.nix; };
   #   "nixos/configuration.nix" = { source = TODO: path/to/mini_sys.nix; };
+  #   TODO: hardware configuration
   # };
 
   environment.systemPackages =

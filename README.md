@@ -13,3 +13,15 @@
 1. get a folder with nixos definitions (nix files)
 2. crawl each definition and parse specific nixos options defined by modules from this project (mainly user, ssh and network options)
 3. generate a nix file for each stage with the parsed options
+
+# Workflow
+
+For each machine that does not run nixos already:
+
+1. prepare boot medium
+2. boot iso from boot medium
+3. install mini system
+
+For all machines
+
+1. run colmena

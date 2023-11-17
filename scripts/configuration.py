@@ -13,6 +13,12 @@ crawler_path = os.path.abspath(script_path + "/config-crawler.nix")
 stages_path = os.path.abspath(script_path + "/../stages")
 
 
+def deploy():
+    # for file, config in host_data:
+    # get_hardware_configuration(host_name, host_config)
+    return
+
+
 def generate(path: Path, nixos_version="nixos-23.05"):
     # TODO: get nixos version for hive.nix
     # nixos_version = config["cluster"]["versions"]["nixos"]
@@ -27,22 +33,16 @@ def generate(path: Path, nixos_version="nixos-23.05"):
         for config in get_nix_definitions(nix_configs)
     ]
     for data in host_data:
-        # make a folder for each definition
-        folder = path / "generated" / definition_path_to_name(data["file"])
-        folder.mkdir(parents=True, exist_ok=True)
-        # get_hardware_configuration(data["config"])
-        iso = folder / "iso.nix"
-        iso.write_text(generate_stage_zero_nix(data))
-        mini_sys = folder / "mini_sys.nix"
-        mini_sys.write_text(generate_stage_one_nix(data))
-    generate_stage_two_nix(nixos_version, host_data)
+        folders = generate_folders(path, data)
+        folders["iso"].write_text(generate_iso_nix(data))
+        folders["mini_sys"].write_text(generate_mini_sys(path, data))
+        # TODO: run nixfmt
+    (path / "generated/hive.nix").write_text(
+        generate_hive(path, nixos_version, host_data)
+    )
 
 
-def generate_host_list(host_definitions):
-    return None
-
-
-def generate_stage_zero_nix(host_data):
+def generate_iso_nix(host_data):
     return f"""# This is an auto generated file.
 {{pkgs, lib, ... }}:
 let
@@ -50,7 +50,7 @@ let
     import ({crawler_path}) {{
       inherit pkgs lib;
       host-definition = "{host_data["file"]}";
-    }}.config;
+    }};
 in {{
   imports = [ {stages_path + "/0-iso.nix"} ];
   config = machine-config;
@@ -58,25 +58,52 @@ in {{
 """
 
 
-def generate_stage_one_nix(host_data):
-    return f"""# This is an auto generated file."""
-
-
-def generate_stage_two_nix(nixos_version, host_data):
+def generate_mini_sys(path, host_data, efi_boot=True):
     return f"""# This is an auto generated file.
+    {{pkgs, lib, ... }}:
+{{
+  imports = [ 
+    /etcd/nixos/{host_data["config"]["hostname"]}-mini-sys.nix
+    /etcd/nixos/hardware-configuration.nix
+    /etcd/nixos/modules
+    ];
+  hostname = "{{hostname}}";
+  interface= "{{host.interface}}";
+  ip = "{{host.ip}}";
+  admin = {{
+    hashedPwd = ''{host_data["config"]["admin"]["hashedPwd"]}'';
+    name = "{host_data["config"]["admin"]["name"]}";
+    sshKeys = [{host_data["config"]["admin"]["sshKeys"]}];
+  }};
+  services.openssh.enable = true;
+  networking.firewall.allowedTCPPorts = config.services.openssh.ports;
+  {"boot.loader.systemd-boot.enable = true; boot.loader.efi.canTouchEfiVariables = true;" if efi_boot else ""}
+}}
+"""
+
+
+def generate_hive(path, nixos_version, host_data):
+    hive_nix = f"""# This is an auto generated file.
 {{
   meta.nixpkgs = import (
     builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/{nixos_version}.tar.gz"
   ){{}};
+"""
+    for data in host_data:
+        hardware_configuration = generate_folders(path, data)["hardware_configuration"]
+        hive_nix += f"""
+    {data["config"]["hostname"]} = {{
+        imports = [ 
+        {data["file"]}
+        {hardware_configuration}
+        ];
+    }};
 }}"""
-    for host_name, host_config in config["cluster"]["hosts"].items():
-        (Path.cwd() / f"generated/{host_name}").mkdir(parents=True, exist_ok=True)
-        get_hardware_configuration(host_name, host_config)
-        nix_config += (
-            f"{host_name} = "
-            + populate_host(host_name, host_config, config["cluster"], is_hive=True)
-            + ";\n"
-        )
+        return hive_nix
+
+
+def generate_host_list(host_definitions):
+    return None
 
 
 # get all nix definitions from the directory
@@ -96,6 +123,20 @@ def get_nix_definitions(path):
     return nix_files + folders
 
 
+def generate_folders(path, host_data):
+    generation_folder = path / "generated" / definition_path_to_name(host_data["file"])
+    generation_folder.mkdir(parents=True, exist_ok=True)
+    return {
+        "iso": generation_folder / "iso.nix",
+        "mini_sys": generation_folder / "mini_sys.nix",
+        "hardware_configuration": (
+            generation_folder
+            / definition_path_to_name(host_data["file"])
+            / "hardware-configuration.nix"
+        ),
+    }
+
+
 # returns the folder name from a path with a default nix or the nix file base name
 def definition_path_to_name(path):
     path = Path(path)
@@ -106,14 +147,15 @@ def definition_path_to_name(path):
 
 
 def get_host_information(nix_definition_file):
-    return nix_eval(crawler_path, "config", [("host-definition", nix_definition_file)])
+    return nix_eval(crawler_path, args=[("host-definition", nix_definition_file)])
 
 
-def nix_eval(path, attribute, args):
+def nix_eval(path, attribute="", args=[]):
     args = " ".join(
         [f"--argstr {name} {value}" for (name, value) in args]
     )  # format arguments
-    cmd = f"nix-instantiate --eval --strict --json {path} {args} -A {attribute}"
+    attribute = f"-A {attribute}" if attribute else ""
+    cmd = f"nix-instantiate --eval --strict --json {path} {args} {attribute}"
     result = subprocess.run(
         cmd.split(),
         capture_output=True,
