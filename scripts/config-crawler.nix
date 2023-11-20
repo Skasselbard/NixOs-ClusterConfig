@@ -11,21 +11,22 @@ let
     ] ++ (import <nixpkgs/nixos/modules/module-list.nix>);
   });
 in {
-    # networking.interfaces.ens3 = eval.config.networking.ens3;
-    admin = eval.config.admin;
-    hostname = eval.config.networking.hostName;
-    interface = eval.config.interface;
-    ip = eval.config.ip;
-    # gateway = config.networking.defaultGateway;
-    # interfaces = config.networking.interfaces;
-    # k3s = {
-    #   init.ip
-    #   server.ip
-    #   server.name
-    #   agent.ip
-    #   agent.name
-    #   version
-    # }
-    # nixos_version
-    # targetHost
+  # networking.interfaces.ens3 = eval.config.networking.ens3;
+  admin = eval.config.admin;
+  hostname = eval.config.networking.hostName;
+  interface = eval.config.interface;
+  ip = eval.config.ip;
+  setup = eval.config.setup;
+  # gateway = config.networking.defaultGateway;
+  # interfaces = config.networking.interfaces;
+  # k3s = {
+  #   init.ip
+  #   server.ip
+  #   server.name
+  #   agent.ip
+  #   agent.name
+  #   version
+  # }
+  # nixos_version
+  # targetHost
 }

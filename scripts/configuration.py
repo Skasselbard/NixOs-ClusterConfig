@@ -153,8 +153,8 @@ def generate_folders(path, host_data):
 # returns the folder name from a path with a default nix or the nix file base name
 def definition_path_to_name(path):
     path = Path(path)
-    if path.is_dir():
-        return path.name
+    if path.name == "default.nix":
+        return (path / "..").resolve().name
     if path.is_file():
         return path.stem
 
