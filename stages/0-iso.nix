@@ -8,16 +8,24 @@
   # copy configuration for the mini system
   environment.etc = {
     "nixos/modules" = { source = ../modules; };
-  };
+    # "nixos/scripts"
+  } //
+    # copy all files to '/etc/nixos/files' that are specified in setup.files
+    lib.listToAttrs (map (path: {
+      name = "nixos/files/${builtins.baseNameOf path}";
+      value = { source = path; };
+    }) config.setup.files);
 
-  environment.systemPackages =
-    let 
+  # TODO: include extraconfig from nix key
+
+  environment.systemPackages = with pkgs;
+    with builtins;
+    let
       # wrap install scripts in a package
-      setup = pkgs.writeScriptBin "setup" (builtins.readFile ../scripts/setup.sh);
-      # preSetup = pkgs.writeScriptBin "pre-setup" config.setup.preScript;
-      # postSetup = pkgs.writeScriptBin "post-setup" config.setup.postScript;
-    in
-    with pkgs; [
+      setup = writeScriptBin "setup" (readFile ../scripts/setup.sh);
+      # preSetup = writeScriptBin "pre-setup" config.setup.preScript;
+      # postSetup = writeScriptBin "post-setup" config.setup.postScript;
+    in [
       bash
       btrfs-progs
       dig
@@ -29,6 +37,9 @@
       # postSetup
       setup
       zfs
-    ];
+    ] ++
+    # add setup scripts specified in setup.scripts
+    map (path: writeScriptBin (baseNameOf path) (readFile path))
+    config.setup.scripts;
 
 }
