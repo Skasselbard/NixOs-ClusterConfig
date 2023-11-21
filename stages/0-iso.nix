@@ -3,6 +3,7 @@
     <nixpkgs/nixos/modules/profiles/base.nix>
     ../modules/default.nix
     ../modules/setup.nix
+    ../modules/partitioning.nix
   ];
 
   # copy configuration for the mini system
