@@ -40,5 +40,5 @@
         };
       };
     };
-  imports = [ ./admin.nix ./network.nix ./ssh.nix ];
+  imports = [ ./admin.nix ./network.nix ./ssh.nix ./colmena.nix ];
 }

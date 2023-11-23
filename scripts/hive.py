@@ -93,12 +93,12 @@ def main():
             generate(root_dir, nixos_version)
         elif args.hive_commands == "build":
             if not args.skip_generate:
-                generate(root_dir, nixos_version)
+                generate(root_dir, nixos_version,query_hardware_config=True)
             _, colmena_args = parse_known_sub_args(build_parser)
             colmena("build", hive_nix, colmena_args)
         elif args.hive_commands == "deploy":
             if not args.skip_generate:
-                generate(root_dir, nixos_version)
+                generate(root_dir, nixos_version, query_hardware_config=True)
             _, colmena_args = parse_known_sub_args(deploy_parser)
             colmena("apply", hive_nix, colmena_args)
         else:

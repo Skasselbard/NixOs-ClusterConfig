@@ -19,13 +19,14 @@ in {
           type = attrs; # TODO: can the type be loaded from disko?
           default = { };
           description =
-            "This disko definitions will be used to build a formating script and for the systems mounting configuration";
+            "This disko definitions will be used to build a formating script and for the systems mounting configuration. See https://github.com/nix-community/disko/blob/master/docs/INDEX.md for disko documentation.";
         };
         additional_disko = mkOption {
           type = attrs; # TODO: can the type be loaded from disko?
           default = { };
           description =
-            "This disko definitions will be used in addition to the formatting definition to build the whole disko definition for mounting configuration";
+            "This disko definitions will be used in addition to the formatting definition to build the whole disko definition for mounting configuration. See https://github.com/nix-community/disko/blob/master/docs/INDEX.md for disko documentation.";
+
         };
       };
     };
@@ -38,7 +39,9 @@ in {
         disko = config.partitioning.format_disko;
       }) + /bin/disko-format)
     ];
-    disko = config.partitioning.format_disko
-      // config.partitioning.additional_disko;
+    # merging formatting and additional disko attributes to make the final disko configuration
+    disko = lib.attrsets.recursiveUpdate config.partitioning.format_disko
+      config.partitioning.additional_disko;
+    # nix-instantiate --eval --strict /etc/nixos/configuration.nix --argstr pkgs "<nixpkgs>" --argstr lib "<nixpkgs/lib>" --argstr config "{}"
   };
 }

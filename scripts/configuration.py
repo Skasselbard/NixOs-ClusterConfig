@@ -19,7 +19,9 @@ def deploy():
     return
 
 
-def generate(path: Path, nixos_version="nixos-23.05", efi_boot=True):
+def generate(
+    path: Path, nixos_version="nixos-23.05", efi_boot=True, query_hardware_config=False
+):
     nix_configs = list(path.glob("*[nN]ix[cC]onfigs"))
     if not nix_configs:
         print(f"No 'nixConfigs' folder found in '{path}'", file=sys.stderr)
@@ -35,7 +37,8 @@ def generate(path: Path, nixos_version="nixos-23.05", efi_boot=True):
         nixfmt(folders["iso"])
         folders["mini_sys"].write_text(generate_mini_sys(data, efi_boot))
         nixfmt(folders["mini_sys"])
-        # TODO: run nixfmt
+        if query_hardware_config:
+            get_hardware_configuration(data, folders["hardware_configuration"])
     hive_nix = path / "generated/hive.nix"
     hive_nix.write_text(generate_hive(path, nixos_version, host_data))
     nixfmt(hive_nix)
@@ -78,7 +81,9 @@ def generate_mini_sys(host_data, efi_boot):
   imports = [ 
     ./hardware-configuration.nix
     ./modules
+    ./modules/partitioning.nix
   ];
+  partitioning = builtins.fromJSON ''{json.dumps(host_data["config"]["partitioning"])}'';
   hostname = "{host_data["config"]["hostname"]}";
   interface= "{host_data["config"]["interface"]}";
   ip = "{host_data["config"]["ip"]}";
@@ -142,11 +147,7 @@ def generate_folders(path, host_data):
     return {
         "iso": generation_folder / "iso.nix",
         "mini_sys": generation_folder / "mini_sys.nix",
-        "hardware_configuration": (
-            generation_folder
-            / definition_path_to_name(host_data["file"])
-            / "hardware-configuration.nix"
-        ),
+        "hardware_configuration": (generation_folder / "hardware-configuration.nix"),
     }
 
 
@@ -192,17 +193,15 @@ def nixfmt(file):
         print(f"Warning: '{cmd}' failed with: {result.stderr}", file=sys.stderr)
 
 
-def get_hardware_configuration(hostname, host_config):
-    if (
-        os.system(
-            f'scp {host_config["admin"]["name"]}@{host_config["deployment_target"]}:/etc/nixos/hardware-configuration.nix generated/{hostname}/hardware-configuration.nix'
-        )
-        != 0
-    ):
-        print(
-            f"Warning: cannot receive hardware configuration for host {hostname}",
-            file=sys.stderr,
-        )
+def get_hardware_configuration(host_data, path):
+    hostname = host_data["config"]["hostname"]
+    admin = host_data["config"]["admin"]["name"]
+    colmena_target = host_data["config"]["colmena"]["deployment"]["targetHost"]
+    address = colmena_target if colmena_target else host_data["config"]["ip"]
+    cmd = f"scp {admin}@{address}:/etc/nixos/hardware-configuration.nix {path}"
+    warning = (f"Warning: cannot retrieve hardware configuration for host {hostname}",)
+    if os.system(cmd) != 0:
+        print(warning, file=sys.stderr)
 
 
 def get_init_token():

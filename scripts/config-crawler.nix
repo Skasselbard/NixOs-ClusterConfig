@@ -18,6 +18,7 @@ in {
   ip = eval.config.ip;
   setup = eval.config.setup;
   partitioning = eval.config.partitioning;
+  colmena = eval.config.colmena;
   # gateway = config.networking.defaultGateway;
   # interfaces = config.networking.interfaces;
   # k3s = {
