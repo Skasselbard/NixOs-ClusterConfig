@@ -11,6 +11,15 @@ in {
   options = with lib;
     with types; {
       partitioning = {
+        enable_disko = mkOption {
+          type = bool;
+          default = false;
+          description = ''
+            If set to true the 'config.disko' option (see disko docs https://github.com/nix-community/disko/blob/master/docs/INDEX.md) will be set based on the 'partitioning.format_disko' and 'partitioning.additional_disko' options from this module.
+            This will generate a file system configuration according to the disko options.
+            If this option is disabled the disko option is not set and the file system configuration has to be defined another way.
+          '';
+        };
         disko_version = mkOption {
           type = str;
           default = "v1.1.0";
@@ -34,14 +43,31 @@ in {
   config = {
     setup.scripts = [
       # building a disko reformating script and adding it to the setup (iso) environment
-      (pkgs.writeScriptBin "disko-format" (disko.disko {
-        # disko.devices = config.partitioning.format_disks;
-        disko = config.partitioning.format_disko;
-      }) + /bin/disko-format)
+      (pkgs.writeScriptBin "disko-format" (''
+        echo "Format disk configured disko devicves?"
+        echo "WARNING: all disk content will be erased if you select yes!"
+        [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit
+        echo "Formatting disko config."
+      '' + (disko.diskoScript { disko = config.partitioning.format_disko; }
+        pkgs)))
+      # Add another script to format the whole configuration for virgin drives
+      (pkgs.writeScriptBin "disko-format-ALL" (''
+        echo "Format disk ALL configured disko devicves?"
+        echo "WARNING: all disk content will be erased if you select yes! This is the script for the ENTIRE configuration not just the format_disko configurtation!"
+        [[ ! "$(read -e -p "Type 'FORMAT-ALL' to continue> "; echo $REPLY)" == "FORMAT-ALL" ]] &&  echo "Canceld formating entire disko config." && exit
+        echo "Formatting entire disko config."
+      '' + (disko.diskoScript {
+        disko = (lib.attrsets.recursiveUpdate config.partitioning.format_disko
+          config.partitioning.additional_disko);
+      } pkgs)))
     ];
+    setup.preScript =
+      lib.mkIf config.partitioning.enable_disko [ "sudo disko-format" ];
     # merging formatting and additional disko attributes to make the final disko configuration
-    disko = lib.attrsets.recursiveUpdate config.partitioning.format_disko
-      config.partitioning.additional_disko;
-    # nix-instantiate --eval --strict /etc/nixos/configuration.nix --argstr pkgs "<nixpkgs>" --argstr lib "<nixpkgs/lib>" --argstr config "{}"
+    disko = (lib.attrsets.recursiveUpdate config.partitioning.format_disko
+      config.partitioning.additional_disko) // {
+        # disable disko configuration if flag is set
+        enableConfig = config.partitioning.enable_disko;
+      };
   };
 }

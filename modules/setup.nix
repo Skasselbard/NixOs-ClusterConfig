@@ -3,21 +3,20 @@
     with lib.types; {
       setup = {
         preScript = mkOption {
-          type = nullOr str;
-          default = null;
+          type = listOf str;
+          default = [ ];
           description = ''
-            A shell script that is executed before the setup instructions are started in the installation iso.
-            Usefull e.g. for partittioning.
-            The script will be exported in /bin in the installation iso.
+            A set of shell commands that are executed before the setup instructions are started in the installation iso.
+            The commands will be concatenated to a script which will be exported in /bin in the installation iso as 'pre-setup'.
             The script will not be present after the installation nor in the final machine config.
           '';
         };
         postScript = mkOption {
-          type = nullOr str;
-          default = null;
+          type = listOf str;
+          default = [ ];
           description = ''
-            A shell script that is executed after the setup instructions are started in the installation iso.
-            The script will be exported in /bin in the installation iso.
+            A set of shell commands that are executed after the setup instructions are started in the installation iso.
+            The commands will be concatenated to a script which will be exported in /bin in the installation iso as 'post-setup'.
             The script will not be present after the installation nor in the final machine config.
           '';
         };

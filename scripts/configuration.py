@@ -75,6 +75,10 @@ def generate_mini_sys(host_data, efi_boot):
     sshKeys = ""
     for key in host_data["config"]["admin"]["sshKeys"]:
         sshKeys += f"\n''{key.strip()}''"
+    efi_boot_options = """
+boot.loader.systemd-boot.enable = true; 
+boot.loader.efi.canTouchEfiVariables = true;
+    """
     return f"""# This is an auto generated file.
     {{pkgs, lib, config, ... }}:
 {{
@@ -95,7 +99,7 @@ def generate_mini_sys(host_data, efi_boot):
   }};
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = config.services.openssh.ports;
-  {"boot.loader.systemd-boot.enable = true; boot.loader.efi.canTouchEfiVariables = true;" if efi_boot else ""}
+  {efi_boot_options if efi_boot else ""}
 }}
 """
 
@@ -131,10 +135,8 @@ def get_nix_definitions(path):
     nix_files = [(path) for path in nix_files]  # make (filename, path) pairs
     folders = [(path) for path in Path(path).glob("*") if path.is_dir()]
     for folder in [path for path in folders if not (path / "default.nix").exists()]:
-        print(
-            f"Warning: no default.nix found in {folder}; ignoring folder.",
-            file=sys.stderr,
-        )
+        fail_warning = f"Warning: no default.nix found in {folder}; ignoring folder."
+        print(fail_warning, file=sys.stderr)
     folders = [
         path / "default.nix" for path in folders if (path / "default.nix").exists()
     ]  # filter folders that have no default.nix
