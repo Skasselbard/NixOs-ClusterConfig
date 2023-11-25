@@ -2,9 +2,16 @@
 
 { pkgs, config, lib, ... }:
 let
-  disko_source = builtins.fetchTarball
-    "https://github.com/nix-community/disko/archive/master.tar.gz";
-  # "https://github.com/nix-community/disko/archive/${config.partitioning.disko_version}.tar.gz";
+  # The disko version cannot be set in nix due to an infinit recursion problem:
+  # We use the version for both a module in 'imports' and in 'config'.
+  # However, config requires imports to be resolved, which is a problem when imports references config.
+  #
+  # As a workaround we get the disko version from a versions.json expected in the configuration 
+  # root folder and use the "HIVE_ROOT" environment variable set by the hive.py script to resolve the versions.json.
+  disko_source = with builtins;
+    fetchTarball "https://github.com/nix-community/disko/archive/${
+      (fromJSON (readFile (getEnv "HIVE_ROOT" + "/versions.json"))).disko
+    }.tar.gz";
   disko = import disko_source { inherit lib; };
   disko_module = "${disko_source}/module.nix";
 in {
@@ -19,10 +26,6 @@ in {
             This will generate a file system configuration according to the disko options.
             If this option is disabled the disko option is not set and the file system configuration has to be defined another way.
           '';
-        };
-        disko_version = mkOption {
-          type = str;
-          default = "v1.1.0";
         };
         format_disko = mkOption {
           type = attrs; # TODO: can the type be loaded from disko?

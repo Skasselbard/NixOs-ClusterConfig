@@ -11,7 +11,8 @@ import installer
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Setup a Colmena hive from a set of nix configs.", prog="NixOs-Staged-Hive"
+        description="Setup a Colmena hive from a set of nix configs.",
+        prog="NixOs-Staged-Hive",
     )
     parser.add_argument(
         "-p",
@@ -79,6 +80,7 @@ def main():
     root_dir = Path(args.path)
     nixos_version = args.nixos_version
     os.chdir(root_dir)
+    os.environ["HIVE_ROOT"] = root_dir.absolute().as_posix()
 
     if args.subcommand == "install":
         install_args = parse_sub_args(install_parser)
@@ -93,7 +95,7 @@ def main():
             generate(root_dir, nixos_version)
         elif args.hive_commands == "build":
             if not args.skip_generate:
-                generate(root_dir, nixos_version,query_hardware_config=True)
+                generate(root_dir, nixos_version, query_hardware_config=True)
             _, colmena_args = parse_known_sub_args(build_parser)
             colmena("build", hive_nix, colmena_args)
         elif args.hive_commands == "deploy":
