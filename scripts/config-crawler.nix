@@ -1,5 +1,5 @@
-{ pkgs ? import <nixpkgs> { }, lib ? import <nixpkgs/lib>, host-definition, ...
-}:
+{ pkgs ? import <nixpkgs> { }, lib ? import <nixpkgs/lib>, host-definition
+, disko_url, ... }:
 
 let
   eval = (lib.evalModules {
