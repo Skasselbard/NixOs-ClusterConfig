@@ -2,21 +2,15 @@
 
 { pkgs, config, lib, ... }:
 let
-  # The disko version cannot be set in nix due to an infinit recursion problem:
-  # We use the version for both a module in 'imports' and in 'config'.
-  # However, config requires imports to be resolved, which is a problem when imports references config.
-  #
-  # As a workaround we get the disko version from a versions.json expected in the configuration 
-  # root folder and use the "HIVE_ROOT" environment variable set by the hive.py script to resolve the versions.json.
-  disko_source = with builtins;
-    fetchTarball "https://github.com/nix-community/disko/archive/${
-      (fromJSON (readFile (getEnv "HIVE_ROOT" + "/versions.json"))).disko
-    }.tar.gz";
-  disko = import disko_source { inherit lib; };
-  disko_module = "${disko_source}/module.nix";
+  disko = import config._disko_source { inherit lib; };
 in {
   options = with lib;
     with types; {
+      _disko_source = mkOption {
+        type = nullOr path;
+        description = "Automatically set. Please dont use.";
+        default = null;
+      };
       partitioning = {
         enable_disko = mkOption {
           type = bool;
@@ -42,12 +36,12 @@ in {
         };
       };
     };
-  imports = [ ./setup.nix disko_module ];
+  imports = [ ./setup.nix ];
   config = {
     setup.scripts = [
       # building a disko reformating script and adding it to the setup (iso) environment
       (pkgs.writeScriptBin "disko-format" (''
-        echo "Format disk configured disko devicves?"
+        echo "Format configured disko devicves?"
         echo "WARNING: all disk content will be erased if you select yes!"
         [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit
         echo "Formatting disko config."
@@ -55,7 +49,7 @@ in {
         pkgs)))
       # Add another script to format the whole configuration for virgin drives
       (pkgs.writeScriptBin "disko-format-ALL" (''
-        echo "Format disk ALL configured disko devicves?"
+        echo "Format ALL configured disko devicves?"
         echo "WARNING: all disk content will be erased if you select yes! This is the script for the ENTIRE configuration not just the format_disko configurtation!"
         [[ ! "$(read -e -p "Type 'FORMAT-ALL' to continue> "; echo $REPLY)" == "FORMAT-ALL" ]] &&  echo "Canceld formating entire disko config." && exit
         echo "Formatting entire disko config."

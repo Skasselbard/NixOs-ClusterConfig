@@ -7,14 +7,14 @@ import configuration
 py_script_path = os.path.abspath(os.path.dirname(__file__))
 
 
-def build_host(args, nixos_version="nixos-23.05"):
+def build_host(args, path=Path.cwd()):
     # acquire sudo if needed
     os.system('sudo echo ""') if not args.dry and args.device else None
     name = args.name
-    configuration.generate(Path.cwd(), nixos_version, not args.mbr_boot)
+    configuration.generate(path, not args.mbr_boot)
     if not args.dry:
         # cmds
-        generate_iso = f"nixos-generate --format iso --configuration generated/{name}/iso.nix -o generated/{name}/iso -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/{nixos_version}.tar.gz"
+        generate_iso = f"nixos-generate --format iso --configuration generated/{name}/iso.nix -o generated/{name}/iso -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/{configuration.get_versions(path)['nixos']}.tar.gz"
         copy_to_medium = f"sudo dd if=generated/{name}/iso/iso/nixos.iso of={args.device} bs=4M conv=fsync status=progress"
 
         if os.system(generate_iso) == 0:
@@ -29,8 +29,7 @@ def build_host(args, nixos_version="nixos-23.05"):
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        # TODO: update parser
-        description="Build a nix iso configuration with the network config of the given machine. Generates an iso file in $PWD/generated/$hostname/$hostname.iso"
+        description="Build a nix iso configuration for the given machine. Generates an iso file in $PWD/generated/$hostname/"
     )
     parser.add_argument(
         "-d",
@@ -46,12 +45,12 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-e",
         "--mbr-boot",
-        help="If this flag is set the installation iso is built for MBR legacy systems instead of efi systems (see nixos manual)",
+        help="If this flag is set the installation iso is built for MBR legacy systems instead of efi systems (see nixos manual).",
         action="store_true",
     )
     parser.add_argument(
         "--dry",
-        help="Make a dry run of the generation without generating an iso image",
+        help="Make a dry run of the config generation without generating an iso image or writing to a device.",
         action="store_true",
     )
     return parser

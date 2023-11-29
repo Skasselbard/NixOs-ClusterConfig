@@ -2,8 +2,14 @@
 with lib; {
   options = with types; {
     hostname = mkOption { type = str; };
-    ip = mkOption { type = str; };
-    interface = mkOption { type = str; };
+    ip = mkOption {
+      type = str;
+      example = ''"dhcp" or "192.168.0.1'';
+    };
+    interface = mkOption {
+      type = str;
+      example = "ens1";
+    };
     gateway = mkOption { type = str; };
     subnet = mkOption { type = str; };
     netmask = mkOption { type = int; };

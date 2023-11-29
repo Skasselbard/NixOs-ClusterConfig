@@ -13,38 +13,30 @@ crawler_path = os.path.abspath(script_path + "/config-crawler.nix")
 stages_path = os.path.abspath(script_path + "/../stages")
 
 
-def deploy():
-    # for file, config in host_data:
-    # get_hardware_configuration(host_name, host_config)
-    return
-
-
-def generate(
-    path: Path, nixos_version="nixos-23.05", efi_boot=True, query_hardware_config=False
-):
+def generate(path: Path, efi_boot=True, query_hardware_config=False):
     nix_configs = list(path.glob("*[nN]ix[cC]onfigs"))
     if not nix_configs:
         print(f"No 'nixConfigs' folder found in '{path}'", file=sys.stderr)
         exit(1)
     nix_configs = nix_configs[0]
     host_data = [
-        {"file": config, "config": get_host_information(config)}
+        {"file": config, "config": get_host_information(path, config)}
         for config in get_nix_definitions(nix_configs)
     ]
     for data in host_data:
         folders = generate_folders(path, data)
-        folders["iso"].write_text(generate_iso_nix(path, data, nixos_version))
+        folders["iso"].write_text(generate_iso_nix(path, data))
         nixfmt(folders["iso"])
-        folders["mini_sys"].write_text(generate_mini_sys(data, efi_boot))
+        folders["mini_sys"].write_text(generate_mini_sys(path, data, efi_boot))
         nixfmt(folders["mini_sys"])
         if query_hardware_config:
             get_hardware_configuration(data, folders["hardware_configuration"])
     hive_nix = path / "generated/hive.nix"
-    hive_nix.write_text(generate_hive(path, nixos_version, host_data))
+    hive_nix.write_text(generate_hive(path, host_data))
     nixfmt(hive_nix)
 
 
-def generate_iso_nix(path, host_data, nixos_version):
+def generate_iso_nix(path, host_data):
     mini_sys = generate_folders(path, host_data)["mini_sys"]
     return f"""# This is an auto generated file.
 {{pkgs, lib, ... }}:
@@ -53,48 +45,65 @@ let
     import ({crawler_path}) {{
       inherit pkgs lib;
       host-definition = "{host_data["file"]}";
+      disko_url = {get_disko_url(path)};
     }};
+  disko_source = builtins.fetchTarball {get_disko_url(path)};
+  disko_module = "${{disko_source}}/module.nix";
 in {{
-  imports = [ {stages_path + "/0-iso.nix"} ];
+  imports = [ 
+    {stages_path + "/0-iso.nix"}
+    disko_module
+    ];
   config = machine-config //{{
+    _disko_source = disko_source;
     environment.etc = {{
       "nixos/configuration.nix" = {{ source = {mini_sys}; }};
-      "nixos/version" = {{ text = "{nixos_version}"; }};
+      "nixos/versions.json" = {{ text = ''{json.dumps(get_versions(path))}''; }};
     }};
-    environment.systemPackages =
-      let 
-        nixos_version = pkgs.writeScriptBin "nixos_version" "cat /etc/nixos/version";
-      in [ nixos_version ];
+    
   }};
 }}
 """
 
 
-def generate_mini_sys(host_data, efi_boot):
+def generate_mini_sys(path, host_data, efi_boot):
+    # check if a hostID was defined and assign it if so
+    host_id = None
+    if (
+        "networking" in host_data["config"]
+        and "hostId" in host_data["config"]["networking"]
+    ):
+        host_id = host_data["config"]["networking"]["hostId"]
     # format ssh key list for nix
-    sshKeys = ""
+    ssh_keys = ""
     for key in host_data["config"]["admin"]["sshKeys"]:
-        sshKeys += f"\n''{key.strip()}''"
+        ssh_keys += f"\n''{key.strip()}''"
     efi_boot_options = """
 boot.loader.systemd-boot.enable = true; 
 boot.loader.efi.canTouchEfiVariables = true;
     """
     return f"""# This is an auto generated file.
     {{pkgs, lib, config, ... }}:
+let
+  disko_source = builtins.fetchTarball {get_disko_url(path)};
+  disko_module = "${{disko_source}}/module.nix";
+in
 {{
   imports = [ 
     ./hardware-configuration.nix
     ./modules
-    ./modules/partitioning.nix
+    disko_module
   ];
+  _disko_source = disko_source;
   partitioning = builtins.fromJSON ''{json.dumps(host_data["config"]["partitioning"])}'';
   hostname = "{host_data["config"]["hostname"]}";
+  {f'networking.hostId = "{host_id}";' if host_id else ""}
   interface= "{host_data["config"]["interface"]}";
   ip = "{host_data["config"]["ip"]}";
   admin = {{
     hashedPwd = ''{host_data["config"]["admin"]["hashedPwd"]}'';
     name = "{host_data["config"]["admin"]["name"]}";
-    sshKeys = [{sshKeys}
+    sshKeys = [{ssh_keys}
     ];
   }};
   services.openssh.enable = true;
@@ -104,28 +113,46 @@ boot.loader.efi.canTouchEfiVariables = true;
 """
 
 
-def generate_hive(path, nixos_version, host_data):
+def generate_hive(path, host_data):
+    ip_list = "\n".join(
+        [
+            f'"{ip}" = ["{name}"];'
+            for name, ip in generate_ip_list(host_data).items()
+            if ip != "dhcp"
+        ]
+    )
+    extra_hosts = f"networking.extraHosts = {{\n{ip_list}\n}};"
     hive_nix = f"""# This is an auto generated file.
+let
+  disko_source = builtins.fetchTarball {get_disko_url(path)};
+  disko_module = "${{disko_source}}/module.nix";
+in
 {{
   meta.nixpkgs = import (
-    builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/{nixos_version}.tar.gz"
+    builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/{get_versions(path)["nixos"]}.tar.gz"
   ){{}};
 """
     for data in host_data:
         hardware_configuration = generate_folders(path, data)["hardware_configuration"]
         hive_nix += f"""
     {data["config"]["hostname"]} = {{
-        imports = [ 
+      imports = [ 
         {data["file"]}
         {hardware_configuration}
-        ];
+        disko_module
+      ];
+      _disko_source = disko_source;
+      {extra_hosts}
     }};
 }}"""
         return hive_nix
 
 
-def generate_host_list(host_definitions):
-    return None
+def generate_ip_list(host_data):
+    ips = {}
+    for data in host_data:
+        ips[data["config"]["hostname"]] = data["config"]["ip"]
+    return ips
 
 
 # get all nix definitions from the directory
@@ -162,8 +189,22 @@ def definition_path_to_name(path):
         return path.stem
 
 
-def get_host_information(nix_definition_file):
-    return nix_eval(crawler_path, args=[("host-definition", nix_definition_file)])
+def get_host_information(path, nix_definition_file):
+    return nix_eval(
+        crawler_path,
+        args=[
+            ("host-definition", nix_definition_file),
+            ("disko_url", get_disko_url(path)),
+        ],
+    )
+
+
+def get_versions(path):
+    return json.loads((Path(path) / "versions.json").read_text())
+
+
+def get_disko_url(path):
+    return f"https://github.com/nix-community/disko/archive/{get_versions(path)['disko']}.tar.gz"
 
 
 def nix_eval(path, attribute="", args=[]):

@@ -8,6 +8,7 @@
           description = ''
             A set of shell commands that are executed before the setup instructions are started in the installation iso.
             The commands will be concatenated to a script which will be exported in /bin in the installation iso as 'pre-setup'.
+            During the pre-script phase the hardware-configuration was NOT generated and all nioxos files are still only in /etc/nixos.
             The script will not be present after the installation nor in the final machine config.
           '';
         };
@@ -17,6 +18,7 @@
           description = ''
             A set of shell commands that are executed after the setup instructions are started in the installation iso.
             The commands will be concatenated to a script which will be exported in /bin in the installation iso as 'post-setup'.
+            During the post-script phase the hardware-configuration was already generated and all nioxos files are both in /etc/nixos and in /mnt/etc/nixos.
             The script will not be present after the installation nor in the final machine config.
           '';
         };

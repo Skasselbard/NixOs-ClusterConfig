@@ -20,12 +20,6 @@ def main():
         help="The root directory to search for the necessary files.",
         default=Path.cwd(),
     )
-    parser.add_argument(
-        "-v",
-        "--nixos-version",
-        help="The nixos version that should be used",
-        default="nixos-23.05",
-    )
     subparsers = parser.add_subparsers(
         dest="subcommand",
         required=True,
@@ -78,13 +72,11 @@ def main():
 
     args, _ = parser.parse_known_args()
     root_dir = Path(args.path)
-    nixos_version = args.nixos_version
     os.chdir(root_dir)
-    os.environ["HIVE_ROOT"] = root_dir.absolute().as_posix()
 
     if args.subcommand == "install":
         install_args = parse_sub_args(install_parser)
-        installer.build_host(install_args, nixos_version)
+        installer.build_host(install_args, root_dir)
     elif args.subcommand == "setup":
         _setup_args = parse_sub_args(setup_parser)
         init_dir(root_dir)
@@ -92,15 +84,15 @@ def main():
         hive_nix = root_dir / "generated/hive.nix"
         if args.hive_commands == "generate":
             _generate_args = parse_sub_args(generate_parser)
-            generate(root_dir, nixos_version)
+            generate(root_dir)
         elif args.hive_commands == "build":
             if not args.skip_generate:
-                generate(root_dir, nixos_version, query_hardware_config=True)
+                generate(root_dir, query_hardware_config=True)
             _, colmena_args = parse_known_sub_args(build_parser)
             colmena("build", hive_nix, colmena_args)
         elif args.hive_commands == "deploy":
             if not args.skip_generate:
-                generate(root_dir, nixos_version, query_hardware_config=True)
+                generate(root_dir, query_hardware_config=True)
             _, colmena_args = parse_known_sub_args(deploy_parser)
             colmena("apply", hive_nix, colmena_args)
         else:
@@ -129,9 +121,17 @@ def parse_known_sub_args(parser: argparse.ArgumentParser):
 
 
 def init_dir(root_path: Path):
+    # TODO: check for versions and nixConfigs
     (root_path / "nixConfigs").mkdir(parents=True, exist_ok=True)
     (root_path / "manifests").mkdir(parents=True, exist_ok=True)
     (root_path / "generated").mkdir(parents=True, exist_ok=True)
+    (root_path / "versions.yaml").write_text(
+        """{{
+  "nixos": "nixos-23.05",
+  "k3s": "v1.27.4-k3s1",
+  "disko": "v1.1.0"
+}}"""
+    )
 
 
 if __name__ == "__main__":

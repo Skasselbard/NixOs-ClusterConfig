@@ -1,7 +1,6 @@
 { config, lib, ... }: {
   options = with lib;
     with types; {
-      nixos_version = mkOption { type = str; };
       k3s = {
         version = mkOption { type = str; };
         init = {
@@ -40,5 +39,12 @@
         };
       };
     };
-  imports = [ ./admin.nix ./network.nix ./ssh.nix ./colmena.nix ];
+  imports = [
+    ./admin.nix
+    ./network.nix
+    ./ssh.nix
+    ./colmena.nix
+    ./setup.nix
+    ./partitioning.nix
+  ];
 }
