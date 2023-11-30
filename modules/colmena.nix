@@ -2,13 +2,15 @@
 
 with lib;
 with pkgs;
-with builtins; {
+with builtins;
+let
+  colmena_options = import (builtins.fetchurl
+    "https://raw.githubusercontent.com/zhaofengli/colmena/main/src/nix/hive/options.nix");
+in {
   options = with types; {
-    colmena.deployment = {
-      targetHost = mkOption {
-        type = nullOr str;
-        default = null;
-      };
-    };
+    colmena.deployment = (colmena_options.deploymentOptions {
+      inherit lib;
+      name = cfg.hostname;
+    }).options.deployment;
   };
 }

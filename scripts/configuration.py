@@ -9,8 +9,8 @@ from fnmatch import fnmatch
 
 # static paths
 script_path = os.path.abspath(os.path.dirname(__file__))
-crawler_path = os.path.abspath(script_path + "/config-crawler.nix")
 stages_path = os.path.abspath(script_path + "/../stages")
+crawler_path = os.path.abspath(script_path + "/config-crawler.nix")
 
 
 def generate(path: Path, efi_boot=True, query_hardware_config=False):
@@ -27,7 +27,7 @@ def generate(path: Path, efi_boot=True, query_hardware_config=False):
         folders = generate_folders(path, data)
         folders["iso"].write_text(generate_iso_nix(path, data))
         nixfmt(folders["iso"])
-        folders["mini_sys"].write_text(generate_mini_sys(path, data, efi_boot))
+        folders["mini_sys"].write_text(generate_mini_sys(path, data))
         nixfmt(folders["mini_sys"])
         if query_hardware_config:
             get_hardware_configuration(data, folders["hardware_configuration"])
@@ -66,7 +66,7 @@ in {{
 """
 
 
-def generate_mini_sys(path, host_data, efi_boot):
+def generate_mini_sys(path, host_data):
     # check if a hostID was defined and assign it if so
     host_id = None
     if (
@@ -78,10 +78,7 @@ def generate_mini_sys(path, host_data, efi_boot):
     ssh_keys = ""
     for key in host_data["config"]["admin"]["sshKeys"]:
         ssh_keys += f"\n''{key.strip()}''"
-    efi_boot_options = """
-boot.loader.systemd-boot.enable = true; 
-boot.loader.efi.canTouchEfiVariables = true;
-    """
+    boot_config = get_boot_information(path, host_data["file"])
     return f"""# This is an auto generated file.
     {{pkgs, lib, config, ... }}:
 let
@@ -95,6 +92,7 @@ in
     disko_module
   ];
   _disko_source = disko_source;
+  boot.loader = builtins.fromJSON ''{json.dumps(boot_config["boot"]["loader"])}'';
   partitioning = builtins.fromJSON ''{json.dumps(host_data["config"]["partitioning"])}'';
   hostname = "{host_data["config"]["hostname"]}";
   {f'networking.hostId = "{host_id}";' if host_id else ""}
@@ -108,7 +106,6 @@ in
   }};
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = config.services.openssh.ports;
-  {efi_boot_options if efi_boot else ""}
 }}
 """
 
@@ -116,36 +113,38 @@ in
 def generate_hive(path, host_data):
     ip_list = "\n".join(
         [
-            f'"{ip}" = ["{name}"];'
+            f"{ip} = {name}"
             for name, ip in generate_ip_list(host_data).items()
             if ip != "dhcp"
         ]
     )
-    extra_hosts = f"networking.extraHosts = {{\n{ip_list}\n}};"
+    extra_hosts = f'networking.extraHosts = "{ip_list}";'
     hive_nix = f"""# This is an auto generated file.
-let
-  disko_source = builtins.fetchTarball {get_disko_url(path)};
-  disko_module = "${{disko_source}}/module.nix";
-in
-{{
-  meta.nixpkgs = import (
-    builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/{get_versions(path)["nixos"]}.tar.gz"
-  ){{}};
-"""
+      let
+        disko_source = builtins.fetchTarball {get_disko_url(path)};
+        disko_module = "${{disko_source}}/module.nix";
+      in
+      {{
+        meta.nixpkgs = import (
+          builtins.fetchTarball "https://github.com/NixOS/nixpkgs/archive/{get_versions(path)["nixos"]}.tar.gz"
+        ){{}};
+      """
     for data in host_data:
         hardware_configuration = generate_folders(path, data)["hardware_configuration"]
         hive_nix += f"""
-    {data["config"]["hostname"]} = {{
-      imports = [ 
-        {data["file"]}
-        {hardware_configuration}
-        disko_module
-      ];
-      _disko_source = disko_source;
-      {extra_hosts}
-    }};
-}}"""
-        return hive_nix
+          {data["config"]["hostname"]} = {{
+            imports = [ 
+              {data["file"]}
+              {hardware_configuration}
+              disko_module
+            ];
+            _disko_source = disko_source;
+            {extra_hosts}
+            deployment = builtins.fromJSON ''{json.dumps(data["config"]["colmena"]["deployment"])}'';
+          }};
+        """
+    hive_nix += "}"
+    return hive_nix
 
 
 def generate_ip_list(host_data):
@@ -192,6 +191,17 @@ def definition_path_to_name(path):
 def get_host_information(path, nix_definition_file):
     return nix_eval(
         crawler_path,
+        args=[
+            ("host-definition", nix_definition_file),
+            ("disko_url", get_disko_url(path)),
+        ],
+    )
+
+
+def get_boot_information(path, nix_definition_file):
+    boot_crawler_path = os.path.abspath(script_path + "/boot-crawler.nix")
+    return nix_eval(
+        boot_crawler_path,
         args=[
             ("host-definition", nix_definition_file),
             ("disko_url", get_disko_url(path)),

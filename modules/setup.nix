@@ -40,6 +40,19 @@
             to 'environment.systemPackages' with the basename of the given path as script name.
           '';
         };
+        bootLoader.customConfig = mkOption {
+          type = nullOr attrs;
+          default = null;
+          description = ''
+            Custom configuration for the nixOs 'boot.loader' options used in the mini system.
+
+            The boot configuration for the mini system has to function. By default (if this option is 'null') specific options from your configuration (see 'scripts/boot-crawler.nix) are copied to the 'boot.loader' configuration of the generated mini system.
+            If this behavior does not work for you, you can set this option to be copied instead.
+          '';
+          example = {
+              grub.extraConfig = "smth smth";
+            };
+        };
       };
     };
 }
