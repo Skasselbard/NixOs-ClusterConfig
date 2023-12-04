@@ -4,11 +4,11 @@ wget -qO- https://github.com/Skasselbard/NixOS-Staged-Hive/archive/master.tar.gz
 echo '#!/bin/bash
 
 ROOT=$PWD
-CMD="nixos-staged-hive -p $ROOT ${@:1}"
+CMD="staged-hive -p $ROOT ${@:1}"
 cd bin
 nix-shell --run "$CMD"
-' > nixos-staged-hive
+' > staged-hive
 
-chmod +x nixos-staged-hive
+chmod +x staged-hive
 
-./nixos-staged-hive setup
+./staged-hive setup
