@@ -125,12 +125,12 @@ def init_dir(root_path: Path):
     (root_path / "nixConfigs").mkdir(parents=True, exist_ok=True)
     (root_path / "manifests").mkdir(parents=True, exist_ok=True)
     (root_path / "generated").mkdir(parents=True, exist_ok=True)
-    (root_path / "versions.yaml").write_text(
-        """{{
-  "nixos": "nixos-23.05",
-  "k3s": "v1.27.4-k3s1",
-  "disko": "v1.1.0"
-}}"""
+    (root_path / "versions.json").write_text(
+        """{
+          "nixos": "nixos-23.05",
+          "k3s": "v1.27.4-k3s1",
+          "disko": "v1.1.0"
+        }"""
     )
 
 

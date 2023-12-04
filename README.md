@@ -90,7 +90,7 @@ The installation process is devised into stages:
 
 # Mechanism
 
-The `nixos-staged-hive` script wraps all functionality.
+The `staged-hive` script wraps all functionality.
 It calls a python script in a nix-shell environment.
 All functionality is composited in the `hive.py` python script and excessable via subcommands.
 On execution these things are done:
@@ -120,7 +120,7 @@ curl -sSf https://raw.githubusercontent.com/Skasselbard/NixOS-Staged-Hive/main/i
 ## Prepare an installation medium
 
 ```shell
-./nixos-staged-hive install -n testvm -d /dev/USBdevice
+./staged-hive install -n testvm -d /dev/USBdevice
 ```
 
 ## Boot from the installation medium and run the setup a base system with your user and IP congifuration
@@ -133,7 +133,7 @@ setup
 ## Deploy your complete configuration
 
 ```shell
-./nixos-staged-hive hive deploy [colmena-args]
+./staged-hive hive deploy [colmena-args]
 ```
 
 for disko partitioning
