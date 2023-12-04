@@ -94,7 +94,7 @@ in
   _disko_source = disko_source;
   boot.loader = builtins.fromJSON ''{json.dumps(boot_config["boot"]["loader"])}'';
   partitioning = builtins.fromJSON ''{json.dumps(host_data["config"]["partitioning"])}'';
-  hostname = "{host_data["config"]["hostname"]}";
+  networking.hostName = "{host_data["config"]["networking"]["hostName"]}";
   {f'networking.hostId = "{host_id}";' if host_id else ""}
   interface= "{host_data["config"]["interface"]}";
   ip = "{host_data["config"]["ip"]}";
@@ -132,7 +132,7 @@ def generate_hive(path, host_data):
     for data in host_data:
         hardware_configuration = generate_folders(path, data)["hardware_configuration"]
         hive_nix += f"""
-          {data["config"]["hostname"]} = {{
+          {data["config"]["networking"]["hostName"]} = {{
             imports = [ 
               {data["file"]}
               {hardware_configuration}
@@ -150,7 +150,7 @@ def generate_hive(path, host_data):
 def generate_ip_list(host_data):
     ips = {}
     for data in host_data:
-        ips[data["config"]["hostname"]] = data["config"]["ip"]
+        ips[data["config"]["networking"]["hostName"]] = data["config"]["ip"]
     return ips
 
 
@@ -247,7 +247,7 @@ def nixfmt(file):
 
 
 def get_hardware_configuration(host_data, path):
-    hostname = host_data["config"]["hostname"]
+    hostname = host_data["config"]["networking"]["hostName"]
     admin = host_data["config"]["admin"]["name"]
     colmena_target = host_data["config"]["colmena"]["deployment"]["targetHost"]
     address = colmena_target if colmena_target else host_data["config"]["ip"]

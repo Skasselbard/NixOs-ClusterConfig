@@ -7,19 +7,21 @@ let
       host-definition
       # Setting dummy values and downloading disko source to make the module system happy
       {
+        config._module.check = false;
         config.nixpkgs.hostPlatform = "x86_64-linux";
-        options.disko = lib.mkOption { type = lib.types.attrs; };
+        # options.disko = lib.mkOption { type = lib.types.attrs; };
         config._disko_source = builtins.fetchTarball disko_url;
       }
     ] ++ (import <nixpkgs/nixos/modules/module-list.nix>);
   });
-in (if (eval.config.networking.hostId != null) then {
+in lib.attrsets.recursiveUpdate # combine hostid with rest of the config
+(if (eval.config.networking.hostId != null) then {
   # hostId is needed for zfs partitioning
   networking.hostId = eval.config.networking.hostId;
 } else
-  { }) // {
+  { }) {
     admin = eval.config.admin;
-    hostname = eval.config.networking.hostName;
+    networking.hostName = eval.config.networking.hostName;
     interface = eval.config.interface;
     ip = eval.config.ip;
     setup = eval.config.setup;

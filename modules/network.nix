@@ -1,31 +1,39 @@
 { lib, config, ... }:
 with lib; {
   options = with types; {
-    hostname = mkOption { type = str; };
+
     ip = mkOption {
       type = str;
       example = ''"dhcp" or "192.168.0.1'';
+      description =
+        lib.mdDoc "TODO: describe the interplay with kubernetes module";
     };
     interface = mkOption {
       type = str;
       example = "ens1";
+      description = lib.mdDoc ''
+        Sets this interface to be used for network configuration.
+
+        TODO:
+      '';
     };
-    gateway = mkOption { type = str; };
-    subnet = mkOption { type = str; };
-    netmask = mkOption { type = int; };
-    nameservers = mkOption {
-      type = listOf str;
-      default = [ "8.8.8.8" ];
+    gateway = mkOption {
+      type = str;
+      description = lib.mdDoc "TODO:";
     };
-    # domain = mkOption{type=types.str;};
+    subnet = mkOption {
+      type = str;
+      description = lib.mdDoc "TODO:";
+    };
+    netmask = mkOption {
+      type = int;
+      description = lib.mdDoc "TODO:";
+    };
   };
+  # TODO: include network only if kubernetes is included?
   config = with config; {
     networking = {
-      hostName = hostname;
-      # domain = config.domain;
-      nameservers = config.nameservers;
       macvlans.vlan1 = mkIf (ip != "dhcp") {
-        # wakeOnLan.enable = true;
         interface = interface;
         mode = "bridge";
       };
@@ -40,11 +48,6 @@ with lib; {
         interface = "vlan1";
       };
       interfaces."${interface}".useDHCP = mkIf (ip == "dhcp") true;
-      # TODO: add cluster nodes in /etc/hosts
-      # extraHosts = {
-      #   "127.0.0.1" = [ "foo.bar.baz" ];
-      #   "192.168.0.2" = [ "fileserver.local" "nameserver.local" ];
-      # };
     };
   };
 }
