@@ -10,7 +10,7 @@ in {
   options = with types; {
     colmena.deployment = (colmena_options.deploymentOptions {
       inherit lib;
-      name = cfg.hostname;
+      name = "{hostname}";
     }).options.deployment;
   };
 }
