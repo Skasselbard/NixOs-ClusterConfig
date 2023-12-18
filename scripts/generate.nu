@@ -1,6 +1,6 @@
 use std log
 
-let crawler_path = $"($env.FILE_PWD)/config-crawler.nix"
+let crawler_path = $"($env.FILE_PWD)/config-crawler-flake.nix"
 let boot_crawler_path = $"($env.FILE_PWD)/boot-crawler.nix"
 let iso_template_path = $"($env.FILE_PWD)/iso.nix"
 let disko_url = "https://github.com/nix-community/disko/archive/master.tar.gz" # FIXME: get flake url
@@ -142,7 +142,7 @@ def pipe_print [] {
 def versions [path: directory] { open $"($path)/versions.json" }
 
 def "get host-information" [configFile: path] {
-  ^nix-instantiate --eval --strict --json $crawler_path --argstr host-definition $configFile --argstr disko_url $disko_url | from json # TODO: nix-shell -p ?
+  ^nix-instantiate --eval --strict --json $crawler_path --argstr host-definition $configFile --argstr disko (fetch-input disko) | from json # TODO: nix-shell -p ?
 }
 
 def "get boot-information" [configFile: path] {
@@ -174,9 +174,13 @@ def "get hive-data" [
 }
 
 def "main test" [] {
-  cd /home/tom/repos/nix-blueprint
+  # cd /home/tom/repos/nix-blueprint
   # get_host_information /home/tom/repos/nix-blueprint/nixConfigs/lianli/default.nix
-  get hive-data lianli
+  fetch-input nixpkgs
+}
+
+def fetch-input [name] {
+  ^nix flake archive --json $name | from json | get path
 }
 
 # convert nuon data to nix
