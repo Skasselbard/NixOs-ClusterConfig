@@ -9,7 +9,7 @@ from fnmatch import fnmatch
 
 # static paths
 script_path = os.path.abspath(os.path.dirname(__file__))
-stages_path = os.path.abspath(script_path + "/../stages")
+iso_path = os.path.abspath(script_path + "/iso.nix")
 crawler_path = os.path.abspath(script_path + "/config-crawler.nix")
 
 
@@ -23,6 +23,7 @@ def generate(path: Path, efi_boot=True, query_hardware_config=False):
         {"file": config, "config": get_host_information(path, config)}
         for config in get_nix_definitions(nix_configs)
     ]
+    print("Generating files")
     for data in host_data:
         folders = generate_folders(path, data)
         folders["iso"].write_text(generate_iso_nix(path, data))
@@ -30,6 +31,7 @@ def generate(path: Path, efi_boot=True, query_hardware_config=False):
         folders["mini_sys"].write_text(generate_mini_sys(path, data))
         nixfmt(folders["mini_sys"])
         if query_hardware_config:
+            print(f"query hardware configuration for {definition_path_to_name(data['file'])}")
             get_hardware_configuration(data, folders["hardware_configuration"])
     hive_nix = path / "generated/hive.nix"
     hive_nix.write_text(generate_hive(path, host_data))
@@ -51,7 +53,7 @@ let
   disko_module = "${{disko_source}}/module.nix";
 in {{
   imports = [ 
-    {stages_path + "/0-iso.nix"}
+    {iso_path}
     disko_module
     ];
   config = machine-config //{{
@@ -273,10 +275,10 @@ def get_manifests(path):
     return [f"{manifest.name}" for manifest in manifests]
 
 
-def main(path: Path = None):
+def main(path: str = None, efi_boot = True, query_hardware_config = True):
     if path == None:
         path = Path().cwd()
-    return generate(path)
+    return generate(Path(path), efi_boot, query_hardware_config)
 
 
 if __name__ == "__main__":

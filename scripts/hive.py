@@ -69,6 +69,14 @@ def main():
             "colmena apply --help".split(), capture_output=True, text=True
         ).stdout,
     )
+    deploy_local_parser = hive_subparsers.add_parser(
+        name="deploy-local",
+        description="Forwards the given arguments to colmena apply.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=subprocess.run(
+            "colmena apply-local --help".split(), capture_output=True, text=True
+        ).stdout,
+    )
 
     args, _ = parser.parse_known_args()
     root_dir = Path(args.path)
@@ -95,6 +103,11 @@ def main():
                 generate(root_dir, query_hardware_config=True)
             _, colmena_args = parse_known_sub_args(deploy_parser)
             colmena("apply", hive_nix, colmena_args)
+        elif args.hive_commands == "deploy-local":
+            if not args.skip_generate:
+                generate(root_dir, query_hardware_config=True)
+            _, colmena_args = parse_known_sub_args(deploy_local_parser)
+            colmena("apply-local", hive_nix, colmena_args)
         else:
             print(hive_parser.usage)
     else:

@@ -1,5 +1,5 @@
 {
-  "nixos": "nixos-23.05",
+  "nixos": "nixos-23.11",
   "k3s": "v1.27.4-k3s1",
   "disko": "v1.1.0"
 }
