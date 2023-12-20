@@ -1,13 +1,17 @@
 use std log
 
 let crawler_path = $"($env.FILE_PWD)/config-crawler-flake.nix"
-let boot_crawler_path = $"($env.FILE_PWD)/boot-crawler.nix"
+let boot_crawler_path = $"($env.FILE_PWD)/boot-crawler-flake.nix"
 let iso_template_path = $"($env.FILE_PWD)/iso.nix"
-let disko_url = "https://github.com/nix-community/disko/archive/master.tar.gz" # FIXME: get flake url
 
+# Generates a hive configuration including installation isos in the `generated`folder.
 def "main generate" [
-  path # root configuration path 
+  path: directory # The root directory to search for the necessary files
   name? # name of a config in the 'nixConfigs' folder
+  --query-hardware-config (-q) = true 
+  # Wether to query the hardware configurations from the deployment targets.
+  # A hardware configuration is necessary for the final configuration, but can be skipped
+  # for iso generation.
 ] {
   cd $path
   let hive_data = if ($name | is-empty ) {get hive-data} else {get hive-data $name}
@@ -18,7 +22,7 @@ def "main generate" [
   }
 }
 
-def "main generate iso" [
+export def "main generate iso" [
   path # root configuration path 
   name # name of a config in the 'nixConfigs' folder
   hive_data? # preparsed configuration data
@@ -30,6 +34,7 @@ def "main generate iso" [
   let mini_sys_file = ($path | path expand) + "/generated/" + $name + "/mini_sys.nix"
   $mini_sys_file | path dirname | mkdir $in
   main generate mini-sys $path $name $hive_data | save -f $mini_sys_file
+  let disko = nix fetch disko
   $"# This is an auto generated file.
   {pkgs, lib, ... }:
   let
@@ -37,17 +42,15 @@ def "main generate iso" [
       import ($crawler_path) {
         inherit pkgs lib;
         host-definition = `($host_file)`;
-        disko_url = `($disko_url)`;
+        disko = `($disko)`;
       };
-    disko_source = builtins.fetchTarball `($disko_url)`;
-    disko_module = `${disko_source}/module.nix`;
   in {
     imports = [ 
-      disko_module
+      ($'($disko)/module.nix')
       ($iso_template_path)
       ];
     config = machine-config //{
-      _disko_source = disko_source;
+      _disko_source = ($disko);
       environment.etc = {
         `nixos/configuration.nix` = { source = ($mini_sys_file); };
         `nixos/versions.json` = { text = ''(versions $path)''; };
@@ -56,7 +59,7 @@ def "main generate iso" [
  }" | str replace -a '`' '"' |  ^nixfmt
 }
 
-def "main generate mini-sys" [
+export def "main generate mini-sys" [
   path # root configuration path 
   name # name of a config in the 'nixConfigs' folder
   hive_data? # preparsed configuration data
@@ -68,19 +71,16 @@ def "main generate mini-sys" [
   let host_id = try { ($host_data.networking.hostId) }
   # format ssh key list for nix
   let ssh_keys = $host_data.admin.sshKeys | each {|k| $"\n''($k | str trim)''"} | lines | str join
+  let disko = nix fetch disko
   $"# This is an auto generated file.
   {pkgs, lib, config, ... }:
-  let
-    disko_source = builtins.fetchTarball ($disko_url);
-    disko_module = `${disko_source}/module.nix`;
-  in
   {
     imports = [ 
       ./hardware-configuration.nix
       ./modules
-      disko_module
+      ($'($disko)/module.nix')
     ];
-    _disko_source = disko_source;
+    _disko_source = ($disko);
     boot.loader = ($host_data.boot.loader | to nix );
     partitioning = ($host_data.partitioning | to nix );
     networking.hostName = `($host_data.networking.hostName)`;
@@ -99,7 +99,7 @@ def "main generate mini-sys" [
   " | str replace -a '`' '"' | ^nixfmt
 }
  
-def pipe_print [] {
+def piprint [] {
   let msg = $in; print $msg; $msg
 }
 
@@ -142,11 +142,11 @@ def pipe_print [] {
 def versions [path: directory] { open $"($path)/versions.json" }
 
 def "get host-information" [configFile: path] {
-  ^nix-instantiate --eval --strict --json $crawler_path --argstr host-definition $configFile --argstr disko (fetch-input disko) | from json # TODO: nix-shell -p ?
+  ^nix-instantiate --eval --strict --json $crawler_path --argstr host-definition $configFile --argstr disko (nix fetch disko) | from json # TODO: nix-shell -p ?
 }
 
 def "get boot-information" [configFile: path] {
-  ^nix-instantiate --eval --strict --json $boot_crawler_path --argstr host-definition $configFile --argstr disko_url $disko_url | from json # TODO: nix-shell -p ?
+  ^nix-instantiate --eval --strict --json $boot_crawler_path --argstr host-definition $configFile --argstr disko (nix fetch disko) | from json # TODO: nix-shell -p ?
 }
 
 # get all nix definitions from the directory
@@ -169,7 +169,7 @@ def "get hive-data" [
   let configPath = glob *[nN]ix[cC]onfigs | get -i 0
   if ($configPath | is-empty ) { 
     log error $"No 'nixConfigs' folder found"; exit 1 }
-  let definitions = get nix-definitions $configPath | if ($name | is-empty) {$in} else {$in | filter {|e| $e.name == $name}}
+  let definitions = get nix-definitions $configPath |  if ($name | is-empty) {$in} else {$in | filter {|e| $e.name == $name}}
   $definitions | each {|def| $def | insert config (get host-information $def.file) } | filter {|def| not ($def.config | is-empty) } | each {|def| insert config.boot (get boot-information $def.file).boot}
 }
 
@@ -179,8 +179,12 @@ def "main test" [] {
   fetch-input nixpkgs
 }
 
-def fetch-input [name] {
+def "nix fetch" [name] {
   ^nix flake archive --json $name | from json | get path
+}
+
+def "nix resolve" [name] {
+  ^nix eval --raw $"($env.FILE_PWD)/..#($name)"
 }
 
 # convert nuon data to nix
@@ -198,7 +202,7 @@ def "to-nix" [] {
         |e| $'($e.k | to-nix-id) = ($e.v | to-nix );'
         } | str join)}"
     }
-    $type if ($type | str starts-with "list") => ( $"[($in | each {|e| $e | to-nix } | str join)]")
+    $type if ($type | str starts-with "list") => ( $"[($in | each {|e| $e | to-nix } | str join ' ')]")
     $type if ($type | str starts-with "table") => {
       log error $"unable to convert table to nix \n ($in | print)"
     }
@@ -220,6 +224,6 @@ def to-nix-id [] {
   if ($in | parse -r "[a-zA-Z_][a-zA-Z0-9_'-]*" | length) != 1 {$'"($in)"'} else {$in}
 }
 
-def main [] {
-  "Use --help to priont the usage."
-}
+# def main [] {
+#   "Use --help to print the usage."
+# }
