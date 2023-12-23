@@ -50,10 +50,10 @@
       };
     };
   imports = [
-    ./admin.nix
-    ./network.nix
+    # ./admin.nix
+    # ./network.nix
     ./ssh.nix
-    ./colmena.nix
+    # ./colmena.nix
     ./setup.nix
     ./partitioning.nix
   ];
