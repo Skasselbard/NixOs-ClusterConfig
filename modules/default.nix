@@ -50,7 +50,6 @@
       };
     };
   imports = [
-    ./setup.nix
     ./partitioning.nix
   ];
 }
