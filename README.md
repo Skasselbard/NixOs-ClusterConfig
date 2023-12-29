@@ -122,12 +122,7 @@ Example:
 
 | :warning: **Notice**   
 |:------------------------|
-| Only add entire devices to a partitioning type (ephemeral or persistent).
-| Do not split disko configuration for a single device (e.g. drive or zpool).
-| However, different devices can be put in different partitioning types.
-| If you format a device partially the partition table will differ from the combined disko configuration
-| (ephemeral + persistent).
-| Your configuration will not work without intervention in this case.
+| Only add entire devices to a partitioning type (ephemeral or persistent). Do not split disko configuration for a single device (e.g. drive or zpool). However, different devices can be put in different partitioning types. If you format a device partially the partition table will differ from the combined disko configuration (ephemeral + persistent). Your configuration will not work without intervention in this case.
 
 
 
