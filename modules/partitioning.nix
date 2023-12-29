@@ -11,8 +11,7 @@ in {
           default = { };
           description = lib.mdDoc ''
             This disko definitions will be used to build a formating script and for the systems mounting configuration (see [disko docs](https://github.com/nix-community/disko/blob/master/docs/INDEX.md)).
-            The script will be added to `$PATH` and executable with `disko-format`.
-            It will be executed running the `setup` script (but can be skipped).
+            Additionally a script with the configuration from `partitioning.ephemeral` will be created as `partitioning.ephemeral_script`.
           '';
           example.devices = {
             disk = {
@@ -50,9 +49,10 @@ in {
           default = { };
           description = lib.mdDoc ''
             This disko definitions will be used in addition to the formatting definition to build the whole disko definition for mounting configuration (see [disko docs](https://github.com/nix-community/disko/blob/master/docs/INDEX.md)).
-            Additionally a script with the combined configuration from `partitioning.format_disko` and `partitioning.additional_disko` will be created.
-            The script will be added to `$PATH` and executable with `disko-format-ALL`.
-            It will not be executed with the `setup` script
+            Additionally a script with the combined configuration from `partitioning.ephemeral` and `partitioning.persistent` will be created as `partitioning.persistent_script`.
+            WARNING: Make sure on the target host are devices partitioned according to this config, otherwise your machine might not boot or function as expected.
+            You can make an initial setup by running `partitioning.persistent_script`.
+            This will whipe all your configured devices however.
           '';
           example.devices = {
             disk = {

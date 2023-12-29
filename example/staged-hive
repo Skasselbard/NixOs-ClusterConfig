@@ -1,7 +1,0 @@
-#!/bin/bash
-
-ROOT=$PWD
-CMD="staged-hive -p $ROOT ${@:1}"
-cd bin
-nix-shell --run "$CMD"
-

@@ -3,8 +3,15 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
-    disko.url = "github:nix-community/disko/v1.1.0";
-    nixos-anywhere.url = "github:nix-community/nixos-anywhere";
+    disko = {
+      url = "github:nix-community/disko/v1.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-anywhere = {
+      url = "github:nix-community/nixos-anywhere";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.disko.follows = "disko";
+    };
   };
 
   outputs = { self, nixpkgs, disko, nixos-anywhere, ... }@inputs:
@@ -41,16 +48,16 @@
               builtins.concatStringsSep " " extraArgs
             } root@${ip}
           '';
+        formatScript = deviceDefinitions:
+          (disko.lib.diskoScript {
+            disko = (self.lib.mergeDiskoDevices deviceDefinitions);
+          });
       };
       packages.${system} = {
         default = pkgs.writeScriptBin "staged-hive"
           "${pkgs.nushell}/bin/nu ${self}/scripts/hive.nu \${@:1}";
-        test = self.lib.mergeDiskoDevices {
-          deviceDefinitions = [
-            (import /home/tom/repos/nix-blueprint/storage/test-os.nix)
-            (import /home/tom/repos/nix-blueprint/storage/test-persistent.nix)
-          ];
-        };
+        # Concatinates a list of disko device definitions and build the corresponding format script
+        # (including a whipe of the devices).
       };
       apps.${system} = {
         generation = {

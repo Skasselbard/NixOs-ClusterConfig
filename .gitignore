@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 example/bin/*
 example/generated/*
+.vscode/*

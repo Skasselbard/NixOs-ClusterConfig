@@ -6,6 +6,9 @@ This project tries to automate the installation process of multiple NixOs machin
 The goal is to take virgin machines and boot up a configuration that can be managed with colmena.
 A secondary goal is to configure [K3s](https://k3s.io/) on a subset of these machines.
 
+During the switch to nix flakes, this project got quite a bit simpler.
+As a result, what now is stage two is more of a hint or a guide line and not reflected in the tools anymore.
+
 ## Goals
 
 1. Create installation media for an initial machine setup
@@ -18,12 +21,11 @@ A secondary goal is to configure [K3s](https://k3s.io/) on a subset of these mac
 # Additional Features
 
 - partitioning module with disko
-- generating ``hosts`` file entries for static hosts
-- In Progress: k3s kubernetes module (containerized)
+- (WIP) generating ``hosts`` file entries for static hosts
+- (WIP) k3s kubernetes module (containerized)
   - initialized with k3s manifest files
   - Maybe: with configurable argocd (but probably only in an example manifest)
-- fixable versions
-- extendable setup phase (with scripts and files)
+- fixable versions with flakes
 - Maybe coming: print a configuration summary (e.g. for the ip configuration)
 
 # Assumptions
@@ -35,12 +37,8 @@ Others reflect personal taste.
 The following assumptions may be of interest:
 
 - You running a linux system (with nix installed) for deployment.
-- every nix file or folder in the given path is a machine definition
-- The nix configuration is built on the deploying machine
-- Each host has an admin user
+- flakes are used is a central source of configuration
 - Hosts are accessible by ssh
-  - ssh connections prohibit passwords and root logins (only ssh keys are allowed)
-  - the admin user has a password for sudo once an ssh connection is established
 - The data on the installation medium is disposable and can be overwritten
 
 # Stages
@@ -48,113 +46,241 @@ The following assumptions may be of interest:
 The installation process is devised into stages:
 
 0. Installation medium with network config
-1. Minimal System with network config
-2. [Colmena TODO: link]() Hive
+1. [nixos-anywhere](https://github.com/nix-community/nixos-anywhere/tree/main) remote installation
+2. Nixos configuration management
 3. Optional: K3s Kubernetes configuration
 
-## Stage 0: Bootable iso image for installation medium
+## Stage 0: Bootable Iso Image for Installation Medium
 
 - build a bootable image for the initial machine setup
-  - used to install the minimal system (stage 2)
-  - started by the `setup` script available in `$PATH`
+  - used to for remote system install (stage 1)
 - physical access to the machine is needed but should be kept to a minimum
-- the installation prozess should be possible remotely
-  => network and user configuration is necessary
   - the internet has to be reachable
-- optional: partitioning schould be done decleratively
-  => uso of [disko TODO: link]()
-  => disko configuration is needed on the bootable image
-- setup process should extendable (see `setup` options)
-  - scripts and files can be added to the image
-  - scripts can be added to the execution of the `setup` script before and after the nixos installation
+- can be used to retrieve the hardware-configuration.nix hardware-configuration.nix
 
-## Stage 1: minimal system configuration for Colmena setup
+
+
+## Stage 1: Remote Installation with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere/tree/main)
 - an initial intermediate installation
   - installed from the image from stage 0
   - extended to the full system with colmena in stage 2
-- should be as small as possible for quick installation
-  - boot options have to be set according to the machine constraints
-  - optional: partitioning should be setup as configured
-  - networking and user configuration has to be set up
-- hardware-configuration.nix should be retrieved
-- resulting host has to be reachable for the hive configuration in stage 3
-- the configuration has to be independent from additional nix modules (and other local files) so that it can be installed from the iso environment
-  - resolving all dependencies, if possible at all, is not worth the effort
+- optional: partitioning with [disko](https://github.com/nix-community/disko/tree/master)
+  - the partitioning module helps to define formatting scripts
+  - since disko currently [cannot handle partial application](https://github.com/nix-community/disko/issues/264#issuecomment-1591625257) you can split the disk configuration in ephemeral and persistent storage. If you deploy by using `lib.deploy`, only the ephemeral config will be wiped by default.
 
-## Stage 2: Colmena Hive Deployment
-- All hosts are composed into a Colmena hive definition file and deployed.
-- A hive declaration should be generated
-  - should be generated from normal nixos declarations (configuratin.nix)
-  - information from the nixos configuration should be reused when possible
-  - nixos version should be configurable
 
-# Mechanism
+## Stage 2: Nixos Configuration Management
+- To manage your host you can run `nixos-rebuild` for remote hosts by specifying a `target host`.
+Example:
+```bash
+nixos-rebuild --flake .#<nixosConfiguration> switch --target-host "root@<ip>"
+```
+- You can also use deployment tools like [Colmena](https://github.com/zhaofengli/colmena) or [NixOps](https://github.com/NixOS/nixops)
 
-The `staged-hive` script wraps all functionality.
-It calls a python script in a nix-shell environment.
-All functionality is composited in the `hive.py` python script and excessable via subcommands.
-On execution these things are done:
 
-1. A folder named `nixConfigs` with nixos definitions (nix files) is read
-   - every top level folder and file in `nixConfigs` is assumed to be a machine definition
-2. crawl each definition and parse specific nixos options defined by modules from this project (mainly user, ssh and network options)
-3. generate a nix file for each stage with the parsed options
-   - the generated folder is named after the foldername (or file name) parsed from `nixConfigs`
-   - an `iso.nix` is generated for each host to build the stage 0 image
-   - a `mini_sys.nix` is generated for each host to build the mini system declaration used in stage 1
-   - a `hive.nix` is generated for all host to be used by colmena in stage 2
-4. depending on the sub command following functionality can be accessed
-   1. TODO: setup: create the necessary folder structure
-   2. install:
-     - generate the iso for a single host and optionally write it on a boot medium
-   3. hive:
-     - Wrapper around colmena with the previous generation steps included
+# Usage
+## Include the project and other tools in your flake
 
-# Usage FIXME: Test the commands
-## Download the scripts and set up the configuration
+Example:
+```nix
+{
+   inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+    hive = {
+      url = "github:/Skasselbard/NixOs-Staged-Hive/flakes"; # TODO: Test the url
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.disko.follows = "disko"; # Use your preferred disko version
+    };
+    # You can lock your preferred disko version
+    disko = {
+      url = "github:nix-community/disko/v1.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Nixos generators is used to build the installation images
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
+    # ...
+ };
+ # ...
+}
+```
+
+## Configure your machines
+
+1. Include all dependencies.
+2. Define your disko devices
+  - I find it useful to make a separate definition for each physical device
+  - You can use the `mergeDiskoDevices` function provided by this projects `lib` to merge them together.
+3. Include your disko devices with the `partitioning` module of this project
+  - ephemeral devices will get wiped in the remote installation (stage 1).
+    - For NixOs it is useful to include the OS device in the ephemeral storage.
+  - persistent devices will not be formatted by default
+    - Use this for all devices that should not be touched in a possible future reinstallation of the system or already formatted data drives
+
+| :warning: **Notice**   
+|:------------------------|
+| Only add entire devices to a partitioning type (ephemeral or persistent).
+| Do not split disko configuration for a single device (e.g. drive or zpool).
+| However, different devices can be put in different partitioning types.
+| If you format a device partially the partition table will differ from the combined disko configuration
+| (ephemeral + persistent).
+| Your configuration will not work without intervention in this case.
+
+
+
+Example:
+
+```nix
+{
+  outputs = inputs@{ self, nixpkgs, hive, disko, nixos-generators, ... }:
+    with hive.lib;
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+    in {
+      nixosModules = {
+        machines = with self.nixosModules.storage; {
+          test = with builtins; {
+            inherit system;
+            modules = [ 
+              # hive include for partitioning (WIP: and kubernetes)
+              hive.nixosModules.default
+              # disko include to build custom formatting scripts in the hive module
+              disko.nixosModules.default
+              {
+              partitioning = {
+                # Usually the os can be wiped if the machine should be reinstalled
+                # so the os device can be ephemeral
+                ephemeral = (mergeDiskoDevices [ devices.test-os ]);
+                persistent = (mergeDiskoDevices [ 
+                  devices.test-persistent2 
+                  devices.test-persistent1
+                ]);
+              };
+            }];
+          };
+        };
+        storage = {
+          devices = {
+            test-os = { disk = {
+              # your disko config
+            };};
+            test-persistent1 ={ disk = {
+              # your disko config
+            };};
+            test-persistent1 ={ disk = {
+              # your disko config
+            };};
+          };
+        };
+      };
+      # define your host configuration
+      nixosConfigurations = {
+        test = nixpkgs.lib.nixosSystem self.nixosModules.machines.test;
+      };
+
+      # ...
+
+    };
+}
+```
+
+Test your configuration:
 ```shell
-curl -sSf https://raw.githubusercontent.com/Skasselbard/NixOS-Staged-Hive/main/install.sh | sh
+nixos-rebuild --flake .#test build
 ```
 
 ## Prepare an installation medium
 
-```shell
-./staged-hive install -n testvm -d /dev/USBdevice
+You can use `nixos-generators` and this projects lib to crate installation isos for the remote
+installation system.
+
+Example:
+
+```nix
+{
+  outputs = inputs@{ self, nixpkgs, hive, disko, nixos-generators, ... }:
+    with hive.lib;
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+    in {
+
+      # ...
+
+    packages.${system} = with hive.lib; 
+      with self.nixosConfigurations;{
+       # use nixos-generators to build an installation iso
+       iso = nixos-generators.nixosGenerate ({
+           format = "iso";
+         # You can find a configurable nixos image in a helper function of this project
+         } // hive.outputs.nixosModules.bootImage {
+           ip = "192.168.122.100"; # The ip address of the booted installer system
+           rootSSHKeys = # A list of ssh keys to reach the system (as root)
+             [ (builtins.readFile "${self}/userConfigs/sshKeys/default") ];
+         });
+       };
+    };
+}
 ```
 
-## Boot from the installation medium and run the setup a base system with your user and IP congifuration
+Build the system:
 
-On the machine:
 ```shell
-setup
+nix build .#iso 
 ```
+
+`nix build` will link the result in $PWD.
+You can than use `dd` or another tool to copy the iso to an installation medium
+(or use the iso directly in a vm).
+
 
 ## Deploy your complete configuration
 
-```shell
-./staged-hive hive deploy [colmena-args]
+You can use `lib.deploy` from this project to run `nixos-anywhere` with your settings.
+The `deploy` function will reset the formatting script used by nixos-anywhere
+to only format the config under `partitioning.ephemeral`.
+If you want to wipe the entire configuration set `wipePersistentStorage = true;` in the
+function call.
+
+Example:
+
+```nix
+{
+  outputs = inputs@{ self, nixpkgs, hive, disko, nixos-generators, ... }:
+    with hive.lib;
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+    in {
+
+      # ...
+
+    packages.${system} = with hive.lib; 
+    with self.nixosConfigurations;{
+      # Use the deploy function to run nixos-anywhere
+      deployTest = deploy {
+         config = test.config;
+         ip = "192.168.122.100"; # use the ip configured in the iso
+         extraArgs = [ "--tty" ]; # provide [extraArgs](https://github.com/nix-community/nixos-anywhere/blob/main/src/nixos-anywhere.sh)
+         # wipePersistentStorage = true; # If uncommented: wipe all configured devices
+      };
+    };
+  };
+}
 ```
 
-for disko partitioning
-- get device ids from iso boot
-- generate hostID for zfs hosts
-- write disko config
-- fix partially formatted disk
-  - run fsck for ext file systems
-  - run ntfsfix for ntfs file system
-  - best practise:
-    - manually format with ``sudo disko-format`` before running the setup script
+- Boot your machine from the installation medium.
+- run nixos-anywhere:
 
+```shell
+nix run .#deployTest  
+```
 
-## TODO: Fixable Versions
+# (WIP) Build and run custom formatting scripts
 
-- NixOs Versions:
-- Disko Versions:
-- k3s versions: take a tag from here https://hub.docker.com/r/rancher/k3s/tags #FIXME: Version is not used for server container
-
-# Known Issues
-
-- partially formatted EFI host does not boot into the mini system after installation
-  - this apparently happens for when I am testing around with formatting and skip the formatting step for an installation after a reboot
-  - reformatting (partially) and reinstalling the mini system without a reboot avoids this issue for me
+If you need to reformat a set of your devices you can build and run a custom format script
+with the `lib.formatScript` function of this project.
