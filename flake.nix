@@ -32,7 +32,7 @@
         deploy = {
           # the host configuration with the default nixos Module from this project included
           config,
-          # the deployment tagret where niixos should be installed on
+          # the deployment tagret where nixos should be installed on
           ip,
           # if true the persistent storage will be formatted in addition to the ephemeral storage
           wipePersistentStorage ? false,
@@ -48,28 +48,39 @@
               builtins.concatStringsSep " " extraArgs
             } root@${ip}
           '';
-        formatScript = deviceDefinitions:
-          (disko.lib.diskoScript {
-            disko = (self.lib.mergeDiskoDevices deviceDefinitions);
-          });
-      };
-      packages.${system} = {
-        default = pkgs.writeScriptBin "staged-hive"
-          "${pkgs.nushell}/bin/nu ${self}/scripts/hive.nu \${@:1}";
+        # Run a format script as root on a remote host.
         # Concatinates a list of disko device definitions and build the corresponding format script
         # (including a whipe of the devices).
-      };
-      apps.${system} = {
-        generation = {
-          type = "app";
-          program = "${self.packages.${system}.default}/bin/hive-generate";
-        };
+        formatScript = {
+          # the deployment tagret where nixos should be installed on
+          ip,
+          # list of extra arguments (strings) passed to ssh
+          sshArgs ? [ "-t" ] }:
+          deviceDefinitions:
+          let
+            script = disko.lib.diskoScript {
+              disko = (self.lib.mergeDiskoDevices deviceDefinitions);
+            } pkgs;
+          in pkgs.writeScriptBin "deploy" ''
+            echo "Format configured disko devicves?"
+            echo "WARNING: all disk content will be erased if you select yes!"
+            [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit
+            echo "Formatting disko config."
+            script=$(${pkgs.nix}/bin/nix build ${script} --print-out-paths)
+            echo "Using script $script"
+            ${pkgs.nix}/bin/nix copy --to "ssh://root@${ip}" "$script"
+            ssh ${builtins.concatStringsSep " " sshArgs} root@${ip} $script
+
+          '';
       };
       nixosModules = {
         default = { config, pkgs, lib, ... }: {
           imports = [ "${self}/modules" ];
           _module.args.specialArgs.disko =
             disko; # TODO: Should it be done just because it can be done?
+        };
+        vault = { config, pkgs, lib, ... }: {
+          imports = [ "${self}/modules/vault.nix" ];
         };
         bootImage = { rootPasswd ? "setup", rootPasswdHash ? null
           , rootSSHKeys ? [ ], ip, ... }: {

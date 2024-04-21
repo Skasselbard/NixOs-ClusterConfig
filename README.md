@@ -79,6 +79,7 @@ nixos-rebuild --flake .#<nixosConfiguration> switch --target-host "root@<ip>"
 
 
 # Usage
+
 ## Include the project and other tools in your flake
 
 Example:
@@ -87,7 +88,7 @@ Example:
    inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     hive = {
-      url = "github:/Skasselbard/NixOs-Staged-Hive/flakes"; # TODO: Test the url
+      url = "github:/Skasselbard/NixOs-Staged-Hive";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.disko.follows = "disko"; # Use your preferred disko version
     };
@@ -151,8 +152,8 @@ Example:
                 # so the os device can be ephemeral
                 ephemeral = (mergeDiskoDevices [ devices.test-os ]);
                 persistent = (mergeDiskoDevices [ 
-                  devices.test-persistent2 
                   devices.test-persistent1
+                  devices.test-persistent2 
                 ]);
               };
             }];
@@ -166,7 +167,7 @@ Example:
             test-persistent1 ={ disk = {
               # your disko config
             };};
-            test-persistent1 ={ disk = {
+            test-persistent2 ={ disk = {
               # your disko config
             };};
           };
@@ -275,7 +276,36 @@ Example:
 nix run .#deployTest  
 ```
 
-# (WIP) Build and run custom formatting scripts
+# Build and run custom formatting scripts
 
 If you need to reformat a set of your devices you can build and run a custom format script
 with the `lib.formatScript` function of this project.
+
+Example:
+
+```nix
+{
+  outputs = inputs@{ self, nixpkgs, hive, disko, nixos-generators, ... }:
+    with hive.lib;
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+    in {
+
+      # ...
+
+    packages.${system} = with hive.lib; 
+    with self.nixosConfigurations;{
+      format = hive.lib.formatScript { ip = "192.168.122.100"; }
+            # e.g. the second persistent storage changed and needs to be formatted
+            [ self.nixosModules.storage.devices.test-persistent2 ];
+    };
+  };
+}
+```
+
+Run the script:
+
+```shell
+nix run .#format
+```
