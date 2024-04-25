@@ -1,0 +1,143 @@
+# - All fields should be rather static values that only change if the hardware or cluster composition changes
+# - Dynamic fields should be imported with modules if possible
+# - The structure should be exportable to a list of NixOs modules
+#   - and a list of deployment methods
+# a tool should be able to parse the config and build views; e.g.:
+#   - hardware info (maybe also retrieved by ssh)
+#   - vm configuration
+#   - configured hosts with type and ip configuration
+#   - a list of dns names with ip and usage information
+#   - version information
+#   - k3s information (configured and retrieved)
+#   - configured users on different machines
+#   - configured interfaces and ips
+#   - imported views for each configured service
+
+domain: com
+
+# hardware maybe a separate repository?
+hardware:
+  drives:
+    - vendor: Samsung
+      model: SSD_EVO
+      size: 1024GB
+      year: 2015
+      serial: S4HJK23LN2SSFNK
+      device: "/dev/disk/by-id/ata-${model}_${size}_${serial}"
+
+clusters:
+  - test: ... # test.com
+  - example: # example.com
+      # each service should be a separate repository
+      # services should have some default values for dns building
+      services:
+        generic: # generic.example.com
+          dns: default # example.com
+          roles:
+            role1: all # role1.generic.example.com
+            role2: hostX # role2.generic.example.com
+          config: "..."
+
+        vault:
+          api: hostX
+          replicas:
+            - hostY
+            - hostZ
+          config:
+            logLevel: info
+            ui: true
+            certPath: /var/lib/vault/certs/
+
+        k3s:
+          roles:
+            # TODO: include ports?
+            init: hostX:port # init.k3s.example.com
+            server:
+              - hostX # hostX.k3s.example.com (maybe: hotX.example.com?)
+              - iface.hostY # TODO: make interfaces configurable? (might be ootb)
+            agent:
+              - hostY
+              - hostZ
+          config:
+            version:
+              agent: 1.2.3
+              server: 1.2v3
+            manifests:
+              - path1
+              - path2
+              -
+
+      machines: # machines.example.com
+        - host1: ...
+        - host2:
+            modules: [...]
+
+            services:
+              - samba: # samba.host2.machines.example.com
+                interface: eno1
+                port: 2342
+                config: ...
+
+            # maybe users (for overview)
+            users:
+              - user1: userconfig # nixos standard?
+
+            # maybe groups
+            groups:
+              - admins: # added to users.groups
+                gid: 6747
+                permissions: ... # relevant?
+                paths: # chown group?
+                  - /var/admins/
+                files: # chown group?
+                  - /var/groups/adminFile
+
+            interfaces:
+              - eno1:
+                  vlans:
+                    - vlan1:
+                        dns: other # eno1.host2.machines.example.com
+                        mode: bridge
+                        v4:
+                          ip: w.x.y.z
+              - enps2:
+                  dns: default # host2.machines.example.com, enps2.host2.machines.example.com
+                  v4:
+                    ip: "192.168.0.1" 
+                    netmask: /255
+                  v6: ...
+              - eth3:
+                  dns: unused # not listed in dns
+                  v4:
+                    ip: "dhcp"
+
+            partitioning:
+              persistent: diskoConfig
+              ephemeral: diskoConfig
+
+            # virtualization should be a separate repository?
+            virtualization:
+              libvirt:
+                - vm1: someConfig # vm1.virtualization.host2.machines.example.com
+                  # how could the ip be accessable?
+
+              nspawn:
+                - k3sServer: # k3sServer.virtualization.host2.machines.example.com
+                  dns: default # or unsed
+                  macvlans: [eno1]
+                  extraConfig: [(BuildK3sServer initHost serverIp) nixosModules]
+                  otherConfig: ...
+
+              podman:
+                networks:
+                  - driver: macvlan
+                    interface: eno1
+                    gateway: eno1.host2 ?
+                    subnet: netmask.eno1.host2 ?
+
+                containers:
+                  - k3sAgent: # k3sAgent.virtualization.host2.machines.example.com
+                    dns: default # or unsed
+                    privileged: true
+                    ip: "x.y.z.w"
+                    cmd: buildK3sAgent
