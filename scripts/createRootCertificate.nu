@@ -50,7 +50,17 @@ def "main vault setup" [token] {
 def "main vault intermediate" [token] {
   setupVaultEnv $token
 
-  TODO:
+  # TODO:
+  # - create a solid static name configuration
+  # - use names for vault configuration
+  # - check if vault agent makes connections easier
+  # - initialize raft cluster automatically (as far as possible)
+  # - write a private script for unsealing
+  # - setup machine joining
+  # - setup authentication
+  # - setup roles
+  # - find a way to authenticate linux services
+  # - manage secrets for cluster creeation
   createVaultSignedIntermediate
 }
 
