@@ -30,6 +30,7 @@
   - physical machines
   - containers
   - VMs
+- TODO: should ther be different selector types that can select for different things?
 
 ### Cluster Service
 
@@ -61,6 +62,19 @@ TODO: necessary?
           - e.g. 'api'
           - can contain multiple selectors
           - selector example for service 'vault.example.com': api.vault.example.com
+      - machine
+        - e.g. host1
+        - can have multiple interfaces and virtual sub hosts
+        - selector example for cluster 'example.com': host1.example.com
+        - interface
+          - e.g. eno1
+          - can have multiple ip adresses
+          - selector example for machine 'host1.example.com': eno1.host1.example.com
+        - virtual host
+          - e.g. vm1
+          - can have zero or more ip addresses
+          - selector example for machine 'host1.example.com': vm1.host1.example.com
+
 
 - following selectors export a function that can generate a config
   - service
