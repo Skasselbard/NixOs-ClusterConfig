@@ -1,177 +1,100 @@
 { pkgs }:
 with pkgs.lib;
-with pkgs.lib.types;
 let
 
-  domainType = {
-    # build = mkOption {type = listOf derivation} TODO: maybe an internal attr that stores the system configs
-    suffix = domainDefinitionType;
-    clusters = mkOption {
-      description = "A list of clusters";
-      type = attrsOf (submodule clusterType);
-      default = { };
-    };
+  optionals = {
+    nixosModules = machineConfig:
+      (lists.optionals (builtins.hasAttr "nixosModules" machineConfig)
+        machineConfig.nixosModules);
   };
 
-  clusterType = {
-    options = {
-      services = mkOption {
-        description = "A list of services deployed on the cluster nodes.";
-        type = attrsOf (submodule clusterServiceType);
-        default = { };
-      };
-      machines = mkOption {
-        description =
-          "A list of NixOS machines that will generate a NixOs system config.";
-        type = attrsOf (submodule machineType);
-        default = { };
-      };
+  get = {
+    attrName = attr: (head (builtins.attrNames attr));
+
+    interface = {
+      ips = interfaceDefinition:
+        let
+          v4Adresses = lists.forEach interfaceDefinition.ipv4.addresses
+            (addressDefinition: addressDefinition.address);
+          v6Adresses = lists.forEach interfaceDefinition.ipv6.addresses
+            (addressDefinition: addressDefinition.address);
+        in lists.flatten [ v4Adresses v6Adresses ];
+
+      definitions = machineConfig:
+        lists.forEach (get.interface.names machineConfig) (interfaceName: {
+          "${interfaceName}" = builtins.removeAttrs
+            (builtins.getAttr interfaceName
+              machineConfig.config.networking.interfaces) [ "subnetMask" ];
+        });
+
+      names = machineConfig:
+        attrsets.attrNames machineConfig.config.networking.interfaces;
     };
+
+    Services.Selectors = cluster: cluster.services;
+    machines = cluster: cluster.machines;
+    clusters = config.domain.clusters;
   };
+  add = {
+    # returns a the given 'machineConfig' updated with the module(s) given in 'nixosModules
+    nixosModules = nixosModules: machineConfig:
+      machineConfig // {
+        nixosModules = lists.flatten
+          ([ nixosModules ] ++ (optionals.nixosModules machineConfig));
+      };
 
-  clusterServiceType = {
-    options = {
-      selector = mkOption {
-        description = mdDoc "TODO: describe the options";
-        type = enum [ "default" "other" "unesed" ];
-        default = "other";
+    hostnames = config: # root of a cluster configuration
+      {
+        domain = config.domain // {
+          clusters = (attrsets.mapAttrs (clusterName: clusterConfig:
+            attrsets.mapAttrs (machineName: machineConfig:
+              (add.nixosModules { networking.hostName = machineName; }
+                machineConfig)) clusterConfig.machines) config.domain.clusters);
+        };
       };
-      roles = mkOption {
-        description = mdDoc "TODO:";
-        type = roleType;
-        default = { };
-      };
-      config = mkOption {
-        description = lib.mdDoc "Servicve specific config";
-        type = attrsOf anything;
-        default = { };
-      };
-    };
+
+    # Add 'configAttr' at 'selector' to 'config' and return the updated config.
+    # configuration = { configAttr, selector }: config: { TODO: };
   };
+  build = {
 
-  machineType = {
-    options = {
-      system = mkOption {
-        description = lib.mdDoc "TODO:";
-        type = nullOr str;
-        default = null;
-      };
-      nixosModules = mkOption {
-        description = lib.mdDoc "machine specific config";
-        type = listOf anything;
-        default = [ ];
-      };
-      # services = {};
-      # interfaces TODO: query with a function??
+    nixosConfigurations = config: # root of a cluster configuration
+      attrsets.mapAttrs (machineName: machineConfig:
+        (build.nixosConfiguration { } {
+          system = machineConfig.system;
+          modules = (optionals.nixosModules machineConfig);
+        })) (build.machineSet config);
 
-      virtualization = mkOption {
-        description =
-          "A list of virtualizaion drivers that will generate a NixOs config that handles virtualization.";
-        type = attrsOf (submodule virtualizationType);
-        default = { };
-      };
-
-      # TODO: how would a generic virtualization interface look like
-      # e.g. config -> [ (name = [ ip ]) ]
-
-      # virtDriver = {
-      #   functions = {
-      #     getSelectors = {}:{};
-      #     builcConfig = {}:{};
-      #   };
-      #   config = {  };
-      # };
-
-    };
-  };
-
-  virtualizationType = { };
-  # functions = {
-  #   getSelectors = {}:{};
-  #   builcConfig = {}:{};
-  # };
-  # config = {  };
-
-  roleType = attrsOf (either (selectorType) (listOf selectorType));
-
-  selectorType = str;
-
-  domainDefinitionType = mkOption {
-    type = strMatching "[^.]+(\\.[^./\\r\\n ]+)*"; # TODO: Better domain regex?
-  };
-
-  functions = {
-    get = {
-      attrName = attr: (head (builtins.attrNames attr));
-
-      interface = {
-        ips = interfaceDefinition:
-          let
-            v4Adresses = lists.forEach interfaceDefinition.ipv4.addresses
-              (addressDefinition: addressDefinition.address);
-            v6Adresses = lists.forEach interfaceDefinition.ipv6.addresses
-              (addressDefinition: addressDefinition.address);
-          in lists.flatten [ v4Adresses v6Adresses ];
-
-        definitions = machineConfig:
-          lists.forEach (functions.get.interface.names machineConfig)
-          (interfaceName: {
-            "${interfaceName}" = builtins.removeAttrs
-              (builtins.getAttr interfaceName
-                machineConfig.config.networking.interfaces) [ "subnetMask" ];
-          });
-
-        names = machineConfig:
-          attrsets.attrNames machineConfig.config.networking.interfaces;
-      };
-
-      Services.Selectors = cluster: cluster.services;
-      machines = cluster: cluster.machines;
-      clusters = config.domain.clusters;
-    };
-    build = {
-
-      nixosConfigurations = config:
-        attrsets.mapAttrs (machineName: machineConfig:
-          (functions.build.nixosConfiguration { } {
-            system = machineConfig.system;
-            modules =
-              (lists.optionals (builtins.hasAttr "nixosModules" machineConfig)
-                machineConfig.nixosModules);
-          })) (functions.build.machineSet config);
-
-      # TODO: expand serviceConfigs to modules
-      # TODO: maybe the service configs have to be added previously
-      nixosConfiguration = serviceConfigs: machineConfig: {
-        modules = machineConfig.modules;
-      };
-
-      # config -> {"machine1.cluster1.domainSuffix" = machine1Cluster1Definition; ... "machineN.clusterN.domainSuffix" = machineNClusterNDefinition;}
-      # Reduces 'config.domain' to a set of named machineTypes.
-      # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
-      machineSet = config:
-        attrsets.mergeAttrsList (attrValues (attrsets.mapAttrs
-          (clusterPath: clusterDefinition:
-            (functions.build.machinePaths clusterPath clusterDefinition))
-          (functions.build.clusterPaths config)));
-
-      # config -> { cluster1DnsName = cluster1Definition; ... clusterNName = clusterNDefinition}
-      # Reduces 'config.domain' to a set of named clusterTypes.
-      # The cluster names are convertet to a domain name in the form of 'clusterName.domainSuffix'.
-      clusterPaths = config:
-        attrsets.mapAttrs' (clusterName: clusterDefinition:
-          nameValuePair (clusterName + "." + config.domain.suffix)
-          clusterDefinition) config.domain.clusters;
-
-      # clusterPath: clusterDefinition: -> {machine1DnsName = machine1Definition; ... machineNName = MachineNDefinition;}
-      # Returns a set of named machines given a (cluster-) name and a clusterType.
-      # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
-      machinePaths = clusterPath: clusterDefinition:
-        attrsets.mapAttrs' (machineName: machineDefinition:
-          nameValuePair (machineName + "." + clusterPath) machineDefinition)
-        clusterDefinition.machines;
+    # TODO: expand serviceConfigs to modules
+    # TODO: maybe the service configs have to be added previously
+    nixosConfiguration = serviceConfigs: machineConfig: {
+      modules = machineConfig.modules;
     };
 
+    # config -> {"machine1.cluster1.domainSuffix" = machine1Cluster1Definition; ... "machineN.clusterN.domainSuffix" = machineNClusterNDefinition;}
+    # Reduces 'config.domain' to a set of named machineTypes.
+    # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
+    machineSet = config: # root of a cluster configuration
+      attrsets.mergeAttrsList (attrValues (attrsets.mapAttrs
+        (clusterPath: clusterDefinition:
+          (build.machinePaths clusterPath clusterDefinition))
+        (build.clusterPaths config)));
+
+    # config -> { "cluster1.domainSuffix" = cluster1Definition; ... "clusterN.domainSuffix" = clusterNDefinition}
+    # Reduces 'config.domain' to a set of named clusterTypes.
+    # The cluster names are convertet to a domain name in the form of 'clusterName.domainSuffix'.
+    clusterPaths = config: # root of a cluster configuration
+      attrsets.mapAttrs' (clusterName: clusterDefinition:
+        nameValuePair (clusterName + "." + config.domain.suffix)
+        clusterDefinition) config.domain.clusters;
+
+    # clusterPath: clusterDefinition: -> {machine1DnsName = machine1Definition; ... machineNName = MachineNDefinition;}
+    # Returns a set of named machines given a (cluster-) name and a clusterType.
+    # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
+    machinePaths = clusterPath: clusterDefinition:
+      attrsets.mapAttrs' (machineName: machineDefinition:
+        nameValuePair (machineName + "." + clusterPath) machineDefinition)
+      clusterDefinition.machines;
   };
 
   evalCluster = clusterConfig:
@@ -197,13 +120,14 @@ in {
       eval = (evalCluster clusterConfig);
     in attrsets.mapAttrs
     (machineName: machineConfig: nixpkgs.lib.nixosSystem machineConfig)
-    (functions.build.nixosConfigurations clusterConfig);
+    (build.nixosConfigurations clusterConfig);
 
   ips = machineConfig:
-    lists.forEach (functions.get.interface.definitions machineConfig)
-    (interface:
+    lists.forEach (get.interface.definitions machineConfig) (interface:
       let
         interfaceName = (head (attrsets.attrNames interface));
         interfaceValue = (head (attrsets.attrValues interface));
-      in { "${interfaceName}" = functions.get.interface.ips interfaceValue; });
+      in { "${interfaceName}" = get.interface.ips interfaceValue; });
+
+  hostnames = add.hostnames;
 }
