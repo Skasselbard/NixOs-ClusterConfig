@@ -58,7 +58,7 @@ let
       };
       nixosModules = mkOption {
         description = lib.mdDoc "machine specific config";
-        type = listOf anything;
+        type = listOf raw;
         default = [ ];
       };
       # services = {};

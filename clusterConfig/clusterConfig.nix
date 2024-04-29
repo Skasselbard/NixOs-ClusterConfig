@@ -104,6 +104,27 @@ let
     get = {
       attrName = attr: (head (builtins.attrNames attr));
 
+      interface = {
+        ips = interfaceDefinition:
+          let
+            v4Adresses = lists.forEach interfaceDefinition.ipv4.addresses
+              (addressDefinition: addressDefinition.address);
+            v6Adresses = lists.forEach interfaceDefinition.ipv6.addresses
+              (addressDefinition: addressDefinition.address);
+          in lists.flatten [ v4Adresses v6Adresses ];
+
+        definitions = machineConfig:
+          lists.forEach (functions.get.interface.names machineConfig)
+          (interfaceName: {
+            "${interfaceName}" = builtins.removeAttrs
+              (builtins.getAttr interfaceName
+                machineConfig.config.networking.interfaces) [ "subnetMask" ];
+          });
+
+        names = machineConfig:
+          attrsets.attrNames machineConfig.config.networking.interfaces;
+      };
+
       Services.Selectors = cluster: cluster.services;
       machines = cluster: cluster.machines;
       clusters = config.domain.clusters;
@@ -161,15 +182,28 @@ let
       ];
     };
 
+  ipSites = [ "interfaces" "vlans" "macvlans" ];
 in {
 
+  # TODOs:
+  # automatically set hostname
+  # automatically set networking.domain
+  # conditionally include virtual interfaces
+  # include dhcp hints for static dhcp ips
+
   nixosConfigurations = nixpkgs: clusterConfig:
-    # pkgs.lib.attrsets.mapAttrs
-    #   (machineName: machineConfig: pkgs.lib.nixosSystem machineConfig)
     let
       # evaluate cluster config to check for type consistency
       eval = (evalCluster clusterConfig);
     in attrsets.mapAttrs
     (machineName: machineConfig: nixpkgs.lib.nixosSystem machineConfig)
     (functions.build.nixosConfigurations clusterConfig);
+
+  ips = machineConfig:
+    lists.forEach (functions.get.interface.definitions machineConfig)
+    (interface:
+      let
+        interfaceName = (head (attrsets.attrNames interface));
+        interfaceValue = (head (attrsets.attrValues interface));
+      in { "${interfaceName}" = functions.get.interface.ips interfaceValue; });
 }
