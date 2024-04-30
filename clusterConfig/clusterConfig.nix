@@ -31,10 +31,16 @@ let
         attrsets.attrNames machineConfig.config.networking.interfaces;
     };
 
+    host = selector: clusterConfig:
+      {
+        # TODO: return machineConfig
+      };
+
     Services.Selectors = cluster: cluster.services;
     machines = cluster: cluster.machines;
     clusters = config.domain.clusters;
   };
+
   add = {
     # returns a the given 'machineConfig' updated with the module(s) given in 'nixosModules
     nixosModules = nixosModules: machineConfig:
@@ -43,13 +49,22 @@ let
           ([ nixosModules ] ++ (optionals.nixosModules machineConfig));
       };
 
-    hostnames = config: # root of a cluster configuration
-      {
-        domain = config.domain // {
+    networking = config: # root of a cluster configuration
+      let
+        domainAttr = config.domain;
+        domainSuffix = config.domain.suffix;
+        clusters = config.domain.clusters;
+      in {
+        domain = domainAttr // {
           clusters = (attrsets.mapAttrs (clusterName: clusterConfig:
-            attrsets.mapAttrs (machineName: machineConfig:
-              (add.nixosModules { networking.hostName = machineName; }
-                machineConfig)) clusterConfig.machines) config.domain.clusters);
+            (clusterConfig // {
+              machines = attrsets.mapAttrs (machineName: machineConfig:
+                (add.nixosModules {
+                  networking.hostName = machineName;
+                  networking.domain = clusterName + "." + domainSuffix;
+                  nixpkgs.hostPlatform = mkDefault machineConfig.system;
+                } machineConfig)) clusterConfig.machines;
+            })) clusters);
         };
       };
 
@@ -57,6 +72,12 @@ let
     # configuration = { configAttr, selector }: config: { TODO: };
   };
   build = {
+
+    selector = { hostname ? null, hostPath ? null, ips ? [ ] }:
+      {
+        # TODO: return standard selector
+        # TODO: maybe evaluate the selector?
+      };
 
     nixosConfigurations = config: # root of a cluster configuration
       attrsets.mapAttrs (machineName: machineConfig:
@@ -105,22 +126,28 @@ let
       ];
     };
 
-  ipSites = [ "interfaces" "vlans" "macvlans" ];
 in {
 
   # TODOs:
-  # automatically set hostname
-  # automatically set networking.domain
-  # conditionally include virtual interfaces
-  # include dhcp hints for static dhcp ips
+  # conditionally include virtual interfaces (networking.interfaces.<name>.virtual = true) -> not useful for dns
+  # include dhcp hints for static dhcp ip -> known dhcp ips should be addable
+  # 
+  # a function that builds and evaluates the clusterconfig to apply diractly on the cluster definition
+  #   - add all attributes that can be directly inferred
+  #   - evaluate the cluster
+  #   - evaluate all machines and
+  #   - add all necessary evaluation attributes (e.g. ips) to the cluster config
+  #   - build a map of selector -> host
+  #   - add all service configs to the machines
 
   nixosConfigurations = nixpkgs: clusterConfig:
     let
       # evaluate cluster config to check for type consistency
-      eval = (evalCluster clusterConfig);
+      eval = (evalCluster (add.networking clusterConfig));
+      # debug.traceSeqN 10 clusterConfigUpdated 
     in attrsets.mapAttrs
     (machineName: machineConfig: nixpkgs.lib.nixosSystem machineConfig)
-    (build.nixosConfigurations clusterConfig);
+    (build.nixosConfigurations eval.config);
 
   ips = machineConfig:
     lists.forEach (get.interface.definitions machineConfig) (interface:
@@ -130,4 +157,5 @@ in {
       in { "${interfaceName}" = get.interface.ips interfaceValue; });
 
   hostnames = add.hostnames;
+
 }
