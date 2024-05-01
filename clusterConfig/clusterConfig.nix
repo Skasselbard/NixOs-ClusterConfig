@@ -1,6 +1,7 @@
 { pkgs }:
 with pkgs.lib;
 let
+  forEachAttrIn = attrSet: function: (attrsets.mapAttrs function attrSet);
 
   get = {
     attrName = attr: (head (builtins.attrNames attr));
@@ -42,12 +43,23 @@ let
         all = lists.flatten (attrsets.attrValues interfaces);
       } // interfaces;
 
-    Services.Selectors = cluster: cluster.services;
-    machines = cluster: cluster.machines;
-    clusters = config.domain.clusters;
+    # config -> {{ [path], serviceConfig}, ...}
+    services = config:
+      attrsets.attrValues ( # to list
+        attrsets.mergeAttrsList (attrsets.attrValues ( # remove cluster names
+          forEachAttrIn config.domain.clusters (clusterName: clusterConfig:
+            (forEachAttrIn clusterConfig.services
+              (serviceName: serviceDefinition: {
+                filters = lists.flatten (lists.forEach serviceDefinition.filters
+                  (filter: (filter clusterName)));
+                "config" = serviceDefinition.config;
+              }))))));
   };
 
   add = {
+
+    # 
+    services = config: services { };
 
     # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
     machineConfiguration = config: machineConfigFn:
@@ -65,6 +77,36 @@ let
             })) clusters);
         };
       };
+
+    # clusterconfig -> configPath -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
+    filteredMachineConfiguration = with builtins;
+      config: filter: machineConfigFn:
+      let
+        attrPath = strings.splitString "." filter;
+        domainAttr = config.domain;
+        clusters = config.domain.clusters;
+      in assert asserts.assertMsg ((head attrPath) == "domain")
+        "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'"; {
+          domain = domainAttr // # -
+            {
+              clusters = clusters // # -
+                (attrsets.mapAttrs (clusterName: clusterConfig:
+                  # apply config function on filtered clusters
+                  (clusterConfig // # -
+                    {
+                      machines = clusterConfig.machines // # -
+                        attrsets.mapAttrs (machineName: machineConfig:
+                          # apply config function on filtered machines
+                          machineConfig
+                          // (machineConfigFn clusterName machineName
+                            machineConfig)) (attrsets.filterAttrs
+                              (n: v: n == (head (tail ((tail (attrPath))))))
+                              clusterConfig.machines);
+                    }))
+                  (attrsets.filterAttrs (n: v: n == (head (tail (attrPath))))
+                    clusters));
+            };
+        };
 
     nixosConfigurations = nixpkgs: config:
       add.machineConfiguration config
@@ -112,6 +154,13 @@ let
       clusterDefinition.machines;
   };
 
+  filters = {
+    hostname = hostName: clusterName: [ "domain.${clusterName}.${hostName}" ];
+    resolve = filter: config:
+      lists.forEach filter ((path:
+        attrsets.attrByPath (strings.splitString "." path) config).annotations);
+  };
+
   evalCluster = clusterConfig:
     pkgs.lib.evalModules {
       modules = [
@@ -131,26 +180,53 @@ let
 
   machineAnnotation = config:
     add.machineConfiguration config (clusterName: machineName: machineConfig: {
-      ips = get.ips machineConfig.nixosConfiguration;
+      annotations = {
+        ips = get.ips machineConfig.nixosConfiguration;
+        config = machineConfig.nixosConfiguration.config;
+        fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
+        # TODO: subnets?
+      };
     });
 
-  serviceAnnotation = config: config;
+  serviceAnnotation = with lists;
+    config:
+    let
+      services = get.services config;
+      # service = config.domain.clusters.example.services.vault;
+      # filter = builtins.head ((builtins.head service.filters) "example");
+    in add.machineConfiguration config
+    (clusterName: machineName: machineConfig: {
+      annotations = let
+        filteredServices = builtins.filter (service:
+          (lists.any (filter: filter == "domain.${clusterName}.${machineName}")
+            service.filters)) services;
+      in machineConfig.annotations // {
+        "services" = lists.forEach filteredServices (service: service.config);
+      };
+    })
+
+    # (add.filteredMachineConfiguration config filter
+    #   (clusterName: machineName: machineConfig:
+    #     machineConfig // {
+    #       annotations = machineConfig.annotations // {
+    #         services = { };
+    #         # machineConfig.annotations.services ++ [ service.config ];
+    #       };
+    #     }))
+
+  ;
+
   deploymentAnnotation = config: config;
 
 in {
+
+  inherit filters;
 
   # TODOs:
   # conditionally include virtual interfaces (networking.interfaces.<name>.virtual = true) -> not useful for dns
   # include dhcp hints for static dhcp ip -> known dhcp ips should be addable
   # 
-  # a function that builds and evaluates the clusterconfig to apply diractly on the cluster definition
-  #   - add all attributes that can be directly inferred
-  #   - evaluate the cluster
-  #   - evaluate all machines and
-  #   - add all necessary evaluation attributes (e.g. ips) to the cluster config
-  #   - build a map of selector -> host
-  #   - add all service configs to the machines
-
+  # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
   buildCluster = nixpkgs: config:
     let
       # Step 1:

@@ -31,10 +31,11 @@ let
 
   clusterServiceType = {
     options = {
-      selector = mkOption {
+      filters = mkOption {
         description = mdDoc "TODO: describe the options";
-        type = enum [ "default" "other" "unesed" ];
-        default = "other";
+        type =
+          raw; # TODO:custom function type which may already resolve the filter? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
+        default = [ ];
       };
       roles = mkOption {
         description = mdDoc "TODO:";
@@ -43,7 +44,7 @@ let
       };
       config = mkOption {
         description = lib.mdDoc "Servicve specific config";
-        type = attrsOf anything;
+        type = raw; # TODO: is a type necessary (or useful) here?
         default = { };
       };
     };
@@ -96,8 +97,9 @@ let
 
   selectorType = str;
 
-  domainDefinitionType = mkOption {
-    type = strMatching "[^.]+(\\.[^./\\r\\n ]+)*"; # TODO: Better domain regex?
-  };
+  domainDefinitionType = mkOption { type = fqdnString; };
+
+  fqdnString =
+    strMatching "[^.]+(\\.[^./\\r\\n ]+)*"; # TODO: Better domain regex?
 
 in { options = { domain = domainType; }; }
