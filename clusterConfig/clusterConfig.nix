@@ -2,12 +2,6 @@
 with pkgs.lib;
 let
 
-  optionals = {
-    nixosModules = machineConfig:
-      (lists.optionals (builtins.hasAttr "nixosModules" machineConfig)
-        machineConfig.nixosModules);
-  };
-
   get = {
     attrName = attr: (head (builtins.attrNames attr));
 
@@ -36,62 +30,62 @@ let
         # TODO: return machineConfig
       };
 
+    ips = machineConfig:
+      let
+        interfaces = attrsets.mergeAttrsList
+          (lists.forEach (get.interface.definitions machineConfig) (interface:
+            let
+              interfaceName = (head (attrsets.attrNames interface));
+              interfaceValue = (head (attrsets.attrValues interface));
+            in { "${interfaceName}" = get.interface.ips interfaceValue; }));
+      in {
+        all = lists.flatten (attrsets.attrValues interfaces);
+      } // interfaces;
+
     Services.Selectors = cluster: cluster.services;
     machines = cluster: cluster.machines;
     clusters = config.domain.clusters;
   };
 
   add = {
-    # returns a the given 'machineConfig' updated with the module(s) given in 'nixosModules
-    nixosModules = nixosModules: machineConfig:
-      machineConfig // {
-        nixosModules = lists.flatten
-          ([ nixosModules ] ++ (optionals.nixosModules machineConfig));
-      };
 
-    networking = config: # root of a cluster configuration
+    # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
+    machineConfiguration = config: machineConfigFn:
       let
         domainAttr = config.domain;
-        domainSuffix = config.domain.suffix;
         clusters = config.domain.clusters;
       in {
         domain = domainAttr // {
           clusters = (attrsets.mapAttrs (clusterName: clusterConfig:
             (clusterConfig // {
               machines = attrsets.mapAttrs (machineName: machineConfig:
-                (add.nixosModules {
-                  networking.hostName = machineName;
-                  networking.domain = clusterName + "." + domainSuffix;
-                  nixpkgs.hostPlatform = mkDefault machineConfig.system;
-                } machineConfig)) clusterConfig.machines;
+                machineConfig
+                // (machineConfigFn clusterName machineName machineConfig))
+                clusterConfig.machines;
             })) clusters);
         };
       };
 
-    # Add 'configAttr' at 'selector' to 'config' and return the updated config.
-    # configuration = { configAttr, selector }: config: { TODO: };
+    nixosConfigurations = nixpkgs: config:
+      add.machineConfiguration config
+      (clusterName: machineName: machineConfig: {
+        nixosConfiguration =
+          nixpkgs.lib.nixosSystem { modules = machineConfig.nixosModules; };
+      });
+
+    # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> moduleAttr) -> clusterconfig
+    nixosModule = config: moduleConfig:
+      let
+        domainAttr = config.domain;
+        clusters = config.domain.clusters;
+      in add.machineConfiguration config
+      (clusterName: machineName: machineConfig: {
+        nixosModules = [ (moduleConfig clusterName machineName machineConfig) ]
+          ++ machineConfig.nixosModules;
+      });
+
   };
   build = {
-
-    selector = { hostname ? null, hostPath ? null, ips ? [ ] }:
-      {
-        # TODO: return standard selector
-        # TODO: maybe evaluate the selector?
-      };
-
-    nixosConfigurations = config: # root of a cluster configuration
-      attrsets.mapAttrs (machineName: machineConfig:
-        (build.nixosConfiguration { } {
-          system = machineConfig.system;
-          modules = (optionals.nixosModules machineConfig);
-        })) (build.machineSet config);
-
-    # TODO: expand serviceConfigs to modules
-    # TODO: maybe the service configs have to be added previously
-    nixosConfiguration = serviceConfigs: machineConfig: {
-      modules = machineConfig.modules;
-    };
-
     # config -> {"machine1.cluster1.domainSuffix" = machine1Cluster1Definition; ... "machineN.clusterN.domainSuffix" = machineNClusterNDefinition;}
     # Reduces 'config.domain' to a set of named machineTypes.
     # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
@@ -126,6 +120,23 @@ let
       ];
     };
 
+  clusterAnnotation = config:
+    add.nixosModule config (clusterName: machineName: machineConfig: ({
+      networking.hostName = machineName;
+      networking.domain = clusterName + "." + config.domain.suffix;
+      nixpkgs.hostPlatform = mkDefault machineConfig.system;
+    }));
+
+  evalMachines = nixpkgs: config: add.nixosConfigurations nixpkgs config;
+
+  machineAnnotation = config:
+    add.machineConfiguration config (clusterName: machineName: machineConfig: {
+      ips = get.ips machineConfig.nixosConfiguration;
+    });
+
+  serviceAnnotation = config: config;
+  deploymentAnnotation = config: config;
+
 in {
 
   # TODOs:
@@ -140,22 +151,43 @@ in {
   #   - build a map of selector -> host
   #   - add all service configs to the machines
 
-  nixosConfigurations = nixpkgs: clusterConfig:
+  buildCluster = nixpkgs: config:
     let
-      # evaluate cluster config to check for type consistency
-      eval = (evalCluster (add.networking clusterConfig));
-      # debug.traceSeqN 10 clusterConfigUpdated 
-    in attrsets.mapAttrs
-    (machineName: machineConfig: nixpkgs.lib.nixosSystem machineConfig)
-    (build.nixosConfigurations eval.config);
+      # Step 1:
+      # Evaluate the cluster to check for type conformity
+      evaluatedCluster = (evalCluster config).config;
 
-  ips = machineConfig:
-    lists.forEach (get.interface.definitions machineConfig) (interface:
-      let
-        interfaceName = (head (attrsets.attrNames interface));
-        interfaceValue = (head (attrsets.attrValues interface));
-      in { "${interfaceName}" = get.interface.ips interfaceValue; });
+      # Step 2:
+      # Annotate all machines with data from the cluster config.
+      # This includes:
+      # - Hostnames: networking.hostname is set to the name of the machiene definition
+      # - DomainName: networkinig.domain is set to clusterName.domainSuffix
+      # - Hostplattform: pkgs.hostPlattform is set to the configured system in the machine configuration
+      clusterAnnotatedCluster = clusterAnnotation evaluatedCluster;
 
-  hostnames = add.hostnames;
+      # Step 3:
+      # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
+      # This config will be overwritten later.
+      machineEvaluatedCluster = evalMachines nixpkgs clusterAnnotatedCluster;
+
+      # Step 4:
+      # Annotate the cluster with data from the machine configurations
+      # This includes:
+      # - the used IP addresses
+      # - the FQDN
+      evalAnnotatedCluser = machineAnnotation machineEvaluatedCluster;
+
+      # Step 5:
+      # Add the service configurations to the modlues of the tergeted machines
+      serviceAnnotatedCluster = serviceAnnotation evalAnnotatedCluser;
+
+      # Step 6:
+      # Evaluate the final NixosConfigurations that can be added as build targets
+      nixosConfiguredCluster = evalMachines nixpkgs serviceAnnotatedCluster;
+
+      # Step 7:
+      # Build the deployment scripts 
+      deploymentAnnotatedCluster = deploymentAnnotation nixosConfiguredCluster;
+    in deploymentAnnotatedCluster;
 
 }
