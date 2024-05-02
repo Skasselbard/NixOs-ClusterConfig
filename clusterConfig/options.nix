@@ -31,7 +31,7 @@ let
 
   clusterServiceType = {
     options = {
-      filters = mkOption {
+      selectors = mkOption {
         description = mdDoc "TODO: describe the options";
         type =
           raw; # TODO:custom function type which may already resolve the filter? https://nixos.org/manual/nixos/stable/#sec-option-types-custom

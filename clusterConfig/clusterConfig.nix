@@ -50,8 +50,9 @@ let
           forEachAttrIn config.domain.clusters (clusterName: clusterConfig:
             (forEachAttrIn clusterConfig.services
               (serviceName: serviceDefinition: {
-                filters = lists.flatten (lists.forEach serviceDefinition.filters
-                  (filter: (filter clusterName)));
+                selectors = lists.flatten
+                  (lists.forEach serviceDefinition.selectors
+                    (selector: (selector clusterName)));
                 "config" = serviceDefinition.config;
               }))))));
   };
@@ -85,28 +86,27 @@ let
         attrPath = strings.splitString "." filter;
         domainAttr = config.domain;
         clusters = config.domain.clusters;
-      in assert asserts.assertMsg ((head attrPath) == "domain")
-        "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'"; {
-          domain = domainAttr // # -
-            {
-              clusters = clusters // # -
-                (attrsets.mapAttrs (clusterName: clusterConfig:
-                  # apply config function on filtered clusters
-                  (clusterConfig // # -
-                    {
-                      machines = clusterConfig.machines // # -
-                        attrsets.mapAttrs (machineName: machineConfig:
-                          # apply config function on filtered machines
-                          machineConfig
-                          // (machineConfigFn clusterName machineName
-                            machineConfig)) (attrsets.filterAttrs
-                              (n: v: n == (head (tail ((tail (attrPath))))))
-                              clusterConfig.machines);
-                    }))
-                  (attrsets.filterAttrs (n: v: n == (head (tail (attrPath))))
-                    clusters));
-            };
-        };
+      in {
+        domain = domainAttr // # -
+          {
+            clusters = clusters // # -
+              (attrsets.mapAttrs (clusterName: clusterConfig:
+                # apply config function on filtered clusters
+                (clusterConfig // # -
+                  {
+                    machines = clusterConfig.machines // # -
+                      attrsets.mapAttrs (machineName: machineConfig:
+                        # apply config function on filtered machines
+                        machineConfig
+                        // (machineConfigFn clusterName machineName
+                          machineConfig)) (attrsets.filterAttrs
+                            (n: v: n == (head (tail ((tail (attrPath))))))
+                            clusterConfig.machines);
+                  }))
+                (attrsets.filterAttrs (n: v: n == (head (tail (attrPath))))
+                  clusters));
+          };
+      };
 
     nixosConfigurations = nixpkgs: config:
       add.machineConfiguration config
@@ -116,13 +116,14 @@ let
       });
 
     # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> moduleAttr) -> clusterconfig
-    nixosModule = config: moduleConfig:
+    nixosModule = config: moduleConfigFn:
       let
         domainAttr = config.domain;
         clusters = config.domain.clusters;
       in add.machineConfiguration config
       (clusterName: machineName: machineConfig: {
-        nixosModules = [ (moduleConfig clusterName machineName machineConfig) ]
+        nixosModules = (lists.flatten
+          [ (moduleConfigFn clusterName machineName machineConfig) ])
           ++ machineConfig.nixosModules;
       });
 
@@ -181,8 +182,9 @@ let
   machineAnnotation = config:
     add.machineConfiguration config (clusterName: machineName: machineConfig: {
       annotations = {
+        inherit clusterName machineName;
         ips = get.ips machineConfig.nixosConfiguration;
-        config = machineConfig.nixosConfiguration.config;
+        # config = machineConfig.nixosConfiguration.config;
         fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
         # TODO: subnets?
       };
@@ -190,31 +192,24 @@ let
 
   serviceAnnotation = with lists;
     config:
-    let
-      services = get.services config;
-      # service = config.domain.clusters.example.services.vault;
-      # filter = builtins.head ((builtins.head service.filters) "example");
-    in add.machineConfiguration config
-    (clusterName: machineName: machineConfig: {
-      annotations = let
+    let services = get.services config;
+    in add.nixosModule config (clusterName: machineName: machineConfig:
+      let
+        # filter the service list for the ones that match the path of the current machine
         filteredServices = builtins.filter (service:
-          (lists.any (filter: filter == "domain.${clusterName}.${machineName}")
-            service.filters)) services;
-      in machineConfig.annotations // {
-        "services" = lists.forEach filteredServices (service: service.config);
-      };
-    })
-
-    # (add.filteredMachineConfiguration config filter
-    #   (clusterName: machineName: machineConfig:
-    #     machineConfig // {
-    #       annotations = machineConfig.annotations // {
-    #         services = { };
-    #         # machineConfig.annotations.services ++ [ service.config ];
-    #       };
-    #     }))
-
-  ;
+          (lists.any (filter:
+            assert asserts.assertMsg (strings.hasPrefix "domain" filter)
+              "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
+            filter == "domain.${clusterName}.${machineName}")
+            service.selectors)) services;
+        # attrsets.mergeAttrsList # merge all matching services together
+      in (lists.forEach filteredServices (service:
+        # get the config closure and compute its result to form a complete NixosModule
+        (service.config {
+          selectors = service.selectors;
+          roles = service.roles;
+          this = machineConfig.annotations; # machineConfig;
+        }))));
 
   deploymentAnnotation = config: config;
 
