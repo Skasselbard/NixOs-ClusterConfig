@@ -33,8 +33,7 @@ let
     options = {
       selectors = mkOption {
         description = mdDoc "TODO: describe the options";
-        type =
-          raw; # TODO:custom function type which may already resolve the filter? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
+        type = listOf filterType;
         default = [ ];
       };
       roles = mkOption {
@@ -93,9 +92,10 @@ let
   # };
   # config = {  };
 
-  roleType = attrsOf (either (selectorType) (listOf selectorType));
+  roleType = attrsOf (listOf filterType);
 
-  selectorType = str;
+  filterType =
+    raw; # TODO:custom function type? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
 
   domainDefinitionType = mkOption { type = fqdnString; };
 

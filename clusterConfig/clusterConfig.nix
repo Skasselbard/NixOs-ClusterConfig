@@ -26,11 +26,6 @@ let
         attrsets.attrNames machineConfig.config.networking.interfaces;
     };
 
-    host = selector: clusterConfig:
-      {
-        # TODO: return machineConfig
-      };
-
     ips = machineConfig:
       let
         interfaces = attrsets.mergeAttrsList
@@ -43,6 +38,7 @@ let
         all = lists.flatten (attrsets.attrValues interfaces);
       } // interfaces;
 
+    # returns a list with (unnamed) service Definitions from all services in the cluster config
     # config -> {{ [path], serviceConfig}, ...}
     services = config:
       attrsets.attrValues ( # to list
@@ -50,17 +46,16 @@ let
           forEachAttrIn config.domain.clusters (clusterName: clusterConfig:
             (forEachAttrIn clusterConfig.services
               (serviceName: serviceDefinition: {
-                selectors = lists.flatten
-                  (lists.forEach serviceDefinition.selectors
-                    (selector: (selector clusterName)));
                 "config" = serviceDefinition.config;
+                selectors =
+                  (filters.toConfigAttrPaths serviceDefinition.selectors
+                    clusterName config);
+                roles = (forEachAttrIn serviceDefinition.roles (rolename: role:
+                  filters.toConfigAttrPaths role clusterName config));
               }))))));
   };
 
   add = {
-
-    # 
-    services = config: services { };
 
     # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
     machineConfiguration = config: machineConfigFn:
@@ -156,10 +151,23 @@ let
   };
 
   filters = {
-    hostname = hostName: clusterName: [ "domain.${clusterName}.${hostName}" ];
-    resolve = filter: config:
-      lists.forEach filter ((path:
-        attrsets.attrByPath (strings.splitString "." path) config).annotations);
+
+    hostname = hostName: clusterName: config:
+      [ "domain.clusters.${clusterName}.machines.${hostName}" ];
+
+    toConfigAttrPaths = filters: clusterName: config:
+      lists.flatten
+      (lists.forEach filters (filter: (filter clusterName config)));
+
+    resolve = paths: config:
+      lists.flatten (lists.forEach paths (path:
+        let
+          resolvedElement = (attrsets.attrByPath (strings.splitString "." path)
+            {
+              # this is the default element if the path was noct found
+              # TODO: throw an error if the path cannot be founs?
+            } config);
+        in resolvedElement.annotations));
   };
 
   evalCluster = clusterConfig:
@@ -184,7 +192,6 @@ let
       annotations = {
         inherit clusterName machineName;
         ips = get.ips machineConfig.nixosConfiguration;
-        # config = machineConfig.nixosConfiguration.config;
         fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
         # TODO: subnets?
       };
@@ -200,13 +207,14 @@ let
           (lists.any (filter:
             assert asserts.assertMsg (strings.hasPrefix "domain" filter)
               "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
-            filter == "domain.${clusterName}.${machineName}")
+            filter == "domain.clusters.${clusterName}.machines.${machineName}")
             service.selectors)) services;
         # attrsets.mergeAttrsList # merge all matching services together
       in (lists.forEach filteredServices (service:
         # get the config closure and compute its result to form a complete NixosModule
         (service.config {
-          selectors = service.selectors;
+          selectors = debug.traceSeqN 8 service.selectors
+            (filters.resolve service.selectors config);
           roles = service.roles;
           this = machineConfig.annotations; # machineConfig;
         }))));
@@ -218,9 +226,11 @@ in {
   inherit filters;
 
   # TODOs:
-  # conditionally include virtual interfaces (networking.interfaces.<name>.virtual = true) -> not useful for dns
-  # include dhcp hints for static dhcp ip -> known dhcp ips should be addable
-  # 
+  # - conditionally include virtual interfaces (networking.interfaces.<name>.virtual = true) -> not useful for dns
+  # - include dhcp hints for static dhcp ip -> known dhcp ips should be addable
+  # tagging
+  # - cluster annotations: fqdn, all ips, all machine names + fqdns, all service names, service selectors per service
+
   # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
   buildCluster = nixpkgs: config:
     let
