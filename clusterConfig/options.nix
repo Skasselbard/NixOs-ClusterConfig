@@ -1,6 +1,6 @@
-{ pkgs, ... }:
-with pkgs.lib;
-with pkgs.lib.types;
+{ lib }:
+with lib;
+with lib.types;
 let
 
   domainType = {

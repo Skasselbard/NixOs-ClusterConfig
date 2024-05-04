@@ -1,5 +1,10 @@
-{ pkgs }:
-with pkgs.lib;
+{ nixpkgs, nixos-generators }:
+let
+  pkgs = import nixpkgs {
+    # the exact value of 'system' should be unimportant since we only use lib
+    system = "x86_64-linux";
+  };
+in with pkgs.lib;
 let
   forEachAttrIn = attrSet: function: (attrsets.mapAttrs function attrSet);
 
@@ -58,52 +63,38 @@ let
   add = {
 
     # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
-    machineConfiguration = config: machineConfigFn:
-      let
-        domainAttr = config.domain;
-        clusters = config.domain.clusters;
-      in {
-        domain = domainAttr // {
-          clusters = (attrsets.mapAttrs (clusterName: clusterConfig:
-            (clusterConfig // {
-              machines = attrsets.mapAttrs (machineName: machineConfig:
-                machineConfig
-                // (machineConfigFn clusterName machineName machineConfig))
-                clusterConfig.machines;
-            })) clusters);
-        };
+    machineConfiguration = config: machineConfigFn: {
+      domain = attrsets.recursiveUpdate config.domain {
+        clusters = (forEachAttrIn config.domain.clusters
+          (clusterName: clusterConfig: {
+            machines = forEachAttrIn clusterConfig.machines
+              (machineName: machineConfig:
+                (machineConfigFn clusterName machineName machineConfig));
+          }));
       };
+    };
 
     # clusterconfig -> configPath -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
     filteredMachineConfiguration = with builtins;
       config: filter: machineConfigFn:
-      let
-        attrPath = strings.splitString "." filter;
-        domainAttr = config.domain;
-        clusters = config.domain.clusters;
+      let attrPath = strings.splitString "." filter;
       in {
-        domain = domainAttr // # -
-          {
-            clusters = clusters // # -
-              (attrsets.mapAttrs (clusterName: clusterConfig:
-                # apply config function on filtered clusters
-                (clusterConfig // # -
-                  {
-                    machines = clusterConfig.machines // # -
-                      attrsets.mapAttrs (machineName: machineConfig:
-                        # apply config function on filtered machines
-                        machineConfig
-                        // (machineConfigFn clusterName machineName
-                          machineConfig)) (attrsets.filterAttrs
-                            (n: v: n == (head (tail ((tail (attrPath))))))
-                            clusterConfig.machines);
-                  }))
-                (attrsets.filterAttrs (n: v: n == (head (tail (attrPath))))
-                  clusters));
-          };
+        domain = attrsets.recursiveUpdate config.domain {
+          clusters = config.domain.clusters (forEachAttrIn
+            (attrsets.filterAttrs (n: v: n == (head (tail (attrPath))))
+              config.domain.clusters)
+            # apply config function on filtered clusters
+            (clusterName: clusterConfig: {
+              machines = forEachAttrIn (attrsets.filterAttrs
+                (n: v: n == (head (tail ((tail (attrPath))))))
+                clusterConfig.machines) (machineName: machineConfig:
+                  # apply config function on filtered machines
+                  (machineConfigFn clusterName machineName machineConfig));
+            }));
+        };
       };
 
-    nixosConfigurations = nixpkgs: config:
+    nixosConfigurations = config:
       add.machineConfiguration config
       (clusterName: machineName: machineConfig: {
         nixosConfiguration =
@@ -148,6 +139,28 @@ let
       attrsets.mapAttrs' (machineName: machineDefinition:
         nameValuePair (machineName + "." + clusterPath) machineDefinition)
       clusterDefinition.machines;
+
+    bootImageNixosConfiguration = machineConfig: {
+      system = machineConfig.system;
+      modules = [
+        "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+        ({
+          networking.interfaces = forEachAttrIn
+            machineConfig.nixosConfiguration.config.networking.interfaces
+            (interfaceName: interfaceDefinition:
+              attrsets.getAttrs [ "useDHCP" "ipv4" "ipv6" ]
+              interfaceDefinition);
+          users.users =
+            # filter some users that get created by default
+            attrsets.filterAttrs (userName: userDefinition:
+              ((strings.hasPrefix "nix" userName)
+                || (strings.hasPrefix "systemd" userName) || userName
+                == "backup" || userName == "messagebus" || userName == "nobody"
+                || userName == "sshd"))
+            machineConfig.nixosConfiguration.config.users;
+        })
+      ];
+    };
   };
 
   filters = {
@@ -171,9 +184,9 @@ let
   };
 
   evalCluster = clusterConfig:
-    pkgs.lib.evalModules {
+    evalModules {
       modules = [
-        (import ./options.nix { inherit pkgs; })
+        (import ./options.nix { lib = pkgs.lib; })
         { config = { domain = clusterConfig.domain; }; }
       ];
     };
@@ -185,7 +198,7 @@ let
       nixpkgs.hostPlatform = mkDefault machineConfig.system;
     }));
 
-  evalMachines = nixpkgs: config: add.nixosConfigurations nixpkgs config;
+  evalMachines = config: add.nixosConfigurations config;
 
   machineAnnotation = config:
     add.machineConfiguration config (clusterName: machineName: machineConfig: {
@@ -219,7 +232,13 @@ let
           this = machineConfig.annotations; # machineConfig;
         }))));
 
-  deploymentAnnotation = config: config;
+  deploymentAnnotation = config:
+    add.machineConfiguration config (clusterName: machineName: machineConfig: {
+      stage0Iso = nixos-generators.nixosGenerate
+        ((build.bootImageNixosConfiguration machineConfig) // {
+          format = "iso";
+        });
+    });
 
 in {
 
@@ -232,7 +251,7 @@ in {
   # - cluster annotations: fqdn, all ips, all machine names + fqdns, all service names, service selectors per service
 
   # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
-  buildCluster = nixpkgs: config:
+  buildCluster = config:
     let
       # Step 1:
       # Evaluate the cluster to check for type conformity
@@ -249,7 +268,7 @@ in {
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
       # This config will be overwritten later.
-      machineEvaluatedCluster = evalMachines nixpkgs clusterAnnotatedCluster;
+      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
 
       # Step 4:
       # Annotate the cluster with data from the machine configurations
@@ -264,7 +283,7 @@ in {
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
-      nixosConfiguredCluster = evalMachines nixpkgs serviceAnnotatedCluster;
+      nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
 
       # Step 7:
       # Build the deployment scripts 

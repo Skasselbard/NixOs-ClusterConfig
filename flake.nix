@@ -2,24 +2,38 @@
   description = "A very basic flake"; # TODO:
 
   inputs = {
+
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     disko = {
       url = "github:nix-community/disko/v1.1.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
     nixos-anywhere = {
       url = "github:nix-community/nixos-anywhere";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.disko.follows = "disko";
     };
+
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
   };
 
-  outputs = { self, nixpkgs, disko, nixos-anywhere, ... }@inputs:
+  outputs =
+    { self, nixpkgs, disko, nixos-anywhere, nixos-generators, ... }@inputs:
+
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
     in {
-      lib = {
+
+      lib = (import ("${self}/clusterConfig/clusterConfig.nix") {
+        inherit nixos-generators nixpkgs;
+      }) // {
+
         # takes a list of disko devices definitions and returns  a devieces definition
         # accepted as a disko attribute
         mergeDiskoDevices = deviceDefinitions: {
@@ -27,6 +41,7 @@
             (foldAttrs (item: acc: (recursiveUpdate item acc)) { }
               deviceDefinitions);
         };
+
         # takes a configuration with a partitioning configuration from this 
         # projects nixos modules and returns the command to run nixos anywhere
         deploy = {
@@ -48,6 +63,7 @@
               builtins.concatStringsSep " " extraArgs
             } root@${ip}
           '';
+
         # Run a format script as root on a remote host.
         # Concatinates a list of disko device definitions and build the corresponding format script
         # (including a whipe of the devices).
@@ -70,41 +86,22 @@
             echo "Using script $script"
             ${pkgs.nix}/bin/nix copy --to "ssh://root@${ip}" "$script"
             ssh ${builtins.concatStringsSep " " sshArgs} root@${ip} $script
-
           '';
+
       };
+
       nixosModules = {
+
         default = { config, pkgs, lib, ... }: {
           imports = [ "${self}/modules" ];
           _module.args.specialArgs.disko =
             disko; # TODO: Should it be done just because it can be done?
         };
+
         vault = { config, pkgs, lib, ... }: {
           imports = [ "${self}/modules/vault.nix" ];
         };
-        bootImage = { rootPasswd ? "setup", rootPasswdHash ? null
-          , rootSSHKeys ? [ ], ip, ... }: {
-            system = "x86_64-linux";
-            modules = [
-              "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-              ({
-                networking.usePredictableInterfaceNames =
-                  false; # use ethX for interface names
-                networking.interfaces.eth0.ipv4.addresses = [{
-                  address = ip;
-                  prefixLength = 24;
-                }];
-                users.users.root = {
-                  password =
-                    rootPasswd; # gets overwritten if hasedPassword is set
-                  hashedPassword =
-                    pkgs.lib.mkIf (rootPasswdHash != null) rootPasswdHash;
-                  openssh.authorizedKeys.keys = rootSSHKeys;
-                };
-              })
-            ];
-            format = "iso";
-          };
+
       };
     };
 }
