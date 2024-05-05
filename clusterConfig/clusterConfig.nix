@@ -6,10 +6,11 @@ let
   };
 in with pkgs.lib;
 let
+
+  # helper functions
   forEachAttrIn = attrSet: function: (attrsets.mapAttrs function attrSet);
 
   get = {
-    attrName = attr: (head (builtins.attrNames attr));
 
     interface = {
       ips = interfaceDefinition:
@@ -58,6 +59,11 @@ let
                 roles = (forEachAttrIn serviceDefinition.roles (rolename: role:
                   filters.toConfigAttrPaths role clusterName config));
               }))))));
+
+    machines = config:
+      attrsets.mergeAttrsList (lists.flatten (attrsets.attrValues
+        (forEachAttrIn config.domain.clusters
+          (clusterName: clusterValue: clusterValue.machines))));
   };
 
   add = {
@@ -73,26 +79,6 @@ let
           }));
       };
     };
-
-    # clusterconfig -> configPath -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
-    filteredMachineConfiguration = with builtins;
-      config: filter: machineConfigFn:
-      let attrPath = strings.splitString "." filter;
-      in {
-        domain = attrsets.recursiveUpdate config.domain {
-          clusters = config.domain.clusters (forEachAttrIn
-            (attrsets.filterAttrs (n: v: n == (head (tail (attrPath))))
-              config.domain.clusters)
-            # apply config function on filtered clusters
-            (clusterName: clusterConfig: {
-              machines = forEachAttrIn (attrsets.filterAttrs
-                (n: v: n == (head (tail ((tail (attrPath))))))
-                clusterConfig.machines) (machineName: machineConfig:
-                  # apply config function on filtered machines
-                  (machineConfigFn clusterName machineName machineConfig));
-            }));
-        };
-      };
 
     nixosConfigurations = config:
       add.machineConfiguration config
@@ -115,31 +101,6 @@ let
 
   };
   build = {
-    # config -> {"machine1.cluster1.domainSuffix" = machine1Cluster1Definition; ... "machineN.clusterN.domainSuffix" = machineNClusterNDefinition;}
-    # Reduces 'config.domain' to a set of named machineTypes.
-    # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
-    machineSet = config: # root of a cluster configuration
-      attrsets.mergeAttrsList (attrValues (attrsets.mapAttrs
-        (clusterPath: clusterDefinition:
-          (build.machinePaths clusterPath clusterDefinition))
-        (build.clusterPaths config)));
-
-    # config -> { "cluster1.domainSuffix" = cluster1Definition; ... "clusterN.domainSuffix" = clusterNDefinition}
-    # Reduces 'config.domain' to a set of named clusterTypes.
-    # The cluster names are convertet to a domain name in the form of 'clusterName.domainSuffix'.
-    clusterPaths = config: # root of a cluster configuration
-      attrsets.mapAttrs' (clusterName: clusterDefinition:
-        nameValuePair (clusterName + "." + config.domain.suffix)
-        clusterDefinition) config.domain.clusters;
-
-    # clusterPath: clusterDefinition: -> {machine1DnsName = machine1Definition; ... machineNName = MachineNDefinition;}
-    # Returns a set of named machines given a (cluster-) name and a clusterType.
-    # The machine names are convertet to a domain name in the form of 'machineName.clusterName.domainSuffix'.
-    machinePaths = clusterPath: clusterDefinition:
-      attrsets.mapAttrs' (machineName: machineDefinition:
-        nameValuePair (machineName + "." + clusterPath) machineDefinition)
-      clusterDefinition.machines;
-
     bootImageNixosConfiguration = machineConfig: {
       system = machineConfig.system;
       modules = [
@@ -226,19 +187,28 @@ let
       in (lists.forEach filteredServices (service:
         # get the config closure and compute its result to form a complete NixosModule
         (service.config {
-          selectors = debug.traceSeqN 8 service.selectors
-            (filters.resolve service.selectors config);
+          selectors =
+            service.selectors (filters.resolve service.selectors config);
           roles = service.roles;
           this = machineConfig.annotations; # machineConfig;
         }))));
 
   deploymentAnnotation = config:
-    add.machineConfiguration config (clusterName: machineName: machineConfig: {
-      stage0Iso = nixos-generators.nixosGenerate
+    let machines = get.machines config;
+    in config // {
+
+      nixosConfigurations = forEachAttrIn machines
+        (machineName: machineConfig: machineConfig.nixosConfiguration);
+
+      stage0Isos = forEachAttrIn machines (machineName: machineConfig:
+        nixos-generators.nixosGenerate
         ((build.bootImageNixosConfiguration machineConfig) // {
           format = "iso";
-        });
-    });
+        }));
+
+      # colmena = { };
+      # ownDeploymentScripts = { };
+    };
 
 in {
 
