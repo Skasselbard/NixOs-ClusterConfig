@@ -20,10 +20,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    home-manager = {
+      url = "github:nix-community/home-manager/release-23.11";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs =
-    { self, nixpkgs, disko, nixos-anywhere, nixos-generators, ... }@inputs:
+  outputs = { self, nixpkgs, disko, nixos-anywhere, nixos-generators
+    , home-manager, ... }@inputs:
 
     let
       system = "x86_64-linux";
@@ -31,7 +35,7 @@
     in {
 
       lib = (import ("${self}/clusterConfig/clusterConfig.nix") {
-        inherit nixos-generators nixpkgs;
+        inherit nixos-generators home-manager nixpkgs;
       }) // {
 
         # takes a list of disko devices definitions and returns  a devieces definition

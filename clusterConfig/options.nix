@@ -1,13 +1,13 @@
-{ lib }:
-with lib;
-with lib.types;
+{ pkgs }:
+with pkgs.lib;
+with pkgs.lib.types;
 let
+  usertype = (import ./userOptions.nix { inherit pkgs; });
 
   domainType = {
-    # build = mkOption {type = listOf derivation} TODO: maybe an internal attr that stores the system configs
     suffix = domainDefinitionType;
     clusters = mkOption {
-      description = "A list of clusters";
+      description = mdDoc "A list of clusters";
       type = attrsOf (submodule clusterType);
       default = { };
     };
@@ -15,13 +15,18 @@ let
 
   clusterType = {
     options = {
+      users = mkOption {
+        description = mdDoc "A list of users deployed on the cluster nodes.";
+        type = attrsOf (submodule usertype);
+        default = { };
+      };
       services = mkOption {
-        description = "A list of services deployed on the cluster nodes.";
+        description = mdDoc "A list of services deployed on the cluster nodes.";
         type = attrsOf (submodule clusterServiceType);
         default = { };
       };
       machines = mkOption {
-        description =
+        description = mdDoc
           "A list of NixOS machines that will generate a NixOs system config.";
         type = attrsOf (submodule machineType);
         default = { };
@@ -56,13 +61,19 @@ let
         type = nullOr str;
         default = null;
       };
+
+      users = mkOption {
+        description = mdDoc
+          "A list of users deployed on the machine node in addition to the cluster users.";
+        type = attrsOf (submodule usertype);
+        default = { };
+      };
+
       nixosModules = mkOption {
         description = lib.mdDoc "machine specific config";
         type = listOf raw;
         default = [ ];
       };
-      # services = {};
-      # interfaces TODO: query with a function??
 
       virtualization = mkOption {
         description =
@@ -86,12 +97,6 @@ let
   };
 
   virtualizationType = { };
-  # functions = {
-  #   getSelectors = {}:{};
-  #   builcConfig = {}:{};
-  # };
-  # config = {  };
-
   roleType = attrsOf (listOf filterType);
 
   filterType =

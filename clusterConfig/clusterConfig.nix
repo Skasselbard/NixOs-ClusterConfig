@@ -1,4 +1,4 @@
-{ nixpkgs, nixos-generators }:
+{ nixpkgs, nixos-generators, home-manager }:
 let
   pkgs = import nixpkgs {
     # the exact value of 'system' should be unimportant since we only use lib
@@ -138,8 +138,8 @@ let
         let
           resolvedElement = (attrsets.attrByPath (strings.splitString "." path)
             {
-              # this is the default element if the path was noct found
-              # TODO: throw an error if the path cannot be founs?
+              # this is the default element if the path was not found
+              # TODO: throw an error if the path cannot be found?
             } config);
         in resolvedElement.annotations));
   };
@@ -147,17 +147,78 @@ let
   evalCluster = clusterConfig:
     evalModules {
       modules = [
-        (import ./options.nix { lib = pkgs.lib; })
+        (import ./options.nix { inherit pkgs; })
         { config = { domain = clusterConfig.domain; }; }
       ];
     };
 
   clusterAnnotation = config:
-    add.nixosModule config (clusterName: machineName: machineConfig: ({
-      networking.hostName = machineName;
-      networking.domain = clusterName + "." + config.domain.suffix;
-      nixpkgs.hostPlatform = mkDefault machineConfig.system;
-    }));
+
+    # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
+    add.nixosModule config (clusterName: machineName: machineConfig:
+      let
+
+        clusterUsers = config.domain.clusters."${clusterName}".users;
+        machineUsers = machineConfig.users;
+
+        clusterhomeManagerModules = forEachAttrIn clusterUsers
+          (n: userConfig: userConfig.homeManagerModules);
+        machineHomeManagerModules = forEachAttrIn machineUsers
+          (n: userConfig: userConfig.homeManagerModules);
+
+        mergedHomeManagerModules = lists.flatten [
+          (attrsets.attrValues clusterhomeManagerModules)
+          (attrsets.attrValues machineHomeManagerModules)
+        ];
+        activateHomeManager = mergedHomeManagerModules != [ ];
+
+      in if activateHomeManager then [
+
+        # homeManager config
+        home-manager.nixosModules.home-manager
+        {
+          home-manager.useGlobalPkgs = true;
+          home-manager.useUserPackages = true;
+
+          # Use a set of all users to acces the homeManager module list for each user.
+          # Ignore the actual definition for the user and access the module list directly.
+          home-manager.users = forEachAttrIn (clusterUsers // machineUsers)
+            (user: _ignore:
+              let
+                clusterModules = if clusterhomeManagerModules ? "${user}" then
+                  clusterhomeManagerModules."${user}"
+                else
+                  [ ];
+                machinModules = if machineHomeManagerModules ? "${user}" then
+                  machineHomeManagerModules."${user}"
+                else
+                  [ ];
+              in { imports = (clusterModules ++ machinModules); });
+        }
+      ] else
+        [ ] ++ [
+
+          { # machine config
+            networking.hostName = machineName;
+            networking.domain = clusterName + "." + config.domain.suffix;
+            nixpkgs.hostPlatform = mkDefault machineConfig.system;
+          }
+
+          # make different modules for cluster and user definitions so that the NixOs
+          # module system handles the merging
+
+          { # cluster users
+            users.users = forEachAttrIn clusterUsers
+              (n: userConfig: userConfig.systemConfig);
+            # forEach user (homeManagerModules ++ userHMModules) -> if not empty -> enable HM
+          }
+
+          { # machine users
+            users.users = forEachAttrIn machineUsers
+              (n: userConfig: userConfig.systemConfig);
+          }
+
+        ]);
 
   evalMachines = config: add.nixosConfigurations config;
 
@@ -219,6 +280,9 @@ in {
   # - include dhcp hints for static dhcp ip -> known dhcp ips should be addable
   # tagging
   # - cluster annotations: fqdn, all ips, all machine names + fqdns, all service names, service selectors per service
+  # cluster users
+  # - define a set of users that will be deployed on all machines in the cluster (like services)
+  # maybe the same with groups
 
   # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
   buildCluster = config:
