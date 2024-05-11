@@ -1,9 +1,12 @@
-{ nixpkgs, nixos-generators, home-manager }:
+{ nixpkgs, nixos-generators, home-manager, colmena, flake-utils, nixos-anywhere
+}:
 let
   pkgs = import nixpkgs {
     # the exact value of 'system' should be unimportant since we only use lib
     system = "x86_64-linux";
   };
+  build = import ./deployment.nix { inherit nixpkgs; };
+  filters = import ./filters.nix { lib = pkgs.lib; };
 in with pkgs.lib;
 let
 
@@ -100,54 +103,11 @@ let
       });
 
   };
-  build = {
-    bootImageNixosConfiguration = machineConfig: {
-      system = machineConfig.system;
-      modules = [
-        "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-        ({
-          networking.interfaces = forEachAttrIn
-            machineConfig.nixosConfiguration.config.networking.interfaces
-            (interfaceName: interfaceDefinition:
-              attrsets.getAttrs [ "useDHCP" "ipv4" "ipv6" ]
-              interfaceDefinition);
-          users.users =
-            # filter some users that get created by default
-            attrsets.filterAttrs (userName: userDefinition:
-              ((strings.hasPrefix "nix" userName)
-                || (strings.hasPrefix "systemd" userName) || userName
-                == "backup" || userName == "messagebus" || userName == "nobody"
-                || userName == "sshd"))
-            machineConfig.nixosConfiguration.config.users;
-        })
-      ];
-    };
-  };
-
-  filters = {
-
-    hostname = hostName: clusterName: config:
-      [ "domain.clusters.${clusterName}.machines.${hostName}" ];
-
-    toConfigAttrPaths = filters: clusterName: config:
-      lists.flatten
-      (lists.forEach filters (filter: (filter clusterName config)));
-
-    resolve = paths: config:
-      lists.flatten (lists.forEach paths (path:
-        let
-          resolvedElement = (attrsets.attrByPath (strings.splitString "." path)
-            {
-              # this is the default element if the path was not found
-              # TODO: throw an error if the path cannot be found?
-            } config);
-        in resolvedElement.annotations));
-  };
 
   evalCluster = clusterConfig:
     evalModules {
       modules = [
-        (import ./options.nix { inherit pkgs; })
+        (import ./options.nix { inherit pkgs colmena; })
         { config = { domain = clusterConfig.domain; }; }
       ];
     };
@@ -172,7 +132,29 @@ let
         ];
         activateHomeManager = mergedHomeManagerModules != [ ];
 
-      in if activateHomeManager then [
+      in [
+
+        { # machine config
+          networking.hostName = machineName;
+          networking.domain = clusterName + "." + config.domain.suffix;
+          nixpkgs.hostPlatform = mkDefault machineConfig.system;
+        }
+
+        # make different modules for cluster and user definitions so that the NixOs
+        # module system handles the merging
+
+        { # cluster users
+          users.users =
+            forEachAttrIn clusterUsers (n: userConfig: userConfig.systemConfig);
+          # forEach user (homeManagerModules ++ userHMModules) -> if not empty -> enable HM
+        }
+
+        { # machine users
+          users.users =
+            forEachAttrIn machineUsers (n: userConfig: userConfig.systemConfig);
+        }
+
+      ] ++ (if activateHomeManager then [
 
         # homeManager config
         home-manager.nixosModules.home-manager
@@ -196,29 +178,7 @@ let
               in { imports = (clusterModules ++ machinModules); });
         }
       ] else
-        [ ] ++ [
-
-          { # machine config
-            networking.hostName = machineName;
-            networking.domain = clusterName + "." + config.domain.suffix;
-            nixpkgs.hostPlatform = mkDefault machineConfig.system;
-          }
-
-          # make different modules for cluster and user definitions so that the NixOs
-          # module system handles the merging
-
-          { # cluster users
-            users.users = forEachAttrIn clusterUsers
-              (n: userConfig: userConfig.systemConfig);
-            # forEach user (homeManagerModules ++ userHMModules) -> if not empty -> enable HM
-          }
-
-          { # machine users
-            users.users = forEachAttrIn machineUsers
-              (n: userConfig: userConfig.systemConfig);
-          }
-
-        ]);
+        [ ]));
 
   evalMachines = config: add.nixosConfigurations config;
 
@@ -256,20 +216,54 @@ let
 
   deploymentAnnotation = config:
     let machines = get.machines config;
-    in config // {
+    in config // attrsets.recursiveUpdate {
 
       nixosConfigurations = forEachAttrIn machines
         (machineName: machineConfig: machineConfig.nixosConfiguration);
 
-      stage0Isos = forEachAttrIn machines (machineName: machineConfig:
-        nixos-generators.nixosGenerate
-        ((build.bootImageNixosConfiguration machineConfig) // {
-          format = "iso";
-        }));
+      colmena = {
+        meta.nixpkgs = import nixpkgs {
+          system = "x86_64-linux"; # TODO: is this used for all machines?
+          overlays = [ ];
+        };
+      } // forEachAttrIn machines (machineName: machineConfig: {
+        deployment = machineConfig.deployment;
+        imports = machineConfig.nixosModules;
+      });
 
-      # colmena = { };
-      # ownDeploymentScripts = { };
-    };
+      apps = colmena.apps;
+      # TODO: clusterconfig app as default
+
+    }
+    # The deployment options are generated for all system  configurations (by using flake utils)
+
+    (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
+
+      # buld an iso package for each machine configuration 
+      packages = forEachAttrIn machines (machineName: machineConfig: {
+        iso = nixos-generators.nixosGenerate
+          ((build.bootImageNixosConfiguration machineConfig) // {
+            format = "iso";
+          });
+        setup = let
+          nixosConfig =
+            machineConfig.nixosConfiguration.config.system.build.toplevel.outPath;
+          formatScript =
+            machineConfig.nixosConfiguration.config.partitioning.ephemeral_script;
+        in pkgs.writeScriptBin "deploy" ''
+          ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${machineConfig.deployment.targetUser}@${machineConfig.deployment.targetHost}
+        '';
+      });
+
+      # # build executables for deployment that can be run with 'nix run'
+      # apps = forEachAttrIn machines (machineName: machineConfig: {
+      #   "setup-${machineName}" = {
+      #     type = "app";
+      #     program = ? run nixos anywhere;
+      #   };
+      #   # "deploy-${machioneName}" = ? run colmena upload-keys; run nixos-rebuild;
+      # });
+    }));
 
 in {
 
@@ -290,6 +284,8 @@ in {
       # Step 1:
       # Evaluate the cluster to check for type conformity
       evaluatedCluster = (evalCluster config).config;
+
+      # TODO: call module functions here including cluster annotation
 
       # Step 2:
       # Annotate all machines with data from the cluster config.
@@ -315,13 +311,18 @@ in {
       # Add the service configurations to the modlues of the tergeted machines
       serviceAnnotatedCluster = serviceAnnotation evalAnnotatedCluser;
 
+      # TODO: call module functions here (including the functions above?)
+
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
       nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
 
+      # TODO: call module functions here including deployment function
+
       # Step 7:
       # Build the deployment scripts 
       deploymentAnnotatedCluster = deploymentAnnotation nixosConfiguredCluster;
+
     in deploymentAnnotatedCluster;
 
 }

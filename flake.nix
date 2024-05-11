@@ -24,18 +24,26 @@
       url = "github:nix-community/home-manager/release-23.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    colmena = {
+      url = "github:zhaofengli/colmena/v0.4.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = { self, nixpkgs, disko, nixos-anywhere, nixos-generators
-    , home-manager, ... }@inputs:
+    , home-manager, colmena, flake-utils, ... }@inputs:
 
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
     in {
 
-      lib = (import ("${self}/clusterConfig/clusterConfig.nix") {
-        inherit nixos-generators home-manager nixpkgs;
+      lib = (import ("${self}/clusterConfig") {
+        inherit nixos-generators home-manager nixpkgs colmena flake-utils
+          nixos-anywhere;
       }) // {
 
         # takes a list of disko devices definitions and returns  a devieces definition

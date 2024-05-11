@@ -78,19 +78,24 @@ in {
         };
         ephemeral_script = mkOption {
           type = package;
-          default =
-            (disko.lib.diskoScript { disko = config.partitioning.ephemeral; }
-              pkgs);
+          default = let
+            diskoScript =
+              (disko.lib.diskoScript { disko = config.partitioning.ephemeral; }
+                pkgs);
+          in diskoScript;
           description = ''
             Script to whipe and format the disko configuration specified by `partitioning.ephemeral`
           '';
         };
         persistent_script = mkOption {
           type = package;
-          default = (disko.lib.diskoScript {
-            disko = (lib.attrsets.recursiveUpdate config.partitioning.ephemeral
-              config.partitioning.persistent);
-          } pkgs);
+          default = let
+            diskoScript = (disko.lib.diskoScript {
+              disko =
+                (lib.attrsets.recursiveUpdate config.partitioning.ephemeral
+                  config.partitioning.persistent);
+            } pkgs);
+          in diskoScript;
           description = ''
             Script to whipe and format the disko configuration specified by `partitioning.ephemeral` AND `partitioning.persistent`.
           '';

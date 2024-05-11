@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, colmena }:
 with pkgs.lib;
 with pkgs.lib.types;
 let
@@ -92,6 +92,19 @@ let
       #   };
       #   config = {  };
       # };
+
+      deployment = let
+        colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
+      in attrsets.recursiveUpdate
+      # import colmena deployment options
+      (colmenaOptions.deploymentOptions {
+        lib = pkgs.lib;
+        name = "{hostname}";
+      }).options.deployment
+      # overwrite colmena defaults
+      {
+        # targetHost = TODO: ?; 
+      };
 
     };
   };
