@@ -5,13 +5,12 @@ let
     # the exact value of 'system' should be unimportant since we only use lib
     system = "x86_64-linux";
   };
-  build = import ./deployment.nix { inherit nixpkgs; };
   filters = import ./filters.nix { lib = pkgs.lib; };
+  clusterlib = import ./lib.nix { lib = pkgs.lib; };
+
+  forEachAttrIn = clusterlib.forEachAttrIn;
 in with pkgs.lib;
 let
-
-  # helper functions
-  forEachAttrIn = attrSet: function: (attrsets.mapAttrs function attrSet);
 
   get = {
 
@@ -107,8 +106,19 @@ let
   evalCluster = clusterConfig:
     evalModules {
       modules = [
-        (import ./options.nix { inherit pkgs colmena; })
-        { config = { domain = clusterConfig.domain; }; }
+        ./deployment.nix
+        ./options.nix
+        {
+          config = {
+            # make flake functions from nixpkgs available for submodules
+            _module.args = {
+              inherit pkgs nixpkgs clusterlib colmena;
+              lib = pkgs.lib;
+            };
+            # set the domain attribute for evaluation
+            domain = clusterConfig.domain;
+          };
+        }
       ];
     };
 

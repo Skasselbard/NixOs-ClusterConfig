@@ -1,14 +1,30 @@
-{ nixpkgs }:
+{ pkgs, lib, clusterlib, nixpkgs, colmena, ... }:
 let
   pkgs = import nixpkgs {
     # the exact value of 'system' should be unimportant since we only use lib
     system = "x86_64-linux";
   };
+  forEachAttrIn = clusterlib.forEachAttrIn;
 in with pkgs.lib;
 let
-  # helper functions
-  forEachAttrIn = attrSet: function: (attrsets.mapAttrs function attrSet);
-in {
+
+  # redefine types to nest submodules at the right place
+  domainType = clusterlib.domainType { inherit clusterType; };
+  clusterType = clusterlib.clusterType { inherit machineType; };
+
+  # defining deployment options for machines
+  machineType.options.deployment =
+    let colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
+    in attrsets.recursiveUpdate
+    # import colmena deployment options
+    (colmenaOptions.deploymentOptions {
+      lib = pkgs.lib;
+      name = "{hostname}";
+    }).options.deployment
+    # overwrite colmena defaults
+    {
+      # targetHost.default = TODO: ?;
+    };
 
   bootImageNixosConfiguration = machineConfig:
     let
@@ -85,4 +101,8 @@ in {
         }
       ];
     };
+in {
+
+  options.domain = domainType;
+
 }
