@@ -3,6 +3,57 @@ with pkgs.lib;
 with pkgs.lib.types;
 let
 
+  extensionType = {
+
+    clusterTransformations = mkOption {
+      description = lib.mdDoc ''
+        A list of functions that takes a clusterConfig and returns a clusterConfig.
+
+        These functions get called after the first cluster evaluation.
+        In this step, information declared in the cluster options can be transformed and used for annotations.
+        The machine NixOsModules are unevaluated at this point.
+
+        For example, in this step, the default clusterConfig workflow takes the names of all defined machines
+        and sets the ``networking.hostname`` option for each machine.
+      '';
+      type = listOf raw;
+      default = [ ];
+    };
+
+    moduleTransformations = mkOption {
+      description = lib.mdDoc ''
+        A list of functions that takes a clusterConfig and returns a clusterConfig.
+
+        These functions get called after the NixOsConfiguration for each machine was evaluated for the first time
+        and the networking annotations (ips and fqdns) where set.
+        In this step, cluster and machine information can be used to modify the cluster config.
+        After this step, the NixOsModules for each machine will be evaluated once again.
+
+        For example, in this step, the default clusterConfig workflow takes the service and user configuration
+        from the cluster and adds them to the nixOsModules of each machine.
+      '';
+      type = listOf raw;
+      default = [ ];
+    };
+
+    deploymentTransformations = mkOption {
+      description = lib.mdDoc ''
+        A list of functions that takes a clusterConfig and returns a clusterConfig.
+
+        These functions get called after the final NixOsConfiguration evaluation.
+        In this step, the cluster configuration can be annotated with additional information,
+        based on the NixOsConfiguration from each machine.
+
+        For example, in this step, the default clusterConfig workflow takes all machine configurations
+        and adds deployment attributes, like a nixosConfigurations attribute that can be used in a flakes,
+        to the configuration.
+      '';
+      type = listOf raw;
+      default = [ ];
+    };
+
+  };
+
   domainType = {
     suffix = domainDefinitionType;
     clusters = mkOption {
@@ -16,7 +67,7 @@ let
     options = {
       users = mkOption {
         description = mdDoc "A list of users deployed on the cluster nodes.";
-        type = attrsOf (submodule usertype);
+        type = attrsOf (submodule userType);
         default = { };
       };
       services = mkOption {
@@ -64,7 +115,7 @@ let
       users = mkOption {
         description = mdDoc
           "A list of users deployed on the machine node in addition to the cluster users.";
-        type = attrsOf (submodule usertype);
+        type = attrsOf (submodule userType);
         default = { };
       };
 
@@ -95,20 +146,7 @@ let
     };
   };
 
-  usertype.options = {
-    homeManagerModules = mkOption {
-      description = mdDoc ''
-        A list of modules included by homeManager.
-
-        Home manager has its own module system which is evaluated independantly from the NixOs modules.
-        However, the form of home manager modules is identical to NixOs modules.
-
-        This list will not be evaluated by the cluster configuration.
-        It will be directly forwarded to home manager on the corresponding machines in the cluster.
-      '';
-      type = listOf raw;
-      default = [ ];
-    };
+  userType.options = {
 
     systemConfig = mkOption {
       description = ''
@@ -137,4 +175,9 @@ let
   fqdnString =
     strMatching "[^.]+(\\.[^./\\r\\n ]+)*"; # TODO: Better domain regex?
 
-in { options = { domain = domainType; }; }
+in {
+  options = {
+    extensions = extensionType;
+    domain = domainType;
+  };
+}

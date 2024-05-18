@@ -23,6 +23,13 @@ let
     }).options.deployment
     # overwrite colmena defaults
     {
+      # TODO:
+      formatScript = mkOption {
+        description =
+          "Used to format drives during a nixos-anywhere deployment";
+        type = nullOr package;
+        default = null;
+      };
       # targetHost.default = TODO: ?;
     };
 

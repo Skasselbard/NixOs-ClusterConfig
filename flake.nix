@@ -102,6 +102,13 @@
 
       };
 
+      clusterConfigModules = {
+        home-manager = {
+          imports = [ "${self}/clusterConfig/modules/homeManager.nix" ];
+          _module.args = { inherit home-manager; };
+        };
+      };
+
       nixosModules = {
 
         default = { config, pkgs, lib, ... }: {
