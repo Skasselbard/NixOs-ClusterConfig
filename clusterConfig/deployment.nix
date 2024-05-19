@@ -1,41 +1,35 @@
-{ pkgs, lib, clusterlib, nixpkgs, colmena, ... }:
+{ pkgs, lib, clusterlib, nixpkgs, colmena, flake-utils, nixos-generators, ... }:
 let
-  pkgs = import nixpkgs {
-    # the exact value of 'system' should be unimportant since we only use lib
-    system = "x86_64-linux";
-  };
   forEachAttrIn = clusterlib.forEachAttrIn;
+  get = clusterlib.get;
 in with pkgs.lib;
+
 let
 
   # redefine types to nest submodules at the right place
   domainType = clusterlib.domainType { inherit clusterType; };
   clusterType = clusterlib.clusterType { inherit machineType; };
 
-  # defining deployment options for machines
+  # Defining deployment options for machines.
+  # We import and reuse the colmena options
   machineType.options.deployment =
     let colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
     in attrsets.recursiveUpdate
     # import colmena deployment options
     (colmenaOptions.deploymentOptions {
-      lib = pkgs.lib;
+      inherit lib;
       name = "{hostname}";
     }).options.deployment
     # overwrite colmena defaults
     {
-      # TODO:
-      formatScript = mkOption {
-        description =
-          "Used to format drives during a nixos-anywhere deployment";
-        type = nullOr package;
-        default = null;
-      };
       # targetHost.default = TODO: ?;
     };
 
+  # build a bootable iso image from a machine configuration with nixos-generators
   bootImageNixosConfiguration = machineConfig:
     let
       nixosConfig = machineConfig.nixosConfiguration.config;
+
       interfaces = forEachAttrIn nixosConfig.networking.interfaces
         (interfaceName: interfaceDefinition:
           attrsets.getAttrs [ "useDHCP" "ipv4" "ipv6" ] interfaceDefinition);
@@ -79,10 +73,6 @@ let
               "wheel"
             ])) nixosConfig.users.groups;
 
-      wheelUsers = attrsets.filterAttrs (userName: userDefinition:
-        (builtins.elem "wheel" userDefinition.extraGroups
-          || userDefinition.group == "wheel")) users;
-
     in {
       system = machineConfig.system;
       modules = [
@@ -108,8 +98,33 @@ let
         }
       ];
     };
+
+  # Build the deployment scripts and functions including
+  # - nixosConfigurations for each machine
+  # - minimal setup images in packages.$system.$machineName.iso
+  deploymentAnnotation = config:
+    let machines = get.machines config;
+    in attrsets.recursiveUpdate config {
+
+      nixosConfigurations = forEachAttrIn machines
+        (machineName: machineConfig: machineConfig.nixosConfiguration);
+
+      packages =
+        # The deployment options are generated for all system  configurations (by using flake utils)
+        (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
+
+          # buld an iso package for each machine configuration 
+          packages = forEachAttrIn machines (machineName: machineConfig: {
+            iso = nixos-generators.nixosGenerate
+              ((bootImageNixosConfiguration machineConfig) // {
+                format = "iso";
+              });
+          });
+
+        })).packages;
+    };
 in {
 
   options.domain = domainType;
-
+  config.extensions.deploymentTransformations = [ deploymentAnnotation ];
 }

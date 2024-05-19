@@ -1,5 +1,4 @@
-{ pkgs, nixos-generators, colmena, flake-utils, nixos-anywhere, clusterlib, ...
-}:
+{ pkgs, nixos-generators, clusterlib, ... }:
 let # imports
   filters = import ./filters.nix { lib = pkgs.lib; };
 
@@ -10,16 +9,14 @@ let # imports
 in with pkgs.lib;
 let
 
-  # Annotate all machines with data from the cluster config.
+  # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
   # This includes:
   # - Hostnames: networking.hostname is set to the name of the machiene definition
   # - DomainName: networkinig.domain is set to clusterName.domainSuffix
   # - Hostplattform: pkgs.hostPlattform is set to the configured system in the machine configuration
-  # clusterAnnotatedCluster = clusterAnnotation evaluatedCluster;
-  # - UserDefinitions: users.users is set
+  # - UserDefinitions: users.users is set with information from cluster-users and machine-users
   clusterAnnotation = config:
 
-    # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
     add.nixosModule config (clusterName: machineName: machineConfig:
       let
 
@@ -51,6 +48,34 @@ let
       ]);
 
   # Add the service configurations to the modlues of the tergeted machines
+  # A service is a set that defines selectors, roles and a config function that defines a proto nixosModule.
+  # 
+  # A selector is a list of filters define the hosts on which the service should be deployed.
+  #
+  # The roles attribute defines a set of key value pairs where the key is a role name and the value is a list of filters.
+  #
+  # A filter is a function that takes a clusterName and a config and returns a list of paths in the clusterConfig.
+  # You can look in the 'filters.nix' module to find examples like a filter that returns a path to a host when it is resolved.
+  # Filters for selectors should always point to a machine configuration.
+  #
+  # The proto module has one of the following forms:
+  #
+  #  {selectors, roles, this }: {
+  #     ... # nixosConfig
+  #  };
+  #
+  # or
+  #
+  #  {selectors, roles, this }: 
+  #     { config, pkgs, ...}:
+  #     ... # nixosConfig
+  #  };
+  #
+  # The proto modules wil get resolved to a final nixosModule by this function by applying the first
+  # input closure (i.e. '{selectors, roles, this }:').
+  # The values for the clousre are #TODO:
+  # 
+  # As a result, the service can use cluster and machine information in its definition.
   serviceAnnotation = with lists;
     config:
     let services = get.services config;
@@ -70,68 +95,15 @@ let
         (service.config {
           selectors =
             service.selectors (filters.resolve service.selectors config);
-          roles = service.roles;
+          roles = service.roles; # TODO: resolve roles
           this = machineConfig.annotations; # machineConfig;
         }))));
-
-  # Build the deployment scripts 
-  deploymentAnnotation = config:
-    let machines = get.machines config;
-    in config // attrsets.recursiveUpdate {
-
-      nixosConfigurations = forEachAttrIn machines
-        (machineName: machineConfig: machineConfig.nixosConfiguration);
-
-      colmena = {
-        meta.nixpkgs = import nixpkgs {
-          system = "x86_64-linux"; # TODO: is this used for all machines?
-          overlays = [ ];
-        };
-      } // forEachAttrIn machines (machineName: machineConfig: {
-        deployment = machineConfig.deployment;
-        imports = machineConfig.nixosModules;
-      });
-
-      apps = colmena.apps;
-      # TODO: clusterconfig app as default
-
-    }
-    # The deployment options are generated for all system  configurations (by using flake utils)
-
-    (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-
-      # buld an iso package for each machine configuration 
-      packages = forEachAttrIn machines (machineName: machineConfig: {
-        iso = nixos-generators.nixosGenerate
-          ((build.bootImageNixosConfiguration machineConfig) // {
-            format = "iso";
-          });
-        setup = let
-          nixosConfig =
-            machineConfig.nixosConfiguration.config.system.build.toplevel.outPath;
-          formatScript =
-            machineConfig.nixosConfiguration.config.partitioning.ephemeral_script;
-        in pkgs.writeScriptBin "deploy" ''
-          ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${machineConfig.deployment.targetUser}@${machineConfig.deployment.targetHost}
-        '';
-      });
-
-      # # build executables for deployment that can be run with 'nix run'
-      # apps = forEachAttrIn machines (machineName: machineConfig: {
-      #   "setup-${machineName}" = {
-      #     type = "app";
-      #     program = ? run nixos anywhere;
-      #   };
-      #   # "deploy-${machioneName}" = ? run colmena upload-keys; run nixos-rebuild;
-      # });
-    }));
 
 in {
 
   config.extensions = {
     clusterTransformations = [ clusterAnnotation ];
     moduleTransformations = [ serviceAnnotation ];
-    deploymentTransformations = [ deploymentAnnotation ];
   };
 
 }

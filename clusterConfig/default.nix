@@ -1,10 +1,15 @@
-{ nixpkgs, nixos-generators, home-manager, colmena, flake-utils, nixos-anywhere
-}:
+{ nixpkgs, nixos-generators, colmena, flake-utils }:
+
 let # imports
+
   pkgs = import nixpkgs {
     # the exact value of 'system' should be unimportant since we only use lib
+    # TODO: is the above statement still true?
     system = "x86_64-linux";
   };
+
+  lib = pkgs.lib;
+
   clusterlib = import ./lib.nix {
     inherit nixpkgs;
     lib = pkgs.lib;
@@ -13,7 +18,8 @@ let # imports
   filters = import ./filters.nix { lib = pkgs.lib; };
   add = clusterlib.add;
 
-in with pkgs.lib;
+in with lib;
+
 let
 
   get = {
@@ -52,19 +58,27 @@ let
 
   };
 
+  # Use the NixOs module system to evaluate the clusterConfig
+  #
+  # - Add a list of clusterConfigModules from 'clusterConfig.modules' to the module list
+  # - Add the clusterConfig default modules
+  # - Forward required flake inputs to _module.args to make them available in the imported modules
+  # - Set the evaluated config attribute to the initial value
   evalCluster = clusterConfig:
-    evalModules {
-      modules = [
+    let
+      clusterModules =
+        if clusterConfig ? modules then clusterConfig.modules else [ ];
+    in evalModules {
+      modules = clusterModules ++ [
         ./deployment.nix
         ./transformations.nix
         ./options.nix
         {
-          imports = clusterConfig.imports;
           config = {
-            # make flake functions from nixpkgs available for submodules
+            # make flake inputs available for submodules
             _module.args = {
-              inherit pkgs nixpkgs clusterlib colmena flake-utils;
-              lib = pkgs.lib;
+              colmena = lib.mkDefault colmena;
+              inherit pkgs lib nixpkgs clusterlib flake-utils nixos-generators;
             };
             # set the domain attribute for evaluation
             domain = clusterConfig.domain;
@@ -73,6 +87,9 @@ let
       ];
     };
 
+  # Add a 'nixosConfiguration' attribute to each machine configuration, 
+  # (e.g. domain.cluster.{clustername}.machines.{machinename}.nixosConfiguration)
+  # wich holds an evaluated system configuration based on the modules defined for the machine.
   evalMachines = config: add.nixosConfigurations config;
 
   machineAnnotation = config:
@@ -101,9 +118,7 @@ in {
   # - include dhcp hints for static dhcp ip -> known dhcp ips should be addable
   # tagging
   # - cluster annotations: fqdn, all ips, all machine names + fqdns, all service names, service selectors per service
-  # cluster users
-  # - define a set of users that will be deployed on all machines in the cluster (like services)
-  # maybe the same with groups
+  # maybe define cluster groups in the same way as services und users
 
   # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
   buildCluster = config:
@@ -113,6 +128,7 @@ in {
       evaluatedCluster = (evalCluster config).config;
 
       # Step 2:
+      # Transform the cluster configuration
       clusterAnnotatedCluster = applyClusterTransformations evaluatedCluster
         evaluatedCluster.extensions.clusterTransformations;
 
@@ -129,6 +145,7 @@ in {
       evalAnnotatedCluser = machineAnnotation machineEvaluatedCluster;
 
       # Step 5:
+      # Transform the machine configurations (and the cluster configuration)
       serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluser
         evalAnnotatedCluser.extensions.moduleTransformations;
 
@@ -137,6 +154,7 @@ in {
       nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
 
       # Step 7:
+      # Final transformations
       deploymentAnnotatedCluster =
         applyClusterTransformations nixosConfiguredCluster
         nixosConfiguredCluster.extensions.deploymentTransformations;

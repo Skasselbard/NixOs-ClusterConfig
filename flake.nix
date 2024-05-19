@@ -42,8 +42,7 @@
     in {
 
       lib = (import ("${self}/clusterConfig") {
-        inherit nixos-generators home-manager nixpkgs colmena flake-utils
-          nixos-anywhere;
+        inherit nixos-generators nixpkgs colmena flake-utils;
       }) // {
 
         # takes a list of disko devices definitions and returns  a devieces definition
@@ -103,9 +102,39 @@
       };
 
       clusterConfigModules = {
+
+        # Imports a selction of usefull deployment modules
+        default = {
+          imports = [
+            self.clusterConfigModules.home-manager
+            self.clusterConfigModules.nixos-anywhere
+            self.clusterConfigModules.colmena
+          ];
+        };
+
+        # Makes a list of 'homeManagerModules' available for the user configurations.
+        # The home-amanager modules in that list will be added to the user configuration
         home-manager = {
           imports = [ "${self}/clusterConfig/modules/homeManager.nix" ];
           _module.args = { inherit home-manager; };
+        };
+
+        # Makes a deployment script available (currently) for each machine
+        # under 'clusterconfig.packages.{system}.{machinename}.setup'.
+        # The script remotly deploys the machines sytem (build from the machine nixosConfiguration) to 
+        # a running linux machine reachable under '...{machineConfig}.deployment.targetHost'.
+        # The currently running system will be overwritten.
+        nixos-anywhere = {
+          imports = [ "${self}/clusterConfig/modules/nixosAnywhere.nix" ];
+          _module.args = { inherit nixos-anywhere; };
+        };
+
+        # Makes a colmena hive definition available under 'clusterConfig.colmena'.
+        # Also adds an app deinition for colmena that makes colmena availablke in your flake by runnong
+        # 'nix run .#colmena [colmena-sub-cmd] -- [colmenaOptions]'
+        colmena = {
+          imports = [ "${self}/clusterConfig/modules/colmena.nix" ];
+          _module.args = { inherit colmena; };
         };
       };
 
