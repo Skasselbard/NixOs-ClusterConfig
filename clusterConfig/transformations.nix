@@ -1,4 +1,5 @@
 { pkgs, nixos-generators, clusterlib, ... }:
+with pkgs.lib;
 let # imports
   filters = import ./filters.nix { lib = pkgs.lib; };
 
@@ -6,8 +7,24 @@ let # imports
   add = clusterlib.add;
   get = clusterlib.get;
 
-in with pkgs.lib;
-let
+  # get the config closure and compute its result to form a complete NixosModule
+  reduceService = machineConfig: service: config:
+    (service.config {
+      selectors = (filters.resolve service.selectors config);
+      roles = forEachAttrIn service.roles
+        (name: filter: filters.resolve filter config);
+      this = machineConfig.annotations; # machineConfig;
+    });
+
+  # assert filter properties and assemble error message
+  filterFormatIsOk = filter:
+    asserts.assertMsg (strings.hasPrefix "domain" filter)
+    "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
+
+  toConfigAttrPaths = filters: clusterName: config:
+    lists.flatten (lists.forEach filters (filter: (filter clusterName config)));
+
+in let
 
   # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
   # This includes:
@@ -78,26 +95,30 @@ let
   # As a result, the service can use cluster and machine information in its definition.
   serviceAnnotation = with lists;
     config:
-    let services = get.services config;
-    in add.nixosModule config (clusterName: machineName: machineConfig:
+    add.nixosModule config (clusterName: machineName: machineConfig:
       let
+
+        services = attrsets.attrValues
+          (forEachAttrIn config.domain.clusters."${clusterName}".services
+            (serviceName: serviceDefinition: {
+              "config" = serviceDefinition.config;
+              selectors =
+                (toConfigAttrPaths serviceDefinition.selectors clusterName
+                  config);
+              roles = (forEachAttrIn serviceDefinition.roles
+                (rolename: role: toConfigAttrPaths role clusterName config));
+            }));
 
         # filter the service list for the ones that match the path of the current machine
         filteredServices = builtins.filter (service:
           (lists.any (filter:
-            assert asserts.assertMsg (strings.hasPrefix "domain" filter)
-              "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
+            assert filterFormatIsOk filter;
             filter == "domain.clusters.${clusterName}.machines.${machineName}")
             service.selectors)) services;
 
-      in (lists.forEach filteredServices (service:
+      in lists.forEach filteredServices (service:
         # get the config closure and compute its result to form a complete NixosModule
-        (service.config {
-          selectors =
-            service.selectors (filters.resolve service.selectors config);
-          roles = service.roles; # TODO: resolve roles
-          this = machineConfig.annotations; # machineConfig;
-        }))));
+        reduceService machineConfig service config));
 
 in {
 

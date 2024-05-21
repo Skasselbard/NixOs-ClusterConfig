@@ -101,6 +101,13 @@
 
       };
 
+      clusterServices = {
+
+        staticDns = import "${self}/clusterConfig/services/staticDns.nix";
+
+        vault = import "${self}/clusterConfig/services/vault.nix";
+      };
+
       clusterConfigModules = {
 
         # Imports a selction of usefull deployment modules
@@ -144,10 +151,6 @@
           imports = [ "${self}/modules" ];
           _module.args.specialArgs.disko =
             disko; # TODO: Should it be done just because it can be done?
-        };
-
-        vault = { config, pkgs, lib, ... }: {
-          imports = [ "${self}/modules/vault.nix" ];
         };
 
       };

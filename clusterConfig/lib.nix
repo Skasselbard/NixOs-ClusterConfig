@@ -85,10 +85,13 @@ let
 
   };
 
+  toConfigAttrPaths = filters: clusterName: config:
+    lists.flatten (lists.forEach filters (filter: (filter clusterName config)));
+
   get = {
 
-    # returns a list with (unnamed) service Definitions from all services in the cluster config
-    # config -> {{ [path], serviceConfig}, ...}
+    # returns a list with (unnamed) service Definitions from all services in the cluster
+    # and resolves the filter in roles and selectors
     services = config:
       attrsets.attrValues ( # to list
         attrsets.mergeAttrsList (attrsets.attrValues ( # remove cluster names

@@ -5,9 +5,7 @@ with lib; {
   hostname = hostName: clusterName: config:
     [ "domain.clusters.${clusterName}.machines.${hostName}" ];
 
-  # TODO: move to clusterlib?
-  toConfigAttrPaths = filters: clusterName: config:
-    lists.flatten (lists.forEach filters (filter: (filter clusterName config)));
+  # clusterMachines = clusterName: config:
 
   # resolves a filter function to its 'annotation' attribute
   resolve = paths: config:

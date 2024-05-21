@@ -1,3 +1,4 @@
+{ selectors, roles, this }:
 { config, lib, pkgs, ... }:
 let
   # client redirection
@@ -13,37 +14,34 @@ let
   tlsKeyFile = "/var/lib/vault/certs/skassel-intermediate-root.key";
   tlsCaFile = "/var/lib/vault/certs/skassel-root.crt";
 
-  domainRegex = "(.[a-z])*:port";
-
-  roleType = lib.mkOption { type = types types.strMatching domainregex; };
-  roleListType = mkOption { };
 in {
-  options = {
-    dns = mkOption { };
-    roles = mkOption {
-      api = roleType;
-      replicas = roleListType;
-    };
-    package = mkPackageOption pkgs "vault" { };
-    config = with lib; {
-      ui = mkEnableOption (lib.mdDoc "TODO:");
-      certPath = mkOption {
-        type = types.str;
-        default = "/var/lib/vault/certs/";
-        description = lib.mdDoc ''
-          TODO:
-          - search path for tls certificates and private key
-          - cannot be handled by nix because private key needs to be private
-        '';
-      };
+  # options = {
+  #   dns = mkOption { };
+  #   roles = mkOption {
+  #     api = roleType;
+  #     replicas = roleListType;
+  #   };
+  #   package = mkPackageOption pkgs "vault" { };
+  #   config = with lib; {
+  #     ui = mkEnableOption (lib.mdDoc "TODO:");
+  #     certPath = mkOption {
+  #       type = types.str;
+  #       default = "/var/lib/vault/certs/";
+  #       description = lib.mdDoc ''
+  #         TODO:
+  #         - search path for tls certificates and private key
+  #         - cannot be handled by nix because private key needs to be private
+  #       '';
+  #     };
 
-      loglevel = mkOption {
-        type = types.enum [ "trace" "debug" "info" "warn" "error" ];
-        default = "info";
-        description = lib.mdDoc "TODO:";
-      };
-    };
-  };
+  #     loglevel = mkOption {
+  #       type = types.enum [ "trace" "debug" "info" "warn" "error" ];
+  #       default = "info";
+  #       description = lib.mdDoc "TODO:";
+  #     };
+  #   };
+  # };
+
   environment.systemPackages = with pkgs; [ vault-bin certstrap openssl ];
   services.vault = {
     enable = true;
@@ -51,14 +49,14 @@ in {
     # reference architecture: https://developer.hashicorp.com/vault/tutorials/raft/raft-reference-architecture
 
     # TODO: remove after tests
-    # dev = true;
-    # devRootTokenID = "root";
+    dev = true;
+    devRootTokenID = "root";
 
     inherit tlsCertFile;
     inherit tlsKeyFile;
 
-    storageBackend =
-      "raft"; # https://developer.hashicorp.com/vault/docs/configuration/storage/raft
+    # storageBackend =
+    #   "raft"; # https://developer.hashicorp.com/vault/docs/configuration/storage/raft
 
     # TODO: joining? https://developer.hashicorp.com/vault/docs/configuration/storage/raft#retry_join-stanza
     storageConfig = ''

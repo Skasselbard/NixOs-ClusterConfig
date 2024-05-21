@@ -71,7 +71,8 @@ let
         default = { };
       };
       services = mkOption {
-        description = mdDoc "A list of services deployed on the cluster nodes.";
+        description = mdDoc
+          "A list of services deployed on the cluster nodes."; # TODO: more details
         type = attrsOf (submodule clusterServiceType);
         default = { };
       };
@@ -87,7 +88,8 @@ let
   clusterServiceType = {
     options = {
       selectors = mkOption {
-        description = mdDoc "TODO: describe the options";
+        description = mdDoc
+          "A list of filters that resolve nixos machines"; # TODO: more details
         type = listOf filterType;
         default = [ ];
       };
@@ -98,7 +100,7 @@ let
       };
       config = mkOption {
         description = lib.mdDoc "Servicve specific config";
-        type = raw; # TODO: is a type necessary (or useful) here?
+        type = raw;
         default = { };
       };
     };
@@ -107,9 +109,9 @@ let
   machineType = {
     options = {
       system = mkOption {
-        description = lib.mdDoc "TODO:";
-        type = nullOr str;
-        default = null;
+        description = lib.mdDoc "The type of system for this machine";
+        example = "x86_64-linux";
+        type = str;
       };
 
       users = mkOption {
@@ -117,12 +119,19 @@ let
           "A list of users deployed on the machine node in addition to the cluster users.";
         type = attrsOf (submodule userType);
         default = { };
+        example = {
+          bob = systemConfig {
+            isNormalUser = true;
+            extraGroups = [ "wheel" ];
+          };
+        };
       };
 
       nixosModules = mkOption {
         description = lib.mdDoc "machine specific config";
         type = listOf raw;
         default = [ ];
+        example = { boot.loader.systemd-boot.enable = true; };
       };
 
       virtualization = mkOption {
