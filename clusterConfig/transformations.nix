@@ -1,7 +1,10 @@
 { pkgs, nixos-generators, clusterlib, ... }:
 with pkgs.lib;
 let # imports
-  filters = import ./filters.nix { lib = pkgs.lib; };
+  filters = import ./filters.nix {
+    inherit clusterlib;
+    lib = pkgs.lib;
+  };
 
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;

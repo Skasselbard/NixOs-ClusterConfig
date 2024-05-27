@@ -15,7 +15,7 @@ let # imports
     lib = pkgs.lib;
   };
 
-  filters = import ./filters.nix { lib = pkgs.lib; };
+  filters = import ./filters.nix { inherit clusterlib; lib = pkgs.lib; };
   add = clusterlib.add;
 
 in with lib;

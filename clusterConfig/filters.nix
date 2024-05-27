@@ -1,11 +1,21 @@
-{ lib }:
-with lib; {
+{ lib, clusterlib }:
+with lib;
+let
+
+  pathTemplate = clusterName: machineName:
+    "domain.clusters.${clusterName}.machines.${machineName}";
+  get = clusterlib.get;
+
+in {
 
   # filter function that builds a resolvable path for a host
   hostname = hostName: clusterName: config:
-    [ "domain.clusters.${clusterName}.machines.${hostName}" ];
+    [ (pathTemplate clusterName hostName) ];
 
-  # clusterMachines = clusterName: config:
+  clusterMachines = clusterName: config:
+    let cluster = config.domain.clusters."${clusterName}";
+    in lists.forEach (attrsets.attrNames cluster.machines)
+    (machineName: (pathTemplate clusterName machineName));
 
   # resolves a filter function to its 'annotation' attribute
   resolve = paths: config:

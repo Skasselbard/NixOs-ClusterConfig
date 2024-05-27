@@ -41,13 +41,13 @@ let
         clusterUsers = config.domain.clusters."${clusterName}".users;
         machineUsers = machineConfig.users;
 
-        clusterhomeManagerModules = forEachAttrIn clusterUsers
+        clusterHomeManagerModules = forEachAttrIn clusterUsers
           (n: userConfig: userConfig.homeManagerModules);
         machineHomeManagerModules = forEachAttrIn machineUsers
           (n: userConfig: userConfig.homeManagerModules);
 
         mergedHomeManagerModules = lists.flatten [
-          (attrsets.attrValues clusterhomeManagerModules)
+          (attrsets.attrValues clusterHomeManagerModules)
           (attrsets.attrValues machineHomeManagerModules)
         ];
         activateHomeManager = mergedHomeManagerModules != [ ];
@@ -65,15 +65,15 @@ let
           home-manager.users = forEachAttrIn (clusterUsers // machineUsers)
             (user: _ignore:
               let
-                clusterModules = if clusterhomeManagerModules ? "${user}" then
-                  clusterhomeManagerModules."${user}"
+                clusterModules = if clusterHomeManagerModules ? "${user}" then
+                  clusterHomeManagerModules."${user}"
                 else
                   [ ];
-                machinModules = if machineHomeManagerModules ? "${user}" then
+                machineModules = if machineHomeManagerModules ? "${user}" then
                   machineHomeManagerModules."${user}"
                 else
                   [ ];
-              in { imports = (clusterModules ++ machinModules); });
+              in { imports = (clusterModules ++ machineModules); });
         }
       ] else
         [ ]));

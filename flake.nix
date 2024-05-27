@@ -120,7 +120,9 @@
         };
 
         # Makes a list of 'homeManagerModules' available for the user configurations.
-        # The home-amanager modules in that list will be added to the user configuration
+        # The home-amanager modules in that list will be added to the user configuration.
+        # Each home-manager module should set '_class = "homeManager";' to be evaluated by home-manager
+        # since this commit https://github.com/nix-community/home-manager/commit/26e72d85e6fbda36bf2266f1447215501ec376fd
         home-manager = {
           imports = [ "${self}/clusterConfig/modules/homeManager.nix" ];
           _module.args = { inherit home-manager; };
