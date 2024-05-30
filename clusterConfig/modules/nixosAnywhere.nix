@@ -4,6 +4,7 @@ let # imports
   forEachAttrIn = clusterlib.forEachAttrIn;
   get = clusterlib.get;
 in with lib;
+with lib.types;
 
 let
 
@@ -12,7 +13,7 @@ let
   clusterType = clusterlib.clusterType { inherit machineType; };
 
   # defining deployment options for machines
-  machineType.options.deployment = {
+  machineType.options.partitioning = {
     # TODO:
     formatScript = mkOption {
       description = "Used to format drives during a nixos-anywhere deployment";

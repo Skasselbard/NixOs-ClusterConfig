@@ -113,12 +113,31 @@ let
         # The deployment options are generated for all system  configurations (by using flake utils)
         (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
 
-          # buld an iso package for each machine configuration 
           packages = forEachAttrIn machines (machineName: machineConfig: {
+
+            # buld an iso package for each machine configuration 
             iso = nixos-generators.nixosGenerate
               ((bootImageNixosConfiguration machineConfig) // {
                 format = "iso";
               });
+
+            # add a script to return the contents of the hardware configuration for each machine
+            hardware-configuration = let
+              cfg = machineConfig.deployment;
+              host = cfg.targetHost;
+              user = if cfg ? targetUser && cfg.targetUser != null then
+                cfg.targetUser
+              else
+                "";
+              port = if cfg ? targetPort && cfg.targetPort != null then
+                ":" + cfg.targetPort
+              else
+                "";
+              script =
+                (pkgs.writeScriptBin "hardware-configuration-${machineName}"
+                  "${pkgs.openssh}/bin/ssh ${user}@${host}${port} -t 'nixos-generate-config --show-hardware-config --no-filesystems'");
+            in script;
+
           });
 
         })).packages;
