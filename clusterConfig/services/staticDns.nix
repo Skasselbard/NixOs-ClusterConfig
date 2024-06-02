@@ -1,4 +1,4 @@
-{ selectors, roles, this, ... }:
+{ selectors, roles, this }:
 { config, lib, pkgs, ... }:
 with lib.lists;
 let

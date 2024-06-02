@@ -1,10 +1,9 @@
-{ lib, clusterlib }:
+{ lib }:
 with lib;
 let
 
   pathTemplate = clusterName: machineName:
     "domain.clusters.${clusterName}.machines.${machineName}";
-  get = clusterlib.get;
 
 in {
 

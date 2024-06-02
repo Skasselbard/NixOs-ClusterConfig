@@ -127,7 +127,7 @@ in {
 
   config.extensions = {
     clusterTransformations = [ clusterAnnotation ];
-    moduleTransformations = [ serviceAnnotation ];
+    # moduleTransformations = [ serviceAnnotation ];
   };
 
 }

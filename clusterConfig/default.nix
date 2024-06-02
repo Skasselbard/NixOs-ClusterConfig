@@ -15,7 +15,7 @@ let # imports
     lib = pkgs.lib;
   };
 
-  filters = import ./filters.nix { inherit clusterlib; lib = pkgs.lib; };
+  filters = import ./filters.nix { lib = pkgs.lib; };
   add = clusterlib.add;
 
 in with lib;
@@ -72,6 +72,7 @@ let
       modules = clusterModules ++ [
         ./deployment.nix
         ./transformations.nix
+        ./services.nix
         ./options.nix
         {
           config = {
@@ -135,7 +136,7 @@ in {
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
       # This config will be overwritten later.
-      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
+      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster false;
 
       # Step 4:
       # Annotate the cluster with data from the machine configurations
@@ -151,7 +152,7 @@ in {
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
-      nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
+      nixosConfiguredCluster = evalMachines serviceAnnotatedCluster true;
 
       # Step 7:
       # Final transformations

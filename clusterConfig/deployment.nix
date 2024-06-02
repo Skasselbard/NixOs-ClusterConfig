@@ -78,6 +78,13 @@ let
       modules = [
 
         "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+
+        # force overwrite iso root with machine root to reuse passwords and ssh keys
+        {
+          users.users.root = lib.mkForce nixosConfig.users.users.root;
+        }
+
+        # useful settings to inherit from the machine configuration
         {
           # copy some useful locale settings
           console.font = nixosConfig.console.font;

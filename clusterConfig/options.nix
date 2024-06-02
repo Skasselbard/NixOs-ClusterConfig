@@ -91,15 +91,32 @@ let
         description = mdDoc
           "A list of filters that resolve nixos machines"; # TODO: more details
         type = listOf filterType;
-        default = [ ];
       };
       roles = mkOption {
         description = mdDoc "TODO:";
         type = roleType;
         default = { };
       };
-      config = mkOption {
-        description = lib.mdDoc "Servicve specific config";
+      definition = mkOption {
+        description = lib.mdDoc ''
+          Service definition
+
+          Has to be closure in the form 
+          { selectors, roles, this }:{
+            # configuration
+          }
+
+
+          TODO:
+        '';
+        type = raw;
+      };
+      extraConfig = mkOption {
+        description = lib.mdDoc ''
+          Service extra configuration
+
+          Additional Configuration in the form of a normal NixOs module.
+        '';
         type = raw;
         default = { };
       };
