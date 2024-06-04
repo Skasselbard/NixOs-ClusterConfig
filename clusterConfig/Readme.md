@@ -1,5 +1,18 @@
 # NixClusterConfig
 
+TODO:
+- example
+  - minimal config
+  - embedding in a flake
+  - cmds to deploy
+- user handling
+- machine attribute sets
+- assumptions
+  - Hostnames are unique
+  - static ips are used
+- scripts to display concise cluster information
+- feature-list?
+
 ## What is it
 
 - flake based
@@ -8,6 +21,7 @@
 - Can be translated to a list of nixosConfigs and deployed to machines
 - Generates machine specific deployment packages that can be build with nix build or executed with nix run
 - Extendable with modules to add configuration features or deployment packages
+- Scope: home cloud
 
 ## Concepts
 
@@ -62,6 +76,9 @@ A service is a closure that returns a NixOs Module.
 ---
 - The service closure will be called with the defined `selector` `roles` and a `this` attribute after resolving them to a cluster element.
 - As a result you can use the configuration from the resolved elements in the service definition.
+- The machine config can also be accessed with the `config` attribute set of the resulting NixOs module as with all other modules
+  - the config attribute set depends on the currently evaluated machine
+  - meaning it is different for each machine even though it is defined in the same service
 
 #### Service Definition
 
@@ -124,3 +141,97 @@ Services are copied to all machines that match the filter of the services `selec
    1. the resulting NixOs module from step 5. and
    2. the NixosModule defined by the services `extraConfig` attribute
    3. for each service added to the (current) machine
+
+## ClusterConfig Evaluation
+
+The clusterConfig evaluation is defined in [default.nix](./default.nix).
+
+These are the steps that will be performed:
+
+### 1. ClusterConfig Evaluation
+
+In this step the clusterConfig itself is evaluated for the first and only time.
+- All Modules are resolved and included
+- All Options are checked
+- This step fails if a configuration is missing or has the wrong type
+- The following steps rewrite the cluster config, however, non of the rewriting will be evaluated again.
+
+### 2. Cluster Transformation
+
+In this step The cluster config is rewritten for the first time by executing a list of `transformation function`.
+- A transformation function takes a clusterConfig as input and returns a clusterConfig.
+- All transformation functions defined in `clusterConfig.extensions.clusterTransformations` are called in this step.
+- No machines are evaluated at this point.
+  - Only raw clusterConfig information is available here
+- The default values that are set in this step are:
+  - host names
+  - domain names
+  - Machine user modules (i.e. `users.users."${clusterUser}"`) copied from the `clusterConfig.clusters."${clusterName}.users` attribute set.
+  - The `nixpkgs.hostPlatform` attribute for each machine copied from the `clusterConfig.clusters."${clusterName}".machines."${machineName}".system` attribute.
+  - Machine services copied from `clusterConfig.clusters."${clusterName}.services` the to `clusterConfig.clusters."${clusterName}".machines."${machineName}.services"` (See the Cluster Service documentation for more details).
+
+### 3. Initial Machine Evaluation
+
+In this step the NixOsConfiguration for each machine is built for the first time.
+The Configuration is build from the modules in `clusterConfig.clusters."${clusterName}".machines."${machineName}.nixosModules"`.
+
+### 4. Cluster Annotations
+
+In this step the clusterConfig is rewritten with some default annotations using information from the machine evaluation step.
+Currently only machines are annotated (`clusterConfig.clusters."${clusterName}".machines."${machineName}.annotations`).
+The current default machine annotations in this step are:
+- the cluster name in `.annotations.clusterName`
+- the machine name in `.annotations.machineName`
+- the machines fqdn in `.annotations.fqdn`
+- a set of all static ips in `.annotations.ips` extracted from the nixos configuration
+  - the ips attribute set has the following form (the interface names depend on your hardware)
+
+    ```nix
+    annotation.ips = {
+      all = [ "x.x.x.x" "x.x.x.y" ]; # all found static ips from all interfaces
+      eno1 = [ "x.x.x.x" ]; # static ips from the eno1 interface
+      eno2 = [ "x.x.x.y" ]; # static ips from the eno2 interface
+    }
+    ```
+
+### 5. Module Transformations
+
+In this step The cluster config is rewritten for the second time by executing a list of `transformation function`.
+- A transformation function takes a clusterConfig as input and returns a clusterConfig.
+- All transformation functions defined in `clusterConfig.extensions.moduleTransformations` are called in this step.
+- In this step, the `nixosModules` from each machine where already evaluated and the result is available in (`clusterConfig.clusters."${clusterName}".machines."${machineName}.nixosConfiguration`).
+- However, service modules are not available yet and may be modified before the final nixosConfiguration is built for each machine
+- Currently, there are no default module transformations defined.
+
+### 6. Final Machine Evaluation
+
+In this step the NixOsConfiguration for each machine is built again including all modules that where added in the mean time.
+The build NixosConfiguration is extended with all service modules assigned to this machine (See the Cluster Service documentation for more details).
+
+### 7. Deployment Transformations
+
+In this step the clusterConfig is rewritten for a final time.
+This rewriting will have no effect on the machine configurations anymore.
+The default transformation adds some flake definitions that are useful for deployment:
+- An iso file for each machine under `clusterConfig.packages."${system}"."${machineName}".iso` if copied to the flake packages
+  - Can be build with `nix build .#machineName.iso`
+  - Inherits ips, users and some locale settings from the machine configuration
+  - If run, can be accessed with ssh
+  - Otherwise identical to the minimal nix installation image
+- A script to remotely retrieve and print the hardware-configuration for the machine under `clusterConfig.packages."${system}"."${machineName}".hardware-configuration`
+  - Can be executed with `nix run .#machineName.hardware-configuration` if copied to the flake packages
+
+## Extending clusterConfig
+
+- look at the [Modules](./modules/) for examples on how to write a cluster config module
+
+- ClusterConfig can be extended similar to NixOs with the Nix [module system](https://nixos.org/manual/nixpkgs/stable/#module-system).
+- To use a module, add it to the list `clusterConfig.modules`  list.
+  - either as a path,
+  - as an attribute set e.g. `{config = {...}; }`
+  - or as a module closure e.g. `{pkgs, lib, ...}: {config = {...}; }`
+---
+- With modules, you can define:
+  - new clusterConfig options that get evaluated
+
+- In clusterConfig.clusterlib are convenience functions
