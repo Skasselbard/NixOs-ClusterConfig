@@ -13,32 +13,42 @@ let
   clusterType = clusterlib.clusterType { inherit machineType; };
 
   # defining deployment options for machines
-  machineType.options.partitioning = {
+  machineType.options.deployment = {
     # TODO:
     formatScript = mkOption {
-      description = "Used to format drives during a nixos-anywhere deployment";
-      type = nullOr package;
+      description = ''
+      Used to format drives during a nixos-anywhere deployment.
+      
+      If set to `null` no format script will be executed while deploying nixos anywhere.
+      If set to `"disko"` the default [disko](https://github.com/nix-community/disko) format script is run.
+      If set to a executable script, this script is run.
+
+      Nixos Onywhere can be run with `nix run .#hostname.create`.
+      Additionally, the format script can be run remotly with `nix run .#hostname.format`.
+      '';
+      type = nullOr either package enum ["disko"];
       default = null;
     };
   };
 
-  # Build nixos-anywhere setup script for remote installations in packages.$system.$machineName.setup
+  # Build nixos-anywhere setup script for remote installations in packages.$system.$machineName.create
   deploymentAnnotation = config:
     let machines = get.machines config;
     in attrsets.recursiveUpdate config
 
     (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
 
-      # buld an iso package for each machine configuration 
+      # build an iso package for each machine configuration
       packages = forEachAttrIn machines (machineName: machineConfig: {
-        setup = let
+        create = let
           nixosConfig =
             machineConfig.nixosConfiguration.config.system.build.toplevel.outPath;
-          formatScript =
-            machineConfig.nixosConfiguration.config.partitioning.ephemeral_script;
+          formatScript = if machineConfig.deployment.formatScript == null then else
+            machineConfig.deployment.formatScript;
         in pkgs.writeScriptBin "deploy" ''
           ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${machineConfig.deployment.targetUser}@${machineConfig.deployment.targetHost}
         '';
+        # TODO: format: ... if formatScritp == null then "echo no format script configured" else run formatScript;
       });
 
     }));

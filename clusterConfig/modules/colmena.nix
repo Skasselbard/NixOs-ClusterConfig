@@ -5,6 +5,20 @@ let
 in with lib;
 
 let
+  # Colmena options are already defined and used in the clusterConfig deployment options
+  # Hopwever, to add our own deployment options to the colmena option preset, while still be able
+  # to build the colmena attribute set, we need to filter the deployment attribute set
+  # for only the colmena options.
+  colmenaOptions =
+    ((import "${colmena.outPath}/src/nix/hive/options.nix").deploymentOptions {
+      inherit lib;
+      name = "{hostname}";
+    }).options.deployment;
+
+  colmenaConfigFrom = deploymentConfig:
+    let colmenaNames = attrsets.attrNames colmenaOptions;
+    in attrsets.filterAttrs (name: _: builtins.elem name colmenaNames)
+    deploymentConfig;
 
   # Build the deployment scripts and functions including
   # - colmena hive definition for remote deployment
@@ -21,7 +35,7 @@ let
           overlays = [ ];
         };
       } // forEachAttrIn machines (machineName: machineConfig: {
-        deployment = machineConfig.deployment;
+        deployment = colmenaConfigFrom machineConfig.deployment;
         imports = machineConfig.nixosModules;
       });
 
