@@ -86,6 +86,10 @@ let
 
         # useful settings to inherit from the machine configuration
         {
+          environment.systemPackages = [
+            pkgs.jq # needed for disko formatting
+          ];
+
           # copy some useful locale settings
           console.font = nixosConfig.console.font;
           console.keyMap = nixosConfig.console.keyMap;
