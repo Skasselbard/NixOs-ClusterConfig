@@ -136,7 +136,7 @@ in {
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
       # This config will be overwritten later.
-      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster false;
+      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
 
       # Step 4:
       # Annotate the cluster with data from the machine configurations
@@ -152,7 +152,7 @@ in {
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
-      nixosConfiguredCluster = evalMachines serviceAnnotatedCluster true;
+      nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
 
       # Step 7:
       # Final transformations

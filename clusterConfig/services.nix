@@ -1,10 +1,7 @@
 { pkgs, lib, nixos-generators, clusterlib, ... }:
 with pkgs.lib;
 let # imports
-  filters = import ./filters.nix {
-    inherit clusterlib;
-    lib = pkgs.lib;
-  };
+  filters = import ./filters.nix { lib = pkgs.lib; };
 
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
@@ -40,45 +37,30 @@ let # imports
   machineServiceToNixOsConfiguration = config:
     add.nixosModule config (clusterName: machineName: machineConfig:
       let
-        services = machineConfig.services;
-        serviceModules = forEachAttrIn services (serviceName: serviceDefinition:
-          let
-            selectors = (filters.resolve
-              (toConfigAttrPaths serviceDefinition.selectors clusterName config)
-              config);
-            roles = (forEachAttrIn serviceDefinition.roles (filters.resolve
-              (roleName: role: (toConfigAttrPaths role clusterName config))
-              config));
-            serviceModule = lib.evalModules {
-              modules = [
-                serviceDefinition.config
-                {
-                  config = {
-
-                    # make serviceConfig available in the configuration
-                    _module.args = {
-                      serviceConfig = {
-                        inherit selectors roles;
-                        this = machineConfig.annotations;
-                      };
-                      inherit pkgs lib;
-                    };
-
-                    # DO NOT PANIC!!!
-                    _module.check = false;
-
-                  };
-                }
+        serviceModules = forEachAttrIn machineConfig.services
+          (serviceName: serviceDefinition:
+            let
+              selectors = (filters.resolve
+                (toConfigAttrPaths serviceDefinition.selectors clusterName
+                  config) config);
+              roles = (forEachAttrIn serviceDefinition.roles (roleName: role:
+                (filters.resolve (toConfigAttrPaths role clusterName config)
+                  config)));
+              serviceModule = [
+                serviceDefinition.extraConfig
+                (serviceDefinition.definition {
+                  inherit selectors roles;
+                  this = machineConfig.annotations;
+                })
               ];
-            };
-          in serviceModule);
-      in serviceModules);
+            in serviceModule);
+      in lists.flatten (attrsets.attrValues serviceModules));
 
 in {
 
   config.extensions = {
     clusterTransformations = [ clusterServiceToMachineServices ];
-    # moduleTransformations = [ machineServiceToNixOsConfiguration ];
+    moduleTransformations = [ machineServiceToNixOsConfiguration ];
   };
 
 }

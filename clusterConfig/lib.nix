@@ -62,35 +62,12 @@ let
     };
 
     # Evaluates the 'nixosModules' for each machine and adds the resulting nixosConfiguration to the machine config.
-    nixosConfigurations = config: withServices:
-      add.machineConfiguration config (clusterName: machineName: machineConfig:
-        let
-
-          serviceFreeConfig =
-            nixpkgs.lib.nixosSystem { modules = machineConfig.nixosModules; };
-
-          serviceContainingConfig = attrsets.foldlAttrs
-            (acc: serviceName: serviceDefinition:
-              let
-                selectors = (filters.resolve
-                  (toConfigAttrPaths serviceDefinition.selectors clusterName
-                    config) config);
-                roles = (forEachAttrIn serviceDefinition.roles (roleName: role:
-                  (filters.resolve (toConfigAttrPaths role clusterName config)
-                    config)));
-              in acc.extendModules {
-                modules = [
-                  serviceDefinition.extraConfig
-                  (serviceDefinition.definition {
-                    inherit selectors roles;
-                    this = machineConfig.annotations;
-                  })
-                ];
-              }) serviceFreeConfig machineConfig.services;
-        in {
-          nixosConfiguration =
-            if withServices then serviceContainingConfig else serviceFreeConfig;
-        });
+    nixosConfigurations = config:
+      add.machineConfiguration config
+      (clusterName: machineName: machineConfig: {
+        nixosConfiguration =
+          nixpkgs.lib.nixosSystem { modules = machineConfig.nixosModules; };
+      });
 
     # Adds a NixosModule build by 'moduleConfigFn' to each machine.
     # The moduleConfigFn builds a nixos module from three input parameters (clusterName, machineName, machineConfig).
