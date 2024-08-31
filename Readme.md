@@ -23,6 +23,37 @@ TODO:
 - Extendable with modules to add configuration features or deployment packages
 - Scope: home cloud
 
+## Goals
+
+1. Create installation media for an initial machine setup
+2. Deploy updates and change configuration remotely once the machines are initialized
+3. Keep the human interaction minimal in the process
+4. Do as much configuration declarative as possible
+5. Provide a minimal configuration for a K3s cluster on NixOS (as a ClusterConfig module)
+
+# Additional Features in ClusterConfig Modules or Tooling
+
+- partitioning with [disko](https://github.com/nix-community/disko)
+- static dns by generating ``hosts`` file entries for hosts with static ip addresses
+- (WIP) k3s kubernetes module (containerized)
+  - initialized with k3s manifest files
+  - Maybe: with configurable argocd (but probably only in an example manifest)
+- fixable versions with flakes
+- Maybe coming: Tooling to analyze the ClusterConfig (e.g. print host ips configuration or the configured services)
+
+# Assumptions
+
+There are some assumptions that are embedded in the project.
+Some keep the configuration minimal and structured.
+Others reflect personal taste.
+
+The following assumptions may be of interest:
+
+- You running a linux system (with nix installed) for deployment.
+- flakes are used is a central source of configuration
+- Hosts are accessible by ssh
+- The data on the installation medium is disposable and can be overwritten
+
 ## Concepts
 
 ### Config Hierarchy
@@ -46,39 +77,12 @@ TODO:
 
 ### Cluster Service
 
-A service is a closure that returns a NixOs Module.
-
-  ```nix
-  # Service closure returning a NixOs module attribute
-  { selectors, roles, this }:{
-    imports = [];
-    options = {};
-    config = {};
-  }
-  ```
-
-  ```nix
-  # Service closure returning a NixOs module closure
-  { selectors, roles, this }:
-  {pkgs, lib, ...}:{
-    imports = [];
-    options = {};
-    config = {};
-  }
-  ```
-
 - Machines configurations can be extended with the NixOs modules returned by the service closures
 - Services can target multiple hosts or effects multiple configurations
 - Machine that match the `filter` defined by the `selector` of a service will be extended by the service configuration.
 ---
 - Services can have multiple `roles` e.g. primary and secondary hosts
   - roles are a set of named filters
----
-- The service closure will be called with the defined `selector` `roles` and a `this` attribute after resolving them to a cluster element.
-- As a result you can use the configuration from the resolved elements in the service definition.
-- The machine config can also be accessed with the `config` attribute set of the resulting NixOs module as with all other modules
-  - the config attribute set depends on the currently evaluated machine
-  - meaning it is different for each machine even though it is defined in the same service
 
 #### Service Definition
 

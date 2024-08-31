@@ -1,5 +1,21 @@
 { nixpkgs, nixos-generators, colmena, flake-utils }:
 
+# Notes:
+
+# Tooling goals:
+# a tool should be able to parse the config and build views; e.g.:
+#   - hardware info (maybe also retrieved by ssh)
+#   - vm configuration
+#   - configured hosts with type and ip configuration
+#   - a list of dns names with ip and usage information
+#   - version information
+#   - k3s information (configured and retrieved)
+#   - configured users on different machines
+#   - configured interfaces and ips
+#   - imported views for each configured service
+
+
+
 let # imports
 
   pkgs = import nixpkgs {

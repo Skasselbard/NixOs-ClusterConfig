@@ -1,45 +1,9 @@
-# Nixos Staged Hive
 
-Build and deploy a set of [NixOs](https://nixos.org/) machines for Kubernetes in a home cloud.
+| :warning: **Depricated**   
+|:------------------------|
+|The steps described in this documentation are deprecated und need to be reworked|
 
-This project tries to automate the installation process of multiple NixOs machines as far as possible for home use.
-The goal is to take virgin machines and boot up a configuration that can be managed with colmena.
-A secondary goal is to configure [K3s](https://k3s.io/) on a subset of these machines.
-
-During the switch to nix flakes, this project got quite a bit simpler.
-As a result, what now is stage two is more of a hint or a guide line and not reflected in the tools anymore.
-
-## Goals
-
-1. Create installation media for an initial machine setup
-2. Deploy updates and change configuration remotely once the machines are initialized
-3. Keep the human interaction minimal in the process
-4. Do as much configuration declarative as possible
-5. Provide a minimal configuration for a K3s cluster on NixOS
-
-
-# Additional Features
-
-- partitioning module with disko
-- (WIP) generating ``hosts`` file entries for static hosts
-- (WIP) k3s kubernetes module (containerized)
-  - initialized with k3s manifest files
-  - Maybe: with configurable argocd (but probably only in an example manifest)
-- fixable versions with flakes
-- Maybe coming: print a configuration summary (e.g. for the ip configuration)
-
-# Assumptions
-
-There are some assumptions that are embedded in the project.
-Some keep the configuration minimal and structured.
-Others reflect personal taste.
-
-The following assumptions may be of interest:
-
-- You running a linux system (with nix installed) for deployment.
-- flakes are used is a central source of configuration
-- Hosts are accessible by ssh
-- The data on the installation medium is disposable and can be overwritten
+<!-- TODO: rework usage steps -->
 
 # Stages
 
@@ -82,6 +46,11 @@ nixos-rebuild --flake .#<nixosConfiguration> switch --target-host "root@<ip>"
 
 ## Include the project and other tools in your flake
 
+
+| :warning: **Depricated**   
+|:------------------------|
+|The steps described in this documentation are deprecated und need to be reworked|
+
 Example:
 ```nix
 {
@@ -110,6 +79,12 @@ Example:
 ```
 
 ## Configure your machines
+
+
+| :warning: **Depricated**   
+|:------------------------|
+|The steps described in this documentation are deprecated und need to be reworked|
+
 
 1. Include all dependencies.
 2. Define your disko devices
@@ -191,6 +166,11 @@ nixos-rebuild --flake .#test build
 
 ## Prepare an installation medium
 
+
+| :warning: **Depricated**   
+|:------------------------|
+|The steps described in this documentation are deprecated und need to be reworked|
+
 You can use `nixos-generators` and this projects lib to crate installation isos for the remote
 installation system.
 
@@ -236,6 +216,11 @@ You can than use `dd` or another tool to copy the iso to an installation medium
 
 ## Deploy your complete configuration
 
+
+| :warning: **Depricated**   
+|:------------------------|
+|The steps described in this documentation are deprecated und need to be reworked|
+
 You can use `lib.deploy` from this project to run `nixos-anywhere` with your settings.
 The `deploy` function will reset the formatting script used by nixos-anywhere
 to only format the config under `partitioning.ephemeral`.
@@ -277,6 +262,11 @@ nix run .#deployTest
 ```
 
 # Build and run custom formatting scripts
+
+
+| :warning: **Depricated**   
+|:------------------------|
+|The steps described in this documentation are deprecated und need to be reworked|
 
 If you need to reformat a set of your devices you can build and run a custom format script
 with the `lib.formatScript` function of this project.
