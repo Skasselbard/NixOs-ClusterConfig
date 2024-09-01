@@ -161,4 +161,3 @@ cython_debug/
 example/bin/*
 example/generated/*
 .vscode/*
-examples/*/flake.lock
