@@ -9,8 +9,6 @@ assert (builtins.isList roles.clusterAddress
 assert (builtins.isList roles.apiAddress && (builtins.length roles.apiAddress)
   == 1);
 
-assert (builtins.isList roles.servers && (builtins.length roles.servers) >= 1);
-
 # assert config.services.vault.tlsCertFile == null
 #   "'services.vault.tlsCertFile' is set but the vault-clusterConfig-service uses 'services.vault.certificates.vaultCert'";
 # assert config.services.vault.tlsKeyFile == null
@@ -144,7 +142,7 @@ in {
     # Get all listening addresses from all other vault servers and add them to the join stanzas
     # https://developer.hashicorp.com/vault/docs/configuration/storage/raft#retry_join
     joinStanzas =
-      TODO: filter 'this' host
+      # TODO: filter 'this' host
       lists.forEach selectors (vaultServer:
         let listeners = getListeners vaultServer;
         in lists.forEach listeners (listener: ''
