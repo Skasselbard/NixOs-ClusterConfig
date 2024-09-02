@@ -1,4 +1,4 @@
-# NixClusterConfig
+# NixOs-ClusterConfig
 
 TODO:
 - example
