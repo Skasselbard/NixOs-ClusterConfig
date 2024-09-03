@@ -31,7 +31,7 @@ TODO:
 4. Do as much configuration declarative as possible
 5. Provide a minimal configuration for a K3s cluster on NixOS (as a ClusterConfig module)
 
-# Additional Features in ClusterConfig Modules or Tooling
+## Additional Features in ClusterConfig Modules or Tooling
 
 - partitioning with [disko](https://github.com/nix-community/disko)
 - static dns by generating ``hosts`` file entries for hosts with static ip addresses
@@ -41,7 +41,7 @@ TODO:
 - fixable versions with flakes
 - Maybe coming: Tooling to analyze the ClusterConfig (e.g. print host ips configuration or the configured services)
 
-# Assumptions
+## Assumptions
 
 There are some assumptions that are embedded in the project.
 Some keep the configuration minimal and structured.

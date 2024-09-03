@@ -161,3 +161,4 @@ cython_debug/
 example/bin/*
 example/generated/*
 .vscode/*
+**/result

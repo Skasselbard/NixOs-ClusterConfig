@@ -1,4 +1,13 @@
-{
+{ # function parameters to build different vms
+
+ip, # The ip address configured for the eth0 interface
+osDevicePath # The path to the device where the os schould be installed on.
+# The device path depends on the kind and name of the drive given in your hipervisor.
+# For example in libvirt: if you Configure a VirtIO Disk with Serial 'OS' (in the advanced options)
+#   libvirt will call your device "virtio-OS" and 
+#   Linux will make it available by name under "/dev/disk/by-id/virtio-OS".
+
+}: {
   imports = [ ./vm-hardware-configuration.nix ];
 
   boot.loader.efi.canTouchEfiVariables = true;
@@ -7,9 +16,18 @@
     # tarball-ttl = 0
     experimental-features = nix-command flakes'';
 
-  networking.useDHCP = true;
-
-  programs.zsh.enable = true;
+  # We expect only one interface on the vm.
+  # This will be always eth0 in legacy style interface names.
+  # This is handy for vm definitions where the interfaces can be at
+  # arbitrary pci locations, which makes the new predictable
+  # interfaces rather unpredictable :p
+  networking.usePredictableInterfaceNames = true;
+  networking.interfaces."eth0" = {
+    ipv4.addresses = [{
+      address = ip;
+      prefixLength = 24;
+    }];
+  };
 
   disko = {
     # disko configuration
@@ -17,7 +35,7 @@
     devices = {
       disk = {
         main = {
-          device = "/dev/disk/by-id/virtio-OS";
+          device = osDevicePath;
           type = "disk";
           content = {
             type = "gpt";

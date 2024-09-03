@@ -8,7 +8,7 @@
     # Change this import to the github url
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
-      url = "github:Skasselbard/NixOs-Staged-Hive/flakes";
+      url = "path:../..";
     };
 
     # Import disko to configure partitioning
@@ -107,11 +107,11 @@
               # Define a two vms in the cluster
               machines = {
 
-                vm1 = {
+                vm0 = {
                   inherit system;
                   # load the system configuration for this vm
                   nixosModules = [
-                    machines.vm # machine configuration
+                    machines.vm0 # machine configuration
                     inputs.disko.nixosModules.default # make the disko attribute available in the machine config
                   ];
 
@@ -122,7 +122,7 @@
                     # The deployment address can be a url and is allowed to differ
                     # from configurations in the machine configuration.
                     # This way you can deploy to an existing host and change its configuration.
-                    targetHost = "192.168.100.166";
+                    targetHost = "192.168.100.10";
 
                     # Format the entire machine with disko on initial deployment
                     formatScript = "disko";
@@ -130,15 +130,12 @@
 
                 };
 
-                vm2 = {
+                vm1 = {
                   inherit system;
                   nixosModules =
-                    [ machines.vm inputs.disko.nixosModules.default ];
+                    [ machines.vm1 inputs.disko.nixosModules.default ];
 
-                  deployment = {
-                    targetHost = "192.168.100.3";
-                    formatScript = "disko";
-                  };
+                  deployment = { formatScript = "disko"; };
 
                 };
 

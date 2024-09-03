@@ -5,6 +5,17 @@
 
 <!-- TODO: rework usage steps -->
 
+# Generated Flake attributes
+
+- `nixosConfigurations.<hostname>`: nixos configurations for all defined hosts
+- `packeges.<system>.<hostname>`.
+  - `create`: build by nixos-anywhere module, script to remotely deploy this host to `deployment.targetHost`
+  - `format`: TODO:
+  - `hardware-configuration`: TODO:
+  - `iso`: build an image for the host with nixos-generators with `nix build .#<hostname.iso>`
+- `apps.colmena`: make colmena executable with TODO: command
+- `colmena`: a colmena hive definition for deployment with colmena
+
 # Stages
 
 The installation process is devised into stages:

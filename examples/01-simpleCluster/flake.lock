@@ -13,18 +13,14 @@
         ]
       },
       "locked": {
-        "lastModified": 1725086249,
-        "narHash": "sha256-wTHric5bFJVTPbciJRrmkaAcEgnzlQ+5w1v+Iv8muIw=",
-        "owner": "Skasselbard",
-        "repo": "NixOs-Staged-Hive",
-        "rev": "0e487d84ad500b02a883feb04d4ab115910d377a",
-        "type": "github"
+        "lastModified": 0,
+        "narHash": "sha256-h6k9QVQBU0h+mJIh5RHheJ/iggUBqjguTrhG6661NUY=",
+        "path": "../..",
+        "type": "path"
       },
       "original": {
-        "owner": "Skasselbard",
-        "ref": "flakes",
-        "repo": "NixOs-Staged-Hive",
-        "type": "github"
+        "path": "../..",
+        "type": "path"
       }
     },
     "colmena": {
@@ -190,11 +186,11 @@
     },
     "nixlib": {
       "locked": {
-        "lastModified": 1723337705,
-        "narHash": "sha256-znSU0DeNDPt7+LMAfFkvKloMaeQ6yl/U5SqV/ktl1vA=",
+        "lastModified": 1724547350,
+        "narHash": "sha256-WKkGeNpenNMKD1gOF0Xuqi3VsKX/QCAiwz9qe5PDvzA=",
         "owner": "nix-community",
         "repo": "nixpkgs.lib",
-        "rev": "ace7856d327b618d3777e31b1f224b3ab57ed71a",
+        "rev": "b741d900fecd2f0c32d90f853b24be9f5f098b7d",
         "type": "github"
       },
       "original": {
@@ -219,11 +215,11 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1722000256,
-        "narHash": "sha256-urCCUTXgkHPh9eN3JAKAa8f09nltFxtAQaLyHbOOKxw=",
+        "lastModified": 1724687279,
+        "narHash": "sha256-3YKbbL6y5AWK46e6B1MNAl5PC5ik2ws1Lzoq03J4Cq8=",
         "owner": "nix-community",
         "repo": "nixos-anywhere",
-        "rev": "1933f2e7e2395ee88b15d3a411a363775e83274d",
+        "rev": "2991be5b522c88244b8833dd662cac406e3d5d28",
         "type": "github"
       },
       "original": {
@@ -241,11 +237,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1723870831,
-        "narHash": "sha256-rXQKvogLHY3BxRVVt5unpbi0zpRf965f57gplWSzQ5k=",
+        "lastModified": 1724893087,
+        "narHash": "sha256-M3+Z8SSpzKPQ+/vw9a99G9HfqKWbVGzhFz4p3KAX0NI=",
         "owner": "nix-community",
         "repo": "nixos-generators",
-        "rev": "32e9d82bada67fc5155e8d4d99b6fc3a1765bfdc",
+        "rev": "0dd0205bc3f6d602ddb62aaece5f62a8715a9e85",
         "type": "github"
       },
       "original": {
