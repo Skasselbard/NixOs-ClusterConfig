@@ -120,7 +120,7 @@
                     # Deploy to a machine with this address
                     # You may have to lookup the ip from a running machine, e.g. if you use dhcp
                     # The deployment address can be a url and is allowed to differ
-                    # from configurations in the machine configuration.
+                    # from (ip) configurations in the machine configuration.
                     # This way you can deploy to an existing host and change its configuration.
                     targetHost = "192.168.100.10";
 
@@ -130,12 +130,33 @@
 
                 };
 
-                vm1 = {
+                vm1 = let
+                  # You can use config from inside the machine.
+                  # But avoid depenmdency loops.
+                  cfg = self.nixosConfigurations.vm1.config;
+                  ip = (builtins.head
+                    cfg.networking.interfaces."eth0".ipv4.addresses).address;
+                in {
                   inherit system;
                   nixosModules =
                     [ machines.vm1 inputs.disko.nixosModules.default ];
 
-                  deployment = { formatScript = "disko"; };
+                  deployment = {
+                    targetHost = ip;
+                    formatScript = "disko";
+                  };
+
+                };
+
+                vm2 = {
+                  inherit system;
+                  nixosModules =
+                    [ machines.vm2 inputs.disko.nixosModules.default ];
+
+                  deployment = {
+                    targetHost = "192.168.100.12";
+                    formatScript = "disko";
+                  };
 
                 };
 
