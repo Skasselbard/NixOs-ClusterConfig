@@ -7,14 +7,21 @@ osDevicePath # The path to the device where the os schould be installed on.
 #   libvirt will call your device "virtio-OS" and 
 #   Linux will make it available by name under "/dev/disk/by-id/virtio-OS".
 
-}: {
+}:
+{ config, ... }: {
   imports = [ ./vm-hardware-configuration.nix ];
+
+  system.stateVersion = "24.05";
 
   boot.loader.efi.canTouchEfiVariables = true;
   boot.loader.systemd-boot.enable = true;
   nix.extraOptions = ''
     # tarball-ttl = 0
     experimental-features = nix-command flakes'';
+
+  # SSH configuration
+  services.openssh.enable = true;
+  networking.firewall.allowedTCPPorts = config.services.openssh.ports;
 
   # We expect only one interface on the vm.
   # This will be always eth0 in legacy style interface names.
