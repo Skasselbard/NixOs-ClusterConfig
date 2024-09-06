@@ -104,7 +104,7 @@
 
               };
 
-              # Define a two vms in the cluster
+              # Define three vms in the cluster
               machines = {
 
                 vm0 = {

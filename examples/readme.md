@@ -1,27 +1,9 @@
-# Deploy the Examples
+# Examples
 
-## 0. Prerequisites
+In this folder are some example configurations.
+Common configurations like NixOs configurations, ssh keys and other secrets are stored in the [Common Configuration Folder](./00-exampleConfigs/).
+Since these examples should be reproducible, the configurations (especially the secrets) are openly readable.
+If you adapt the settings you should limit the access to some of the configuration, especially the attributs and files from the [Secrets Folder](./00-exampleConfigs/secrets/).
 
-- A set of configurable and runnable VMs (count depends on the example)
-  - the os storage drive will be expected under `/dev/disk/by-id/virtio-OS`
-- add the ssh keys from the example to your ssh-agent (create your own keys for your production cluster)
-  ```bash 
-  ssh-add examples/00-exampleConfigs/secrets/sshKey
-  ```
-
-## 1. cd to example folder
-
-```bash
-  cd examples/01-simpleCluster
-```
-
-## 2. Build iso files for initial vm setup
-
-```bash
-  nix build .#machineName.iso
-```
-
-## 3. Configure VM
-
-- load iso as cd-rom
-- set the boot order to boot from cd-rom
+The examples may extend previous example.
+If so, the concepts and configuration may not be repeated in detail.
