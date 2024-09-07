@@ -8,7 +8,7 @@ osDevicePath # The path to the device where the os schould be installed on.
 #   Linux will make it available by name under "/dev/disk/by-id/virtio-OS".
 
 }:
-{ config, ... }: {
+{ pkgs, config, ... }: {
   imports = [ ./vm-hardware-configuration.nix ];
 
   system.stateVersion = "24.05";
@@ -23,18 +23,21 @@ osDevicePath # The path to the device where the os schould be installed on.
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = config.services.openssh.ports;
 
-  # We expect only one interface on the vm.
-  # This will be always eth0 in legacy style interface names.
+  # We expect two interfaces on the vm connected to the same network.
+  # This will be always eth0 and eth1 in legacy style interface names.
   # This is handy for vm definitions where the interfaces can be at
   # arbitrary pci locations, which makes the new predictable
   # interfaces rather unpredictable :p
   networking.usePredictableInterfaceNames = true;
+  # eth0 will be static, so that we can connect to predictable ips
   networking.interfaces."eth0" = {
     ipv4.addresses = [{
       address = ip;
       prefixLength = 24;
     }];
   };
+  # eht1 will use dhcp to make nat-ing to the outside world easy
+  networking.interfaces."eth1".useDHCP = true;
 
   disko = {
     # disko configuration

@@ -7,6 +7,10 @@ Build a short functional cluster with three machines and a simple service.
 ## Prerequisites
 
 - Three virtual machines you can deploy to.
+  - With two network interfaces in the same virtual network.
+    - the network should use NAT for internet access
+    - one interface will use dhcp for internet access
+    - the other interface will be assigned with a static ip for predictable connections
   - You may have to change the NixOs configuration in [Configs Folder](../00-exampleConfigs/).
 - Add the SSH private key from the [Config Folder](../00-exampleConfigs/secrets/sshKey) to your [SSH Agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
 

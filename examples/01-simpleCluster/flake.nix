@@ -25,6 +25,9 @@
 
       # build for 64bit linux
       system = "x86_64-linux";
+      
+      # import the pkgs attribute from the flake inputs
+      pkgs = import nixpkgs { inherit system; };
 
       # The filters are used to resolve hosts when expanding the ClusterConfig
       filters = clusterConfigFlake.lib.filters;
@@ -32,6 +35,8 @@
       # To separate cluster configurations from other configurations (e.g. machines)
       # it is advisable to keep the configurations separate and import it in a variable.
       # This keeps the cluster config much more readable.
+      configurations =
+        (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
       configurations = import "${self}/../00-exampleConfigs/";
       secrets = configurations.secrets;
       machines = configurations.machines;
@@ -122,7 +127,7 @@
                     # The deployment address can be a url and is allowed to differ
                     # from (ip) configurations in the machine configuration.
                     # This way you can deploy to an existing host and change its configuration.
-                    targetHost = "192.168.100.10";
+                    targetHost = "192.168.122.200";
 
                     # Format the entire machine with disko on initial deployment
                     formatScript = "disko";
@@ -154,7 +159,7 @@
                     [ machines.vm2 inputs.disko.nixosModules.default ];
 
                   deployment = {
-                    targetHost = "192.168.100.12";
+                    targetHost = "192.168.122.202";
                     formatScript = "disko";
                   };
 
