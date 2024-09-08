@@ -1,7 +1,5 @@
 # Simple Cluster Example
 
-## Objective
-
 Build a short functional cluster with three machines and a simple service.
 
 ## Prerequisites
@@ -27,7 +25,7 @@ Three Virtual machines with:
 
 1. Build the iso images with ``nix build .#vmX.iso``
    - replace the X with the number from the vm name in the cluster-config
-   - you can run ``bash build-isossh.sh`` from this folder to build all three machines in a `build` sub-folder
+   - you can run ``bash build-isos.sh`` from this folder to build all three machines in a `build` sub-folder
 2. Start three virtual machines, each one booting from a drive where one of the iso images is mounted
    - all machines are configured with a different ip as seen in the ``machine`` attribute in the [configuration file](../00-exampleConfigs/default.nix)
 3. Deploy the complete machine configuration to the booted machines with ``nix run .#vmX.create``
@@ -37,7 +35,7 @@ Three Virtual machines with:
 
 ## Test Setup
 
-1. connect to a virtual machine with ssh: ``ssh 192.168.100.10``
+1. connect to a virtual machine with ssh: ``ssh root@192.168.122.200``
 2. from the vm test the connection to another machine: ``ping vm1``
 
 You can also run the test script from this folder to test the configuration: ``bash test.sh``

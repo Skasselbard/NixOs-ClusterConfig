@@ -1,6 +1,4 @@
-# Simple Cluster Example
-
-## Objective
+# Formatting Example
 
 Use the ``deployment.formatScript`` option during an initial setup to prepare the machine storage drives.
 
@@ -8,7 +6,6 @@ Use the ``deployment.formatScript`` option during an initial setup to prepare th
 
 - Three virtual machines you can deploy to.
   - You may have to change the NixOs configuration in [Configs Folder](../00-exampleConfigs/).
-
 - Add the SSH private key from the [Config Folder](../00-exampleConfigs/secrets/sshKey) to your [SSH Agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
 
 ## Result

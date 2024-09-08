@@ -4,10 +4,7 @@
     # Import nixpkgs
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
 
-    # If you want to youse your own homeManager version you have to import it
-    # and overwrite the version from NixOs-ClusterConfig.
-    # This can be useful if you need a more current version of homeManager
-    # than used by NixOs-ClusterConfig
+    # HomeManager to overwrite the version used in cluster-config
     home-manager = {
       url = "github:nix-community/home-manager/release-24.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -49,6 +46,9 @@
       machines = configurations.machines;
       homeModules = configurations.homeModules;
 
+      #####################################################
+      # ClusterConfig 
+      #####################################################
       clusterConfig = clusterConfigFlake.lib.buildCluster {
 
         modules = [ clusterConfigFlake.clusterConfigModules.default ];
@@ -61,16 +61,61 @@
             # the cluster name will also be used for fqdn generation
             example = {
 
+              #############################################
+              # Services
               services = {
+
                 # Static DNS via /etc/hosts file
                 dns = {
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
                   definition = clusterConfigFlake.clusterServices.staticDns;
                 };
+
+                # Vault Server definition
+                vault = {
+
+                  roles = {
+                    # A single host to witch vault clients are redirected
+                    # If the filter returns more than one host an error will be thrown
+                    # https://developer.hashicorp.com/vault/docs/configuration#api_addr
+                    apiAddress = [ (filters.hostname "vm0") ];
+
+                    # A single host to witch vault servers are forwarded
+                    # If the filter returns more than one host an error will be thrown
+                    # https://developer.hashicorp.com/vault/docs/configuration#cluster_addr
+                    clusterAddress = [ (filters.hostname "vm0") ];
+                  };
+
+                  # Hosts to that service vault
+                  selectors = [
+                    (filters.hostname "vm0")
+                    (filters.hostname "vm11")
+                    (filters.hostname "vm2")
+                  ];
+
+                  # include the vault module from the clusterConfig
+                  definition = clusterConfigFlake.clusterServices.vault;
+
+                  # Additional vault server configuration
+                  extraConfig = {
+                    services.vault = {
+                      enableUi = true;
+                      clusterName = "Example Vault";
+                      certificates.vaultCert = vaultCertPath + vaultCertName;
+                      certificates.vaultKey = vaultCertPath + vaultKeyName;
+                      certificates.caRootCert = vaultCertPath + rootCaName;
+                    };
+                    # nixpkgs.config.permittedInsecurePackages =
+                    #   [ "vault-bin-1.15.6" ];
+                  };
+                };
               };
 
+              ############################################
+              # Users
               users = {
+
                 root = {
                   # If a user in your cluster uses HomeManager
                   # the ``home.stateVersion`` attribute has to be defined for all users 
@@ -82,6 +127,7 @@
                     openssh.authorizedKeys.keys = [ secrets.ssh.publicKey ];
                   };
                 };
+
                 admin = {
                   # Add modules per user for HomeManager
                   homeManagerModules =
@@ -96,6 +142,8 @@
                 };
               };
 
+              ############################################
+              # Machines
               machines = {
 
                 vm0 = {

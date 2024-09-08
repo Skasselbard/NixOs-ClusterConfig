@@ -1,6 +1,4 @@
-# Simple Cluster Example
-
-## Objective
+# HomeManager Example
 
 Use HomeManager modules on a per (cluster)user basis to customize the user experience.
 
@@ -33,3 +31,7 @@ You can also run the deployment script with ``bash deploy.sh``.
 
 ## Test Setup
 
+1. Connect to a virtual machine as root with ssh: ``ssh root@192.168.122.200``
+2. Be welcomed with a default shell prompt
+3. Connect to a virtual machine as admin with ssh: ``ssh admin@192.168.122.200``
+4. Be welcomed with a colored shell prompt

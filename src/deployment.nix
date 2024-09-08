@@ -117,8 +117,23 @@ let
     let machines = get.machines config;
     in attrsets.recursiveUpdate config {
 
+      clusterConfig = config;
+
       nixosConfigurations = forEachAttrIn machines
         (machineName: machineConfig: machineConfig.nixosConfiguration);
+
+      # add the tooling scripts to the apps
+      apps =
+        # The apps are generated for all system  configurations (by using flake utils)
+        (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
+          apps.clusterConfig = {
+            type = "app";
+            program = (pkgs.writeShellScriptBin "clusterConfig"
+              "${pkgs.nushell}/bin/nu ${
+                ./tooling
+              }/clusterConfig.nu \${@:1}").outPath + "/bin/clusterConfig";
+          };
+        })).apps;
 
       packages =
         # The deployment options are generated for all system  configurations (by using flake utils)

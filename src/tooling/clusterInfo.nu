@@ -1,3 +1,3 @@
 export def info [] {
-  cwd
+  ^nix eval ".#clusterConfig.domain" #--json | from json
 }

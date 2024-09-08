@@ -25,7 +25,7 @@
 
       # build for 64bit linux
       system = "x86_64-linux";
-      
+
       # import the pkgs attribute from the flake inputs
       pkgs = import nixpkgs { inherit system; };
 
@@ -83,9 +83,12 @@
                 };
               };
 
-              # Define the root user in the cluster and no other users
-              # Users have two configurations
-              # 1. HomeManager configurations -> a list of nixos-style modules
+              # Define the root user as cluster user and no other users.
+              # You don't have to deploy root as cluster user and you can still define users on the machine level.
+              # If you define the same user as cluster user and on the machine level, the definitions may be in conflict.
+              #
+              # Cluster users have two configurations
+              # 1. HomeManager configurations -> a list of nixos-style modules to configure home manager
               # 2. System configuration -> added to users.users.<name>
               users = {
 
