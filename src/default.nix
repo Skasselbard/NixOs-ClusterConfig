@@ -14,8 +14,6 @@
 #   - configured interfaces and ips
 #   - imported views for each configured service
 
-
-
 let # imports
 
   pkgs = import nixpkgs {
@@ -33,6 +31,8 @@ let # imports
 
   filters = import ./filters.nix { lib = pkgs.lib; };
   add = clusterlib.add;
+  update = clusterlib.update;
+  forEachAttrIn = clusterlib.forEachAttrIn;
 
 in with lib;
 
@@ -90,12 +90,14 @@ let
         ./transformations.nix
         ./services.nix
         ./options.nix
+        ./info.nix
         {
           config = {
             # make flake inputs available for submodules
             _module.args = {
               colmena = lib.mkDefault colmena;
-              inherit pkgs lib nixpkgs clusterlib flake-utils nixos-generators;
+              inherit pkgs lib nixpkgs clusterlib flake-utils nixos-generators
+                filters;
             };
             # set the domain attribute for evaluation
             domain = clusterConfig.domain;
@@ -109,15 +111,28 @@ let
   # wich holds an evaluated system configuration based on the modules defined for the machine.
   evalMachines = config: add.nixosConfigurations config;
 
-  machineAnnotation = config:
-    add.machineConfiguration config (clusterName: machineName: machineConfig: {
-      annotations = {
-        inherit clusterName machineName;
-        ips = get.ips machineConfig.nixosConfiguration;
-        fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
-        # TODO: subnets?
-      };
-    });
+  annotate = config:
+    let
+      machineAnnotaion = update.machines config
+        (clusterName: machineName: machineConfig: {
+          annotations = {
+            inherit clusterName machineName;
+            ips = get.ips machineConfig.nixosConfiguration;
+            fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
+            # TODO: subnets?
+          };
+        });
+      serviceAnnotation = update.services machineAnnotaion
+        (clusterName: serviceName: serviceConfig: {
+          annotations.selectors = lists.forEach
+            (filters.resolve serviceConfig.selectors clusterName
+              machineAnnotaion) (annotation: annotation.machineName);
+          annotations.roles = (forEachAttrIn serviceConfig.roles
+            (roleName: role:
+              (lists.forEach (filters.resolve role clusterName machineAnnotaion)
+                (annotation: annotation.machineName))));
+        });
+    in serviceAnnotation;
 
   # Applies a list of transformations to a clusterConfig.
   # The transformations need to be functions that take a clusterConfig and return a (modified) clusterConfig
@@ -155,11 +170,12 @@ in {
       machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
 
       # Step 4:
-      # Annotate the cluster with data from the machine configurations
+      # Annotate the cluster with data from the configurations
       # This includes:
       # - the used IP addresses
       # - the FQDN
-      evalAnnotatedCluser = machineAnnotation machineEvaluatedCluster;
+      # - resolved filters
+      evalAnnotatedCluser = annotate machineEvaluatedCluster;
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)

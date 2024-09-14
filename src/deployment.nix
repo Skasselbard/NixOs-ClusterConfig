@@ -117,8 +117,6 @@ let
     let machines = get.machines config;
     in attrsets.recursiveUpdate config {
 
-      clusterConfig = config;
-
       nixosConfigurations = forEachAttrIn machines
         (machineName: machineConfig: machineConfig.nixosConfiguration);
 

@@ -5,18 +5,17 @@ let # imports
 
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
+  update = clusterlib.update;
   get = clusterlib.get;
+  filtersToPaths = filters.filtersToPaths;
 
   # assert filter properties and assemble error message
   filterFormatIsOk = filter:
     asserts.assertMsg (strings.hasPrefix "domain" filter)
     "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
 
-  toConfigAttrPaths = filters: clusterName: config:
-    lists.flatten (lists.forEach filters (filter: (filter clusterName config)));
-
   clusterServiceToMachineServices = config:
-    add.machineConfiguration config (clusterName: machineName: machineConfig:
+    update.machines config (clusterName: machineName: machineConfig:
       let
 
         services = config.domain.clusters."${clusterName}".services;
@@ -25,8 +24,7 @@ let # imports
         filteredServices = attrsets.filterAttrs (serviceName: serviceDefinition:
           let
             selectors =
-              (toConfigAttrPaths serviceDefinition.selectors clusterName
-                config);
+              (filtersToPaths serviceDefinition.selectors clusterName config);
           in (lists.any (filter:
             assert filterFormatIsOk filter;
             filter == "domain.clusters.${clusterName}.machines.${machineName}")
@@ -40,12 +38,11 @@ let # imports
         serviceModules = forEachAttrIn machineConfig.services
           (serviceName: serviceDefinition:
             let
-              selectors = (filters.resolve
-                (toConfigAttrPaths serviceDefinition.selectors clusterName
-                  config) config);
-              roles = (forEachAttrIn serviceDefinition.roles (roleName: role:
-                (filters.resolve (toConfigAttrPaths role clusterName config)
-                  config)));
+              selectors =
+                (filters.resolve serviceDefinition.selectors clusterName
+                  config);
+              roles = (forEachAttrIn serviceDefinition.roles
+                (roleName: role: (filters.resolve role clusterName config)));
               serviceModule = [
                 serviceDefinition.extraConfig
                 (serviceDefinition.definition {

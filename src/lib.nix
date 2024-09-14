@@ -48,23 +48,9 @@ let
 
   add = {
 
-    # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> machineConfigAttr) -> clusterconfig
-    machineConfiguration = config: machineConfigFn: {
-      domain = attrsets.recursiveUpdate config.domain {
-        clusters = (forEachAttrIn config.domain.clusters
-          (clusterName: clusterConfig: {
-            machines = forEachAttrIn clusterConfig.machines
-              (machineName: machineConfig:
-                (machineConfigFn clusterName machineName machineConfig));
-          }));
-      };
-      extensions = config.extensions;
-    };
-
     # Evaluates the 'nixosModules' for each machine and adds the resulting nixosConfiguration to the machine config.
     nixosConfigurations = config:
-      add.machineConfiguration config
-      (clusterName: machineName: machineConfig: {
+      update.machines config (clusterName: machineName: machineConfig: {
         nixosConfiguration =
           nixpkgs.lib.nixosSystem { modules = machineConfig.nixosModules; };
       });
@@ -76,8 +62,7 @@ let
       let
         domainAttr = config.domain;
         clusters = config.domain.clusters;
-      in add.machineConfiguration config
-      (clusterName: machineName: machineConfig: {
+      in update.machines config (clusterName: machineName: machineConfig: {
         nixosModules = (lists.flatten
           [ (moduleConfigFn clusterName machineName machineConfig) ])
           ++ machineConfig.nixosModules;
@@ -85,27 +70,7 @@ let
 
   };
 
-  toConfigAttrPaths = filters: clusterName: config:
-    lists.flatten (lists.forEach filters (filter: (filter clusterName config)));
-
   get = {
-
-    # # returns a list with (unnamed) service Definitions from all services in the cluster
-    # # and resolves the filter in roles and selectors
-    # services = config:
-    #   attrsets.attrValues ( # to list
-    #     attrsets.mergeAttrsList (attrsets.attrValues ( # remove cluster names
-    #       forEachAttrIn config.domain.clusters (clusterName: clusterConfig:
-    #         (forEachAttrIn clusterConfig.services
-    #           (serviceName: serviceDefinition: {
-    #             "config" = serviceDefinition.config;
-    #             selectors =
-    #               (filters.toConfigAttrPaths serviceDefinition.selectors
-    #                 clusterName config);
-    #             roles = (forEachAttrIn serviceDefinition.roles (rolename: role:
-    #               filters.toConfigAttrPaths role clusterName config));
-    #           }))))));
-
     # Returns a set of machines.
     # Each machine is defined by a key value pair of machineName = machineConfig; in the set.
     machines = config:
@@ -113,4 +78,95 @@ let
         (forEachAttrIn config.domain.clusters
           (clusterName: clusterValue: clusterValue.machines))));
   };
-in { inherit add get domainType clusterType machineType forEachAttrIn; }
+
+  # change the attributes on a clusterConfig level, keep unmentiopned values
+  update = {
+
+    # updateClustersFn = clusterName -> clusterConfig -> clusterConfig
+    clusters = config: updateClustersFn:
+      config // {
+        domain = config.domain // {
+          clusters = (forEachAttrIn config.domain.clusters
+            (clusterName: clusterConfig:
+              clusterConfig // (updateClustersFn clusterName clusterConfig)));
+        };
+      };
+
+    # updateServicesFn = clusterName -> serviceName -> serviceConfig -> serviceConfig
+    services = config: updateServicesFn:
+      update.clusters config (clusterName: clusterConfig: {
+        services = (forEachAttrIn clusterConfig.services
+          (serviceName: serviceConfig:
+            serviceConfig
+            // (updateServicesFn clusterName serviceName serviceConfig)));
+      });
+
+    # updateMachinesFn = clusterName -> machineName -> machineConfig -> machineConfig
+    machines = config: updateMachinesFn:
+      update.clusters config (clusterName: clusterConfig: {
+        machines = (forEachAttrIn clusterConfig.machines
+          (machineName: machineConfig:
+            machineConfig
+            // (updateMachinesFn clusterName machineName machineConfig)));
+      });
+
+    # updateUsersFn = clusterName -> serName -> userConfig -> userConfig
+    users = config: updateUsersFn:
+      update.clusters config (clusterName: clusterConfig: {
+        users = (forEachAttrIn clusterConfig.users (userName: userConfig:
+          userConfig // (updateUsersFn clusterName userName userConfig)));
+      });
+  };
+
+  # overwrite the attributes on a clusterConfig level, delete unesed values
+  overwrite = {
+
+    # updateClustersFn = clusterName -> clusterConfig -> clusterConfig
+    clusters = config: updateClustersFn:
+      config // {
+        domain = config.domain // {
+          clusters = (forEachAttrIn config.domain.clusters
+            (clusterName: clusterConfig:
+              (updateClustersFn clusterName clusterConfig)));
+        };
+      };
+
+    # updateServicesFn = clusterName -> serviceName -> serviceConfig -> serviceConfig
+    services = config: updateServicesFn:
+      update.clusters config (clusterName: clusterConfig: {
+        services = (forEachAttrIn clusterConfig.services
+          (serviceName: serviceConfig:
+            (updateServicesFn clusterName serviceName serviceConfig)));
+      });
+
+    # updateMachinesFn = clusterName -> machineName -> machineConfig -> machineConfig
+    machines = config: updateMachinesFn:
+      update.clusters config (clusterName: clusterConfig: {
+        machines = (forEachAttrIn clusterConfig.machines
+          (machineName: machineConfig:
+            (updateMachinesFn clusterName machineName machineConfig)));
+      });
+
+    # updateUsersFn = clusterName -> serName -> userConfig -> userConfig
+    users = config: updateUsersFn:
+      update.clusters config (clusterName: clusterConfig: {
+        users = (forEachAttrIn clusterConfig.users (userName: userConfig:
+          (updateUsersFn clusterName userName userConfig)));
+      });
+  };
+
+  filterWhitelist = attrset: whitelist:
+    forEachAttrIn attrset (name: value:
+      let
+        attrPaths = lists.forEach whitelist (strings.splitString ".");
+        attrVals =
+          lists.forEach attrPaths (path: attrsets.getAttrFromPath path value);
+        attrsZpped = lists.zipLists attrPaths attrVals;
+      in (lists.foldr (tuple: current:
+        (attrsets.recursiveUpdate current
+          (attrsets.setAttrByPath tuple.fst tuple.snd))) { } attrsZpped));
+
+in {
+  inherit add get domainType clusterType machineType forEachAttrIn update
+    overwrite;
+}
