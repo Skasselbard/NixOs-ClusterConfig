@@ -158,28 +158,28 @@ let
         description = "A list of users deployed on the machine node in addition to the cluster users.";
         type = attrsOf (submodule userType);
         default = { };
-        example = {
-          bob = systemConfig {
-            isNormalUser = true;
-            extraGroups = [ "wheel" ];
-          };
-        };
+        example = ''
+          {
+            bob = systemConfig {
+              isNormalUser = true;
+              extraGroups = [ "wheel" ];
+            };
+          }'';
       };
 
       servicesAddresses = mkOption {
         description = "A list of attributes with service addresses (ip + port) for a service role and an additional config that is added to the nixosModules of the machine";
         type = listOf (submodule serviceAddressType);
         default = [ ];
-        example = [
-
-          clusterlib.ip.staticIpV4OpenUdp
-          {
-            ip = "192.168.1.10";
-            role = "vault-api";
-            interface = "eth0";
-          }
-
-        ];
+        example = ''
+          [
+            clusterlib.ip.staticIpV4OpenUdp
+            {
+              ip = "192.168.1.10";
+              role = "vault-api";
+              interface = "eth0";
+            }
+          ]'';
 
       };
 
@@ -253,7 +253,7 @@ let
 
     systemConfig = mkOption {
       description = ''
-        An attribute containing NixOs options defined for 'config.users.users.\${name}.
+        An attribute containing NixOs options defined for 'config.users.users.''${name}.
 
         This configuration is copied to the corresponding user for each machine in the cluster.
       '';

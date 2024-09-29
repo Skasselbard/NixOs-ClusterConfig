@@ -108,7 +108,7 @@ let
         }
       );
 
-    # Add a package that can be build with `nix build #machineName.attrName` or run with `nix run #machineName.attrName`
+    # Add a package that can be build with `nix build #machines.machineName.attrName` or run with `nix run #machines.machineName.attrName`
     # updatePackageFn =  machineName -> machineConfig -> clusterconfig -> {attrName = derivation;}
     machinePackages =
       config: updatePackageFn:
@@ -123,6 +123,31 @@ let
             );
 
           })).packages;
+      };
+
+    # Add a package that can be build with `nix build #machines.machineName.services.attrName` or run with `nix run #machines.machineName.services.attrName`
+    # updatePackageFn =  machineName -> machineConfig -> serviceName -> serviceConfig -> clusterconfig -> {attrName = derivation;}
+    servicePackages =
+      config: updatePackageFn:
+      attrsets.recursiveUpdate config {
+
+        packages =
+          # The deployment options are generated for all system  configurations (by using flake utils)
+          (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
+
+            packages.machines = forEachAttrIn (get.machines config) (
+              machineName: machineConfig: {
+
+                services = forEachAttrIn (machineConfig.services) (
+                  serviceName: serviceConfig:
+                  updatePackageFn machineName machineConfig serviceName serviceConfig config
+                );
+
+              }
+            );
+          }
+
+          )).packages;
       };
 
     # Add a package that can be build with `nix build #clusterName.attrName` or run with `nix run #clusterName.attrName`
