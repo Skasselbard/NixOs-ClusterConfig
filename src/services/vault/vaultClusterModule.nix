@@ -6,8 +6,6 @@
 }:
 let
 
-  forEachAttrIn = clusterlib.forEachAttrIn;
-  eval = clusterlib.eval;
   add = clusterlib.add;
   filters = clusterlib.filters;
 

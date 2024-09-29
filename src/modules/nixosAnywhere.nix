@@ -2,18 +2,14 @@
   pkgs,
   lib,
   clusterlib,
-  flake-utils,
   nixos-anywhere,
   ...
 }:
 
 let # imports
-  forEachAttrIn = clusterlib.forEachAttrIn;
-  get = clusterlib.get;
   add = clusterlib.add;
 
   mkOption = lib.mkOption;
-  attrsets = lib.attrsets;
 
   nullOr = lib.types.nullOr;
   either = lib.types.either;

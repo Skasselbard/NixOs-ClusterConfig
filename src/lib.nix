@@ -9,7 +9,6 @@ let
 
   attrsets = lib.attrsets;
   lists = lib.lists;
-  strings = lib.strings;
 
   mkOption = lib.mkOption;
   mkDefault = lib.mkDefault;
@@ -336,19 +335,6 @@ let
       );
   };
 
-  filterWhitelist =
-    attrset: whitelist:
-    forEachAttrIn attrset (
-      name: value:
-      let
-        attrPaths = lists.forEach whitelist (strings.splitString ".");
-        attrVals = lists.forEach attrPaths (path: attrsets.getAttrFromPath path value);
-        attrsZpped = lists.zipLists attrPaths attrVals;
-      in
-      (lists.foldr (
-        tuple: current: (attrsets.recursiveUpdate current (attrsets.setAttrByPath tuple.fst tuple.snd))
-      ) { } attrsZpped)
-    );
   #############
   # Type stubs that can be extended
 

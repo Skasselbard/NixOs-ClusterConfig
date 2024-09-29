@@ -11,7 +11,6 @@ let
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
   eval = clusterlib.eval;
-  get = clusterlib.get;
   update = clusterlib.update;
   filtersToPaths = filters.filtersToPaths;
 

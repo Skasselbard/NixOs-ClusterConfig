@@ -7,14 +7,9 @@
 }:
 
 let
-  attrNames = builtins.attrNames;
-  head = builtins.head;
-
   attrsets = lib.attrsets;
 
-  add = clusterlib.add;
   get = clusterlib.get;
-  forEachAttrIn = clusterlib.forEachAttrIn;
 
   eachSystem = flake-utils.lib.eachSystem;
   allSystems = flake-utils.lib.allSystems;

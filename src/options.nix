@@ -1,7 +1,17 @@
-{ pkgs, ... }:
-with pkgs.lib;
-with pkgs.lib.types;
+{ lib, ... }:
+
 let
+
+  mkOption = lib.mkOption;
+
+  attrsOf = lib.types.attrsOf;
+  listOf = lib.types.listOf;
+  nullOr = lib.types.nullOr;
+  port = lib.types.port;
+  raw = lib.types.raw;
+  str = lib.types.str;
+  strMatching = lib.types.strMatching;
+  submodule = lib.types.submodule;
 
   extensionType = {
 

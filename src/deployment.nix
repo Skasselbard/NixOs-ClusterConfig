@@ -4,7 +4,6 @@
   clusterlib,
   nixpkgs,
   colmena,
-  flake-utils,
   nixos-generators,
   ...
 }:
@@ -16,8 +15,6 @@ let
   get = clusterlib.get;
   add = clusterlib.add;
 
-  eachSystem = flake-utils.lib.eachSystem;
-  allSystems = flake-utils.lib.allSystems;
 in
 
 let
