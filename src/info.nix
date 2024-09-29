@@ -1,35 +1,79 @@
-{ pkgs, clusterlib, ... }:
-let
-  update = clusterlib.update;
-  overwrite = clusterlib.overwrite;
-in with pkgs.lib;
+{
+  pkgs,
+  lib,
+  clusterlib,
+  flake-utils,
+  ...
+}:
 
 let
-  # remove attributes from the config
-  # used to build a serializable cluster info
-  pruneusers = config:
-    update.clusters config (clusterName: clusterConfig: {
-      users = (attrsets.attrNames clusterConfig.users);
-    });
+  attrNames = builtins.attrNames;
+  head = builtins.head;
 
-  clusterInfoAnnotation = config:
-    let
-      machineInfo = overwrite.machines config
-        (clusterName: machineName: machineConfig:
-          machineConfig.annotations // {
-            deployment.tags = machineConfig.deployment.tags;
-            deployment.targetHost = machineConfig.deployment.targetHost;
-            deployment.targetPort = machineConfig.deployment.targetPort;
-          });
-      serviceInfo = overwrite.services machineInfo
-        (clusterName: serviceName: serviceConfig: serviceConfig.annotations);
-      userInfo = pruneusers serviceInfo;
+  attrsets = lib.attrsets;
 
-    in attrsets.recursiveUpdate config {
+  add = clusterlib.add;
+  get = clusterlib.get;
+  forEachAttrIn = clusterlib.forEachAttrIn;
 
-      # Generate a cluster config attribute that can be used to query config information
-      # All leaves of the structure must be serializable; in particular: cannot be functions / lambdas
-      clusterInfo.domain = userInfo.domain;
+  eachSystem = flake-utils.lib.eachSystem;
+  allSystems = flake-utils.lib.allSystems;
+
+  removeTypes =
+    config: ((lib.attrsets.filterAttrsRecursive (attrName: attrValue: (attrName != "_type"))) config);
+
+  removeDerivations =
+    attrset:
+    lib.attrsets.mapAttrs (
+      name: value:
+      if (builtins.isAttrs value && attrsets.isDerivation value) then
+        value.name
+      else if builtins.isAttrs value then
+        removeDerivations value
+      else
+        value
+    ) attrset;
+
+  clusterInfoAnnotation = config: removeTypes (get.clusterInfo config);
+
+  appsAnnotation =
+    config:
+
+    attrsets.recursiveUpdate config {
+
+      # add the tooling scripts to the apps
+      apps =
+        # The apps are generated for all system  configurations (by using flake utils)
+        (eachSystem allSystems (system: {
+          apps.clusterConfig = {
+            type = "app";
+            program =
+              (pkgs.writeShellScriptBin "clusterConfig" ''
+
+                # add the package information to the environment for use in auto completion
+                export packageInfo=$(${pkgs.nushell}/bin/nu ${./tooling}/clusterInfo.nu packages)
+
+                # run a nu environment with imported tooling scripts to make the functions available as commands
+                ${pkgs.nushell}/bin/nu -e "
+                  source ${./tooling}/clusterInfo.nu;
+                  source ${./tooling}/clusterConfig.nu
+                  "
+
+              '').outPath
+              + "/bin/clusterConfig";
+          };
+        })).apps;
 
     };
-in { config.extensions.deploymentTransformations = [ clusterInfoAnnotation ]; }
+
+  packageAnnotation =
+    config: config // { packageInfo = (removeDerivations config.packages."x86_64-linux"); };
+
+in
+{
+  config.extensions.deploymentTransformations = [ appsAnnotation ];
+  config.extensions.infoTransformations = [
+    clusterInfoAnnotation
+    packageAnnotation
+  ];
+}

@@ -1,8 +1,13 @@
-{ nixpkgs, nixos-generators, colmena, flake-utils }:
+{
+  nixpkgs,
+  nixos-generators,
+  colmena,
+  flake-utils,
+}:
 
 # Notes:
 
-# Tooling goals:
+# TODO: Tooling goals:
 # a tool should be able to parse the config and build views; e.g.:
 #   - hardware info (maybe also retrieved by ssh)
 #   - vm configuration
@@ -25,7 +30,7 @@ let # imports
   lib = pkgs.lib;
 
   clusterlib = import ./lib.nix {
-    inherit nixpkgs;
+    inherit nixpkgs flake-utils;
     lib = pkgs.lib;
   };
 
@@ -34,43 +39,64 @@ let # imports
   update = clusterlib.update;
   forEachAttrIn = clusterlib.forEachAttrIn;
 
-in with lib;
+  lists = lib.lists;
+  attrsets = lib.attrsets;
+  evalModules = lib.evalModules;
+  head = builtins.head;
+
+in
 
 let
 
   get = {
 
     interface = {
-      ips = interfaceDefinition:
+      ips =
+        interfaceDefinition:
         let
-          v4Adresses = lists.forEach interfaceDefinition.ipv4.addresses
-            (addressDefinition: addressDefinition.address);
-          v6Adresses = lists.forEach interfaceDefinition.ipv6.addresses
-            (addressDefinition: addressDefinition.address);
-        in lists.flatten [ v4Adresses v6Adresses ];
+          v4Adresses = lists.forEach interfaceDefinition.ipv4.addresses (
+            addressDefinition: addressDefinition.address
+          );
+          v6Adresses = lists.forEach interfaceDefinition.ipv6.addresses (
+            addressDefinition: addressDefinition.address
+          );
+        in
+        lists.flatten [
+          v4Adresses
+          v6Adresses
+        ]
+        ++ (
+          if interfaceDefinition ? useDHCP && interfaceDefinition.useDHCP == true then [ "dhcp" ] else [ ]
+        );
 
-      definitions = machineConfig:
+      definitions =
+        machineConfig:
         lists.forEach (get.interface.names machineConfig) (interfaceName: {
-          "${interfaceName}" = builtins.removeAttrs
-            (builtins.getAttr interfaceName
-              machineConfig.config.networking.interfaces) [ "subnetMask" ];
+          "${interfaceName}" =
+            builtins.removeAttrs (builtins.getAttr interfaceName machineConfig.config.networking.interfaces)
+              [ "subnetMask" ];
         });
 
-      names = machineConfig:
-        attrsets.attrNames machineConfig.config.networking.interfaces;
+      names = machineConfig: attrsets.attrNames machineConfig.config.networking.interfaces;
     };
 
-    ips = machineConfig:
+    ips =
+      machineConfig:
       let
-        interfaces = attrsets.mergeAttrsList
-          (lists.forEach (get.interface.definitions machineConfig) (interface:
+        interfaces = attrsets.mergeAttrsList (
+          lists.forEach (get.interface.definitions machineConfig) (
+            interface:
             let
               interfaceName = (head (attrsets.attrNames interface));
               interfaceValue = (head (attrsets.attrValues interface));
-            in { "${interfaceName}" = get.interface.ips interfaceValue; }));
-      in {
-        all = lists.flatten (attrsets.attrValues interfaces);
-      } // interfaces;
+            in
+            {
+              "${interfaceName}" = get.interface.ips interfaceValue;
+            }
+          )
+        );
+      in
+      interfaces;
 
   };
 
@@ -80,11 +106,12 @@ let
   # - Add the clusterConfig default modules
   # - Forward required flake inputs to _module.args to make them available in the imported modules
   # - Set the evaluated config attribute to the initial value
-  evalCluster = clusterConfig:
+  evalCluster =
+    clusterConfig:
     let
-      clusterModules =
-        if clusterConfig ? modules then clusterConfig.modules else [ ];
-    in evalModules {
+      clusterModules = if clusterConfig ? modules then clusterConfig.modules else [ ];
+    in
+    evalModules {
       modules = clusterModules ++ [
         ./deployment.nix
         ./transformations.nix
@@ -96,8 +123,17 @@ let
             # make flake inputs available for submodules
             _module.args = {
               colmena = lib.mkDefault colmena;
-              inherit pkgs lib nixpkgs clusterlib flake-utils nixos-generators
-                filters;
+              clusterlib = clusterlib // {
+                inherit buildCluster filters;
+              };
+              inherit
+                pkgs
+                lib
+                nixpkgs
+                flake-utils
+                nixos-generators
+                filters
+                ;
             };
             # set the domain attribute for evaluation
             domain = clusterConfig.domain;
@@ -111,39 +147,47 @@ let
   # wich holds an evaluated system configuration based on the modules defined for the machine.
   evalMachines = config: add.nixosConfigurations config;
 
-  annotate = config:
+  annotate =
+    config:
     let
-      machineAnnotaion = update.machines config
-        (clusterName: machineName: machineConfig: {
+      clusterAnnotation = update.clusters config (
+        clusterName: clusterConfig: { fqdn = clusterName + "." + config.domain.suffix; }
+      );
+      machineAnnotaion = update.machines clusterAnnotation (
+        clusterName: machineName: machineConfig: {
           annotations = {
             inherit clusterName machineName;
             ips = get.ips machineConfig.nixosConfiguration;
             fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
-            # TODO: subnets?
+            servicesAddresses = lists.forEach machineConfig.servicesAddresses (entry: entry.tag);
           };
-        });
-      serviceAnnotation = update.services machineAnnotaion
-        (clusterName: serviceName: serviceConfig: {
-          annotations.selectors = lists.forEach
-            (filters.resolve serviceConfig.selectors clusterName
-              machineAnnotaion) (annotation: annotation.machineName);
-          annotations.roles = (forEachAttrIn serviceConfig.roles
-            (roleName: role:
-              (lists.forEach (filters.resolve role clusterName machineAnnotaion)
-                (annotation: annotation.machineName))));
-        });
-    in serviceAnnotation;
+        }
+      );
+      serviceAnnotation = update.services machineAnnotaion (
+        clusterName: serviceName: serviceConfig: {
+          annotations.selectors = lists.forEach (filters.resolve serviceConfig.selectors clusterName
+            machineAnnotaion
+          ) (annotation: annotation.machineName);
+          annotations.roles = (
+            forEachAttrIn serviceConfig.roles (
+              roleName: role:
+              (lists.forEach (filters.resolve role clusterName machineAnnotaion) (
+                annotation: annotation.machineName
+              ))
+            )
+          );
+        }
+      );
+    in
+    serviceAnnotation;
 
   # Applies a list of transformations to a clusterConfig.
   # The transformations need to be functions that take a clusterConfig and return a (modified) clusterConfig
-  applyClusterTransformations = config: transformations:
-    builtins.foldl'
-    (currentConfig: transformator: (transformator currentConfig)) config
-    transformations;
-
-in {
-
-  inherit filters;
+  applyClusterTransformations =
+    config: transformations:
+    builtins.foldl' (
+      currentConfig: transformator: (transformator currentConfig)
+    ) config transformations;
 
   # TODOs:
   # - conditionally include virtual interfaces (networking.interfaces.<name>.virtual = true) -> not useful for dns
@@ -153,7 +197,8 @@ in {
   # maybe define cluster groups in the same way as services und users
 
   # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
-  buildCluster = config:
+  buildCluster =
+    config:
     let
       # Step 1:
       # Evaluate the cluster to check for type conformity
@@ -161,8 +206,7 @@ in {
 
       # Step 2:
       # Transform the cluster configuration
-      clusterAnnotatedCluster = applyClusterTransformations evaluatedCluster
-        evaluatedCluster.extensions.clusterTransformations;
+      clusterAnnotatedCluster = applyClusterTransformations evaluatedCluster evaluatedCluster.extensions.clusterTransformations;
 
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
@@ -179,19 +223,23 @@ in {
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)
-      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluser
-        evalAnnotatedCluser.extensions.moduleTransformations;
+      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluser evalAnnotatedCluser.extensions.moduleTransformations;
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
       nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
 
       # Step 7:
-      # Final transformations
-      deploymentAnnotatedCluster =
-        applyClusterTransformations nixosConfiguredCluster
-        nixosConfiguredCluster.extensions.deploymentTransformations;
+      # Transformations to add packages for deployment scripts and other tools
+      deploymentAnnotatedCluster = applyClusterTransformations nixosConfiguredCluster nixosConfiguredCluster.extensions.deploymentTransformations;
 
-    in deploymentAnnotatedCluster;
+      # Step 8:
+      # Transfromations to generate cluster information
+      infoAnnotatedCluster = applyClusterTransformations deploymentAnnotatedCluster deploymentAnnotatedCluster.extensions.infoTransformations;
 
+    in
+    infoAnnotatedCluster;
+in
+{
+  inherit buildCluster filters;
 }

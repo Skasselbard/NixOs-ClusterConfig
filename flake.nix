@@ -33,26 +33,39 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, disko, nixos-anywhere, nixos-generators
-    , home-manager, colmena, flake-utils, ... }@inputs:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      nixos-anywhere,
+      nixos-generators,
+      home-manager,
+      colmena,
+      flake-utils,
+      ...
+    }@inputs:
 
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
-    in {
+      lib = pkgs.lib;
+    in
+    {
 
-      lib = (import ("${self}/src") {
-        inherit nixos-generators nixpkgs colmena flake-utils;
-      }) // {
-
-       
-      };
+      lib =
+        (import "${self}/src" {
+          inherit
+            nixos-generators
+            nixpkgs
+            colmena
+            flake-utils
+            ;
+        })
+        // (import "${self}/src/lib.nix" { inherit lib nixpkgs flake-utils; });
 
       clusterServices = {
-
-        staticDns = import "${self}/src/services/staticDns.nix";
-
-        vault = import "${self}/src/services/vault.nix";
+        staticDns = import "${self}/src/services/dns/staticDns.nix";
+        vault = import "${self}/src/services/vault/vaultService.nix";
       };
 
       clusterConfigModules = {
@@ -72,7 +85,9 @@
         # since this commit https://github.com/nix-community/home-manager/commit/26e72d85e6fbda36bf2266f1447215501ec376fd
         home-manager = {
           imports = [ "${self}/src/modules/homeManager.nix" ];
-          _module.args = { inherit home-manager; };
+          _module.args = {
+            inherit home-manager;
+          };
         };
 
         # Makes a deployment script available (currently) for each machine
@@ -82,7 +97,9 @@
         # The currently running system will be overwritten.
         nixos-anywhere = {
           imports = [ "${self}/src/modules/nixosAnywhere.nix" ];
-          _module.args = { inherit nixos-anywhere; };
+          _module.args = {
+            inherit nixos-anywhere;
+          };
         };
 
         # Makes a colmena hive definition available under 'clusterConfig.colmena'.
@@ -90,10 +107,15 @@
         # 'nix run .#colmena [colmena-sub-cmd] -- [colmenaOptions]'
         colmena = {
           imports = [ "${self}/src/modules/colmena.nix" ];
-          _module.args = { inherit colmena; };
+          _module.args = {
+            inherit colmena;
+          };
         };
+
+        # Module to add scripts for vault initialization to the flake packages
+        vault.imports = [ "${self}/src/services/vault/vaultClusterModule.nix" ];
+
       };
 
-     
     };
 }

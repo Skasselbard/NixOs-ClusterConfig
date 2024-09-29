@@ -6,7 +6,7 @@ let
   extensionType = {
 
     clusterTransformations = mkOption {
-      description = lib.mdDoc ''
+      description = ''
         A list of functions that takes a clusterConfig and returns a clusterConfig.
 
         These functions get called after the first cluster evaluation.
@@ -21,7 +21,7 @@ let
     };
 
     moduleTransformations = mkOption {
-      description = lib.mdDoc ''
+      description = ''
         A list of functions that takes a clusterConfig and returns a clusterConfig.
 
         These functions get called after the NixOsConfiguration for each machine was evaluated for the first time
@@ -37,11 +37,11 @@ let
     };
 
     deploymentTransformations = mkOption {
-      description = lib.mdDoc ''
+      description = ''
         A list of functions that takes a clusterConfig and returns a clusterConfig.
 
-        These functions get called after the final NixOsConfiguration evaluation.
-        In this step, the cluster configuration can be annotated with additional information,
+        These functions get called after the NixOsConfiguration evaluation.
+        In this step, the cluster configuration can be annotated with additional scripts,
         based on the NixOsConfiguration from each machine.
 
         For example, in this step, the default clusterConfig workflow takes all machine configurations
@@ -52,12 +52,28 @@ let
       default = [ ];
     };
 
+    infoTransformations = mkOption {
+      description = ''
+        A list of functions that takes a clusterConfig and returns a clusterConfig.
+
+        These functions get called after as a final evaluation.
+        In this step, the generated flake can be extended with information attributes.
+        These attributes should not alter the cluster configuration itself but only
+        extract information.
+
+        For example, in this step, the default clusterConfig workflow takes generates serializable
+        cluster information that can be printed out.
+      '';
+      type = listOf raw;
+      default = [ ];
+    };
+
   };
 
   domainType = {
     suffix = domainDefinitionType;
     clusters = mkOption {
-      description = mdDoc "A list of clusters";
+      description = "A list of clusters";
       type = attrsOf (submodule clusterType);
       default = { };
     };
@@ -66,19 +82,17 @@ let
   clusterType = {
     options = {
       users = mkOption {
-        description = mdDoc "A list of users deployed on the cluster nodes.";
+        description = "A list of users deployed on the cluster nodes.";
         type = attrsOf (submodule userType);
         default = { };
       };
       services = mkOption {
-        description = mdDoc
-          "A list of services deployed on the cluster nodes."; # TODO: more details
+        description = "A list of services deployed on the cluster nodes."; # TODO: more details
         type = attrsOf (submodule clusterServiceType);
         default = { };
       };
       machines = mkOption {
-        description = mdDoc
-          "A list of NixOS machines that will generate a NixOs system config.";
+        description = "A list of NixOS machines that will generate a NixOs system config.";
         type = attrsOf (submodule machineType);
         default = { };
       };
@@ -88,17 +102,16 @@ let
   clusterServiceType = {
     options = {
       selectors = mkOption {
-        description = mdDoc
-          "A list of filters that resolve nixos machines"; # TODO: more details
+        description = "A list of filters that resolve nixos machines"; # TODO: more details
         type = listOf filterType;
       };
       roles = mkOption {
-        description = mdDoc "TODO:";
+        description = "TODO:";
         type = roleType;
         default = { };
       };
       definition = mkOption {
-        description = lib.mdDoc ''
+        description = ''
           Service definition
 
           Has to be closure in the form 
@@ -112,7 +125,7 @@ let
         type = raw;
       };
       extraConfig = mkOption {
-        description = lib.mdDoc ''
+        description = ''
           Service extra configuration
 
           Additional Configuration in the form of a normal NixOs module.
@@ -126,14 +139,13 @@ let
   machineType = {
     options = {
       system = mkOption {
-        description = lib.mdDoc "The type of system for this machine";
+        description = lib."The type of system for this machine";
         example = "x86_64-linux";
         type = str;
       };
 
       users = mkOption {
-        description = mdDoc
-          "A list of users deployed on the machine node in addition to the cluster users.";
+        description = "A list of users deployed on the machine node in addition to the cluster users.";
         type = attrsOf (submodule userType);
         default = { };
         example = {
@@ -144,16 +156,34 @@ let
         };
       };
 
+      servicesAddresses = mkOption {
+        description = "A list of attributes with service addresses (ip + port) for a service role and an additional config that is added to the nixosModules of the machine";
+        type = listOf (submodule serviceAddressType);
+        default = [ ];
+        example = [
+
+          clusterlib.ip.staticIpV4OpenUdp
+          {
+            ip = "192.168.1.10";
+            role = "vault-api";
+            interface = "eth0";
+          }
+
+        ];
+
+      };
+
       nixosModules = mkOption {
-        description = lib.mdDoc "machine specific config";
+        description = lib."machine specific config";
         type = listOf raw;
         default = [ ];
-        example = { boot.loader.systemd-boot.enable = true; };
+        example = {
+          boot.loader.systemd-boot.enable = true;
+        };
       };
 
       virtualization = mkOption {
-        description =
-          "A list of virtualizaion drivers that will generate a NixOs config that handles virtualization.";
+        description = "A list of virtualizaion drivers that will generate a NixOs config that handles virtualization.";
         type = attrsOf (submodule virtualizationType);
         default = { };
       };
@@ -170,6 +200,43 @@ let
       # };
 
     };
+  };
+
+  serviceAddressType.options = {
+
+    tag = {
+
+      role = mkOption {
+        description = ''
+          The role as known by the service. Only service known roles can be processed.
+        '';
+        type = str;
+      };
+
+      address = mkOption {
+        description = ''
+          An ip address used to expose the service.
+        '';
+        type = str; # TODO: use ip regex
+      };
+
+      port = mkOption {
+        description = ''
+          The port on witch to listen by the service.
+        '';
+        type = nullOr port;
+        default = null;
+      };
+
+    };
+
+    config = mkOption {
+      description = ''
+        A config attribute that is added to the nixosModules of the machine.
+      '';
+      type = raw;
+    };
+
   };
 
   userType.options = {
@@ -193,15 +260,14 @@ let
   virtualizationType = { };
   roleType = attrsOf (listOf filterType);
 
-  filterType =
-    raw; # TODO:custom function type? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
+  filterType = raw; # TODO:custom function type? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
 
   domainDefinitionType = mkOption { type = fqdnString; };
 
-  fqdnString =
-    strMatching "[^.]+(\\.[^./\\r\\n ]+)*"; # TODO: Better domain regex?
+  fqdnString = strMatching "[^.]+(\\.[^./\\r\\n ]+)*"; # TODO: Better domain regex?
 
-in {
+in
+{
   options = {
     extensions = extensionType;
     domain = domainType;

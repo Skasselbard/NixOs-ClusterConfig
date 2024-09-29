@@ -1,8 +1,24 @@
-{ pkgs, lib, clusterlib, nixpkgs, colmena, flake-utils, nixos-generators, ... }:
+{
+  pkgs,
+  lib,
+  clusterlib,
+  nixpkgs,
+  colmena,
+  flake-utils,
+  nixos-generators,
+  ...
+}:
 let
+  attrsets = lib.attrsets;
+  strings = lib.strings;
+
   forEachAttrIn = clusterlib.forEachAttrIn;
   get = clusterlib.get;
-in with pkgs.lib;
+  add = clusterlib.add;
+
+  eachSystem = flake-utils.lib.eachSystem;
+  allSystems = flake-utils.lib.allSystems;
+in
 
 let
 
@@ -13,30 +29,40 @@ let
   # Defining deployment options for machines.
   # We import and reuse the colmena options
   machineType.options.deployment =
-    let colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
-    in attrsets.recursiveUpdate
-    # import colmena deployment options
-    (colmenaOptions.deploymentOptions {
-      inherit lib;
-      name = "{hostname}";
-    }).options.deployment
-    # overwrite colmena defaults
-    {
-      # targetHost.default = TODO: ?;
-    };
+    let
+      colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
+    in
+    attrsets.recursiveUpdate
+      # import colmena deployment options
+      (colmenaOptions.deploymentOptions {
+        inherit lib;
+        name = "{hostname}";
+      }).options.deployment
+      # overwrite colmena defaults
+      {
+        # targetHost.default = TODO: ?;
+      };
 
   # build a bootable iso image from a machine configuration with nixos-generators
-  bootImageNixosConfiguration = machineConfig:
+  bootImageNixosConfiguration =
+    machineConfig:
     let
       nixosConfig = machineConfig.nixosConfiguration.config;
 
-      interfaces = forEachAttrIn nixosConfig.networking.interfaces
-        (interfaceName: interfaceDefinition:
-          attrsets.getAttrs [ "useDHCP" "ipv4" "ipv6" ] interfaceDefinition);
+      interfaces = forEachAttrIn nixosConfig.networking.interfaces (
+        interfaceName: interfaceDefinition:
+        attrsets.getAttrs [
+          "useDHCP"
+          "ipv4"
+          "ipv6"
+        ] interfaceDefinition
+      );
 
       users = # filter some users that get created by default
-        attrsets.filterAttrs (userName: userDefinition:
-          !((strings.hasPrefix "nix" userName)
+        attrsets.filterAttrs (
+          userName: userDefinition:
+          !(
+            (strings.hasPrefix "nix" userName)
             || (strings.hasPrefix "systemd" userName)
             || builtins.elem userName [
               "backup"
@@ -45,11 +71,15 @@ let
               "node-exporter"
               "root"
               "sshd"
-            ])) nixosConfig.users.users;
+            ]
+          )
+        ) nixosConfig.users.users;
 
       groups = # filter some groups that get created by default
-        attrsets.filterAttrs (groupName: userDefinition:
-          !((strings.hasPrefix "nix" groupName)
+        attrsets.filterAttrs (
+          groupName: userDefinition:
+          !(
+            (strings.hasPrefix "nix" groupName)
             || (strings.hasPrefix "systemd" groupName)
             || builtins.elem groupName [
               "backup"
@@ -71,18 +101,19 @@ let
               "tty"
               "users"
               "wheel"
-            ])) nixosConfig.users.groups;
+            ]
+          )
+        ) nixosConfig.users.groups;
 
-    in {
+    in
+    {
       system = machineConfig.system;
       modules = [
 
         "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
 
         # force overwrite iso root with machine root to reuse passwords and ssh keys
-        {
-          users.users.root = lib.mkForce nixosConfig.users.users.root;
-        }
+        { users.users.root = lib.mkForce nixosConfig.users.users.root; }
 
         # useful settings to inherit from the machine configuration
         {
@@ -98,10 +129,16 @@ let
 
           # copy all interfaces and a selcetion of users
           networking.interfaces = interfaces;
-          users.users = forEachAttrIn users
-            # remove attributes that cannot be used on the installation environment
-            (userName: userConfig:
-              removeAttrs userConfig [ "shell" "cryptHomeLuks" ]);
+          users.users =
+            forEachAttrIn users
+              # remove attributes that cannot be used on the installation environment
+              (
+                userName: userConfig:
+                removeAttrs userConfig [
+                  "shell"
+                  "cryptHomeLuks"
+                ]
+              );
           users.groups = groups;
 
           # Maybe some scripts could be copied for custom stuff?
@@ -113,61 +150,58 @@ let
   # Build the deployment scripts and functions including
   # - nixosConfigurations for each machine
   # - minimal setup images in packages.$system.$machineName.iso
-  deploymentAnnotation = config:
-    let machines = get.machines config;
-    in attrsets.recursiveUpdate config {
+  deploymentAnnotation =
+    config:
+    let
 
-      nixosConfigurations = forEachAttrIn machines
-        (machineName: machineConfig: machineConfig.nixosConfiguration);
+      # build an iso package for each machine configuration 
+      isoScripts = add.machinePackages config (
+        _machineName: machineConfig: _config: {
+          iso = nixos-generators.nixosGenerate (
+            (bootImageNixosConfiguration machineConfig) // { format = "iso"; }
+          );
+        }
+      );
 
-      # add the tooling scripts to the apps
-      apps =
-        # The apps are generated for all system  configurations (by using flake utils)
-        (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-          apps.clusterConfig = {
-            type = "app";
-            program = (pkgs.writeShellScriptBin "clusterConfig"
-              "${pkgs.nushell}/bin/nu ${
-                ./tooling
-              }/clusterConfig.nu \${@:1}").outPath + "/bin/clusterConfig";
-          };
-        })).apps;
-
-      packages =
-        # The deployment options are generated for all system  configurations (by using flake utils)
-        (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-
-          packages = forEachAttrIn machines (machineName: machineConfig: {
-
-            # buld an iso package for each machine configuration 
-            iso = nixos-generators.nixosGenerate
-              ((bootImageNixosConfiguration machineConfig) // {
-                format = "iso";
-              });
-
-            # add a script to return the contents of the hardware configuration for each machine
-            hardware-configuration = let
+      # add a script to return the contents of the hardware configuration for each machine
+      hardwareConfigScripts = add.machinePackages isoScripts (
+        machineName: machineConfig: _config: {
+          hardware-configuration =
+            let
               cfg = machineConfig.deployment;
               host = cfg.targetHost;
-              user = if cfg ? targetUser && cfg.targetUser != null then
-                cfg.targetUser
-              else
-                "";
-              port = if cfg ? targetPort && cfg.targetPort != null then
-                ":" + cfg.targetPort
-              else
-                "";
-              script =
-                (pkgs.writeScriptBin "hardware-configuration-${machineName}"
-                  "${pkgs.openssh}/bin/ssh ${user}@${host}${port} -t 'nixos-generate-config --show-hardware-config --no-filesystems'");
-            in script;
+              user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+              port = if cfg ? targetPort && cfg.targetPort != null then ":" + cfg.targetPort else "";
+            in
+            pkgs.writeScriptBin "hardware-configuration-${machineName}" "${pkgs.openssh}/bin/ssh ${user}${host}${port} -t 'nixos-generate-config --show-hardware-config --no-filesystems'";
+        }
+      );
 
-          });
+      buildScripts = add.machinePackages hardwareConfigScripts (
+        machineName: machineConfig: _config: {
 
-        })).packages;
+          build = pkgs.writeScriptBin "build-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} build \${@:1}";
+
+          deploy =
+            let
+              cfg = machineConfig.deployment;
+              host = cfg.targetHost;
+              user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+            in
+            pkgs.writeScriptBin "deploy-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} switch --target-host '${user}${host}' \${@:1}";
+
+        }
+      );
+    in
+    attrsets.recursiveUpdate buildScripts {
+
+      nixosConfigurations = forEachAttrIn (get.machines config) (
+        machineName: machineConfig: machineConfig.nixosConfiguration
+      );
+
     };
-in {
-
+in
+{
   options.domain = domainType;
   config.extensions.deploymentTransformations = [ deploymentAnnotation ];
 }

@@ -30,7 +30,13 @@
 
   };
 
-  outputs = inputs@{ self, nixpkgs, clusterConfigFlake, ... }:
+  outputs =
+    inputs@{
+      self,
+      nixpkgs,
+      clusterConfigFlake,
+      ...
+    }:
 
     let # Definitions and imports
 
@@ -41,17 +47,20 @@
 
       # The filters are used to resolve hosts when expanding the ClusterConfig
       filters = clusterConfigFlake.lib.filters;
+      clusterlib = clusterConfigFlake.lib;
 
       # Configuration from other Layers, e.g.: NixOs machine configurations
-      configurations =
-        (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
+      configurations = (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
       homeModules = configurations.homeModules;
 
       clusterConfig = clusterConfigFlake.lib.buildCluster {
 
-        modules = [ clusterConfigFlake.clusterConfigModules.default ];
+        modules = with clusterConfigFlake.clusterConfigModules; [
+          default
+          vault
+        ];
 
         domain = {
           suffix = "com";
@@ -68,6 +77,35 @@
                   selectors = [ filters.clusterMachines ];
                   definition = clusterConfigFlake.clusterServices.staticDns;
                 };
+
+                vault = {
+                  roles = {
+                    apiAddress = [ (filters.hostname "vm0") ];
+                    clusterAddress = [ (filters.hostname "vm0") ];
+                  };
+                  selectors = [
+                    (filters.hostname "vm0")
+                    (filters.hostname "vm1")
+                    (filters.hostname "vm2")
+                  ];
+                  definition = clusterConfigFlake.clusterServices.vault;
+                  extraConfig = {
+                    services.vault.cluster = {
+                      enableUi = true;
+                      certificates = {
+                        organizationUnit = "Demonstrations";
+                        organization = "ExampleOrg";
+                        country = "DE";
+                        locality = "TownStadt";
+                        province = "Bundesland";
+                      };
+                    };
+
+                    # Allow vault to be installed while other unfree packages are still blocked
+                    nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (pkgs.lib.getName pkg) [ "vault-bin" ];
+                  };
+                };
+
               };
 
               users = {
@@ -84,8 +122,10 @@
                 };
                 admin = {
                   # Add modules per user for HomeManager
-                  homeManagerModules =
-                    [ homeModules.default homeModules.starship ];
+                  homeManagerModules = [
+                    homeModules.default
+                    homeModules.starship
+                  ];
                   systemConfig = {
                     isNormalUser = true;
                     extraGroups = [ "wheel" ];
@@ -98,28 +138,74 @@
 
               machines = {
 
-                vm0 = {
+                vm0 =
+                  let
+                    ip = "192.168.122.200";
+                  in
+                  {
+                    inherit system;
+
+                    servicesAddresses = [
+
+                      (clusterlib.ip.tag {
+                        role = "vault-listener";
+                        address = ip;
+                        port = 8200;
+                      })
+
+                      (clusterlib.ip.tag {
+                        role = "vault-apiAddress";
+                        address = ip;
+                        port = 8200;
+                      })
+
+                      (clusterlib.ip.tag {
+                        role = "vault-clusterAddress";
+                        address = ip;
+                        port = 8201;
+                      })
+
+                      # ip.staticIpV4OpenUdp
+                      # {
+                      #   inherit ip;
+                      #   role = "vault";
+                      #   interface = "eth0";
+                      # }
+
+                    ];
+
+                    deployment = {
+                      targetHost = ip;
+                    };
+
+                    nixosModules = [
+                      machines.vm0
+                      # since the vms use disko for mounting, we still need to include the NixOs module
+                      inputs.disko.nixosModules.default
+                    ];
+
+                  };
+
+                vm1 = {
                   inherit system;
-                  deployment = { targetHost = "192.168.122.200"; };
+                  deployment = {
+                    targetHost = "192.168.122.201";
+                  };
                   nixosModules = [
-                    machines.vm0
-                    # since the vms use disko for mounting, we still need to include the NixOs module
+                    machines.vm1
                     inputs.disko.nixosModules.default
                   ];
                 };
 
-                vm1 = {
-                  inherit system;
-                  deployment = { targetHost = "192.168.122.201"; };
-                  nixosModules =
-                    [ machines.vm1 inputs.disko.nixosModules.default ];
-                };
-
                 vm2 = {
                   inherit system;
-                  deployment = { targetHost = "192.168.122.202"; };
-                  nixosModules =
-                    [ machines.vm2 inputs.disko.nixosModules.default ];
+                  deployment = {
+                    targetHost = "192.168.122.202";
+                  };
+                  nixosModules = [
+                    machines.vm2
+                    inputs.disko.nixosModules.default
+                  ];
                 };
 
               };
@@ -130,6 +216,8 @@
         };
       };
 
-      # DO NOT FORGET!
-    in clusterConfig; # use the generated cluster config as the flake content
+    in
+    # DO NOT FORGET!
+    clusterConfig; # use the generated cluster config as the flake content
+
 }

@@ -1,12 +1,24 @@
-{ pkgs, lib, clusterlib, flake-utils, nixos-anywhere, ... }:
+{
+  pkgs,
+  lib,
+  clusterlib,
+  flake-utils,
+  nixos-anywhere,
+  ...
+}:
 
 let # imports
   forEachAttrIn = clusterlib.forEachAttrIn;
   get = clusterlib.get;
-in with lib;
-with lib.types;
+  add = clusterlib.add;
 
-let
+  mkOption = lib.mkOption;
+  attrsets = lib.attrsets;
+
+  nullOr = lib.types.nullOr;
+  either = lib.types.either;
+  package = lib.types.package;
+  enum = lib.types.enum;
 
   # redefine types to nest submodules at the right place
   domainType = clusterlib.domainType { inherit clusterType; };
@@ -32,37 +44,35 @@ let
   };
 
   # Build nixos-anywhere setup script for remote installations in packages.$system.$machineName.create
-  deploymentAnnotation = config:
-    let machines = get.machines config;
-    in attrsets.recursiveUpdate config
-
-    (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-
-      # build an iso package for each machine configuration
-      packages = forEachAttrIn machines (machineName: machineConfig:
-        let
-          cfg = machineConfig.nixosConfiguration.config;
-          nixosConfig = cfg.system.build.toplevel.outPath;
-          formatScript = # -
-            if machineConfig.deployment.formatScript == null then
-              (pkgs.writeScript "formatScript" ''echo "skip formatting"'')
-            else if machineConfig.deployment.formatScript == "disko" then
-              (pkgs.writeScript "formatScript" cfg.disko.devices._disko)
-            else
-              machineConfig.deployment.formatScript;
-        in {
-          create = pkgs.writeScriptBin "deploy" ''
-            ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${machineConfig.deployment.targetUser}@${machineConfig.deployment.targetHost}
-          '';
-          format = if machineConfig.deployment.formatScript == null then
-            pkgs.writeScriptBin "format-${machineName}"
-            "echo no format script configured"
+  deploymentAnnotation =
+    config:
+    add.machinePackages config (
+      machineName: machineConfig: _config:
+      let
+        cfg = machineConfig.nixosConfiguration.config;
+        nixosConfig = cfg.system.build.toplevel.outPath;
+        formatScript = # -
+          if machineConfig.deployment.formatScript == null then
+            (pkgs.writeScript "formatScript" ''echo "skip formatting"'')
+          else if machineConfig.deployment.formatScript == "disko" then
+            (pkgs.writeScript "formatScript" cfg.disko.devices._disko)
+          else
+            machineConfig.deployment.formatScript;
+      in
+      {
+        create = pkgs.writeScriptBin "create-${machineName}" ''
+          ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${machineConfig.deployment.targetUser}@${machineConfig.deployment.targetHost}
+        '';
+        format =
+          if machineConfig.deployment.formatScript == null then
+            pkgs.writeScriptBin "format-${machineName}" "echo no format script configured"
           else
             let
               ip = machineConfig.deployment.targetHost;
               sshArgs = [ "-t" ];
               script = formatScript;
-            in pkgs.writeScriptBin "deploy" ''
+            in
+            pkgs.writeScriptBin "deploy" ''
               echo "Run format script on host ${machineName}?"
               echo "WARNING: disk content will be erased if you select yes!"
               [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit
@@ -72,10 +82,10 @@ let
               ${pkgs.nix}/bin/nix copy --to "ssh://root@${ip}" "$script"
               ssh ${builtins.concatStringsSep " " sshArgs} root@${ip} $script
             '';
-        });
-
-    }));
-in {
+      }
+    );
+in
+{
 
   options.domain = domainType;
   config.extensions.deploymentTransformations = [ deploymentAnnotation ];
