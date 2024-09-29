@@ -8,7 +8,7 @@
     # Change this import to the github url
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
-      url = "path:../..";
+      url = "github:Skasselbard/NixOs-ClusterConfig";
     };
 
     # Import disko to configure partitioning

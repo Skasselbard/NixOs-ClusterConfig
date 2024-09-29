@@ -1,3 +1,3 @@
-nix run .#vm0.create
-nix run .#vm1.create
-nix run .#vm2.create
+nix run .#machines.vm0.create
+nix run .#machines.vm1.create
+nix run .#machines.vm2.create

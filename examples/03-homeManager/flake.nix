@@ -13,9 +13,9 @@
     # Import clusterConfig flake
     # Change this import to the github url
     clusterConfigFlake = {
-      url = "path:../..";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
+      url = "github:Skasselbard/NixOs-ClusterConfig";
     };
 
     # Import disko to configure partitioning
@@ -27,7 +27,13 @@
 
   };
 
-  outputs = inputs@{ self, nixpkgs, clusterConfigFlake, ... }:
+  outputs =
+    inputs@{
+      self,
+      nixpkgs,
+      clusterConfigFlake,
+      ...
+    }:
 
     let # Definitions and imports
 
@@ -40,8 +46,7 @@
       filters = clusterConfigFlake.lib.filters;
 
       # Configuration from other Layers, e.g.: NixOs machine configurations
-      configurations =
-        (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
+      configurations = (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
       homeModules = configurations.homeModules;
@@ -72,44 +77,6 @@
                   definition = clusterConfigFlake.clusterServices.staticDns;
                 };
 
-                # Vault Server definition
-                vault = {
-
-                  roles = {
-                    # A single host to witch vault clients are redirected
-                    # If the filter returns more than one host an error will be thrown
-                    # https://developer.hashicorp.com/vault/docs/configuration#api_addr
-                    apiAddress = [ (filters.hostname "vm0") ];
-
-                    # A single host to witch vault servers are forwarded
-                    # If the filter returns more than one host an error will be thrown
-                    # https://developer.hashicorp.com/vault/docs/configuration#cluster_addr
-                    clusterAddress = [ (filters.hostname "vm0") ];
-                  };
-
-                  # Hosts to that service vault
-                  selectors = [
-                    (filters.hostname "vm0")
-                    (filters.hostname "vm11")
-                    (filters.hostname "vm2")
-                  ];
-
-                  # include the vault module from the clusterConfig
-                  definition = clusterConfigFlake.clusterServices.vault;
-
-                  # Additional vault server configuration
-                  extraConfig = {
-                    services.vault = {
-                      enableUi = true;
-                      clusterName = "Example Vault";
-                      certificates.vaultCert = vaultCertPath + vaultCertName;
-                      certificates.vaultKey = vaultCertPath + vaultKeyName;
-                      certificates.caRootCert = vaultCertPath + rootCaName;
-                    };
-                    # nixpkgs.config.permittedInsecurePackages =
-                    #   [ "vault-bin-1.15.6" ];
-                  };
-                };
               };
 
               ############################################
@@ -130,8 +97,10 @@
 
                 admin = {
                   # Add modules per user for HomeManager
-                  homeManagerModules =
-                    [ homeModules.default homeModules.starship ];
+                  homeManagerModules = [
+                    homeModules.default
+                    homeModules.starship
+                  ];
                   systemConfig = {
                     isNormalUser = true;
                     extraGroups = [ "wheel" ];
@@ -148,7 +117,9 @@
 
                 vm0 = {
                   inherit system;
-                  deployment = { targetHost = "192.168.122.200"; };
+                  deployment = {
+                    targetHost = "192.168.122.200";
+                  };
                   nixosModules = [
                     machines.vm0
                     # since the vms use disko for mounting, we still need to include the NixOs module
@@ -158,16 +129,24 @@
 
                 vm1 = {
                   inherit system;
-                  deployment = { targetHost = "192.168.122.201"; };
-                  nixosModules =
-                    [ machines.vm1 inputs.disko.nixosModules.default ];
+                  deployment = {
+                    targetHost = "192.168.122.201";
+                  };
+                  nixosModules = [
+                    machines.vm1
+                    inputs.disko.nixosModules.default
+                  ];
                 };
 
                 vm2 = {
                   inherit system;
-                  deployment = { targetHost = "192.168.122.202"; };
-                  nixosModules =
-                    [ machines.vm2 inputs.disko.nixosModules.default ];
+                  deployment = {
+                    targetHost = "192.168.122.202";
+                  };
+                  nixosModules = [
+                    machines.vm2
+                    inputs.disko.nixosModules.default
+                  ];
                 };
 
               };
@@ -178,6 +157,7 @@
         };
       };
 
-      # DO NOT FORGET!
-    in clusterConfig; # use the generated cluster config as the flake content
+    in
+    # DO NOT FORGET!
+    clusterConfig; # use the generated cluster config as the flake content
 }

@@ -8,7 +8,7 @@
     # Change this import to the github url
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
-      url = "path:../..";
+      url = "github:Skasselbard/NixOs-ClusterConfig";
     };
 
     # Import disko to configure partitioning
@@ -19,7 +19,13 @@
 
   };
 
-  outputs = inputs@{ self, nixpkgs, clusterConfigFlake, ... }:
+  outputs =
+    inputs@{
+      self,
+      nixpkgs,
+      clusterConfigFlake,
+      ...
+    }:
 
     let # imports
 
@@ -35,12 +41,11 @@
       # To separate cluster configurations from other configurations (e.g. machines)
       # it is advisable to keep the configurations separate and import it in a variable.
       # This keeps the cluster config much more readable.
-      configurations =
-        (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
-      configurations = import "${self}/../00-exampleConfigs/";
+      configurations = (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
-    in let
+    in
+    let
 
       # The given clusterConfig has to be expanded with the buildCluster function.
       # This function will generate nixos machines and packages e.g. for deployment
@@ -138,28 +143,33 @@
 
                 };
 
-                vm1 = let
-                  # You can use config from inside the machine.
-                  # But avoid depenmdency loops.
-                  cfg = self.nixosConfigurations.vm1.config;
-                  ip = (builtins.head
-                    cfg.networking.interfaces."eth0".ipv4.addresses).address;
-                in {
-                  inherit system;
-                  nixosModules =
-                    [ machines.vm1 inputs.disko.nixosModules.default ];
+                vm1 =
+                  let
+                    # You can use config from inside the machine.
+                    # But avoid depenmdency loops.
+                    cfg = self.nixosConfigurations.vm1.config;
+                    ip = (builtins.head cfg.networking.interfaces."eth0".ipv4.addresses).address;
+                  in
+                  {
+                    inherit system;
+                    nixosModules = [
+                      machines.vm1
+                      inputs.disko.nixosModules.default
+                    ];
 
-                  deployment = {
-                    targetHost = ip;
-                    formatScript = "disko";
+                    deployment = {
+                      targetHost = ip;
+                      formatScript = "disko";
+                    };
+
                   };
-
-                };
 
                 vm2 = {
                   inherit system;
-                  nixosModules =
-                    [ machines.vm2 inputs.disko.nixosModules.default ];
+                  nixosModules = [
+                    machines.vm2
+                    inputs.disko.nixosModules.default
+                  ];
 
                   deployment = {
                     targetHost = "192.168.122.202";
@@ -176,6 +186,7 @@
         };
       };
 
-      # DO NOT FORGET!
-    in clusterConfig; # use the generated cluster config as the flake content
+    in
+    # DO NOT FORGET!
+    clusterConfig; # use the generated cluster config as the flake content
 }
