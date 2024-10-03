@@ -11,10 +11,6 @@
   ...
 }:
 
-assert (builtins.isList roles.clusterAddress && (builtins.length roles.clusterAddress) == 1);
-
-assert (builtins.isList roles.apiAddress && (builtins.length roles.apiAddress) == 1);
-
 let
 
   #imports 
@@ -22,6 +18,9 @@ let
   head = builtins.head;
   tail = builtins.tail;
   lists = lib.lists;
+  flatten = lists.flatten;
+  remove = lists.remove;
+  forEach = lists.forEach;
 
   str = lib.types.str;
   enum = lib.types.enum;
@@ -31,13 +30,21 @@ let
 
   # helper functions
 
+  # get a list of ips excluding dhcp cobfigurations
+  parseRealIps =
+    ips:
+    let
+      ipList = flatten (lib.attrsets.mapAttrsToList (name: value: value) ips);
+    in
+    remove "dhcp" ipList;
+
   get = {
 
-    servicesAddresses =
+    serviceAddresses =
       searchRole: host:
       (
-        if host ? servicesAddresses then
-          builtins.filter (elem: elem.role == searchRole) host.servicesAddresses
+        if host ? serviceAddresses then
+          builtins.filter (elem: elem.role == searchRole) host.serviceAddresses
         else
           [ ]
       );
@@ -45,7 +52,7 @@ let
     listeners =
       host:
       let
-        listeners = get.servicesAddresses "vault-listener" host;
+        listeners = get.serviceAddresses "vault-listener" host;
       in
       if listeners == [ ] then
         [
@@ -56,26 +63,39 @@ let
         ]
       else
         listeners;
-
-    apiAddress =
-      if roles.apiAddress == [ ] then
-        {
-          address = "127.0.0.1";
-          port = 8200;
-        }
-      else
-        head (get.servicesAddresses "vault-apiAddress" (head roles.apiAddress));
-
-    clusterAddress =
-      if roles.clusterAddress == [ ] then
-        {
-          address = "127.0.0.1";
-          port = 8201;
-        }
-      else
-        head (get.servicesAddresses "vault-clusterAddress" (head roles.clusterAddress));
-
+    
     otherServers = builtins.filter (server: server.fqdn != this.fqdn) selectors;
+
+    serverIps =
+      host:
+      let
+        server = head (builtins.filter (selected: selected.fqdn == host.fqdn) selectors); # selectors[host]
+        isInt = input: (builtins.tryEval (lib.toInt input)).success;
+        isV4Octet = input: if (isInt input) then ((lib.toInt input) <= 255) else false;
+        isIpV4 = listener: builtins.all isV4Octet (lib.splitString "." listener.address);
+        isAllInterfaces = listener: listener.address == "0.0.0.0";
+      in
+      remove "del" (
+        flatten (
+          lists.forEach (get.listeners server) (
+            listener:
+            if isAllInterfaces listener then
+              parseRealIps server.ips
+            else if isIpV4 listener then
+              listener.address
+            else
+              "del"
+          )
+        )
+      );
+
+    hostFqdn = host: "${host.machineName}.vault.${clusterInfo.fqdn}";
+
+    hostsEntries = flatten (
+      lists.forEach selectors (
+        host: lists.forEach (get.serverIps host) (ip: "${ip} ${host.machineName} ${get.hostFqdn host}")
+      )
+    );
 
   };
 
@@ -203,9 +223,11 @@ in
       # Set the listener config
       listeners = get.listeners this;
       defaultListener = (head listeners);
+      defaultListenerAddress = "${get.hostFqdn this}:${toString defaultListener.port}";
+      clusterPort = defaultListener.port + 1;
       remainingListeners = tail listeners;
 
-      firewallPorts = lists.forEach listeners (listener: listener.port);
+      firewallPorts = (lists.forEach listeners (listener: listener.port)) ++ [ clusterPort ];
 
       # Set the certificate files
       basePath = cfg.cluster.certificates.path.serverBase;
@@ -217,6 +239,7 @@ in
 
     {
       networking.firewall.allowedTCPPorts = firewallPorts;
+      networking.extraHosts = (builtins.concatStringsSep "\n" get.hostsEntries);
 
       environment.systemPackages = with pkgs; [
         vault-bin
@@ -229,7 +252,7 @@ in
         package = pkgs.vault-bin;
 
         # add the first listener to the default nixos config
-        address = "${defaultListener.address}:${toString defaultListener.port}";
+        address = defaultListenerAddress;
         tlsCertFile = tlsCert;
         tlsKeyFile = tlsKey;
         listenerExtraConfig = ''
@@ -240,13 +263,11 @@ in
         # setup vault for cluster use
         extraConfig =
           let
-            clusterAddress = get.clusterAddress;
-            apiAddress = get.apiAddress;
 
             # If there are more than one listeners configured -> add them to the config
             remainingListenersConfig = lists.forEach remainingListeners (listener: ''
               listener "tcp"{
-                address = "${listener.address}:${listener.port}"
+                address = "${get.hostFqdn this}:${listener.port}"
                 tls_cert_file = "${tlsCert}"
                 tls_key_file = "${tlsKey}"
                 tls_client_ca_file = "${rootCaFile}"
@@ -257,9 +278,9 @@ in
           ''
             ui = "${if cfg.cluster.enableUi then "true" else "false"}"
             disable_mlock = "true"
-            cluster_addr = "https://${clusterAddress.address}:${toString clusterAddress.port}"
+            api_addr = "https://${defaultListenerAddress}"
+            cluster_addr = "https://${get.hostFqdn this}:${toString clusterPort}"
             cluster_name  = "${cfg.cluster.clusterName}"
-            api_addr = "https://${apiAddress.address}:${toString apiAddress.port}"
             introspection_endpoint = "false"
             log_level = "${cfg.cluster.logLevel}"
 
@@ -282,7 +303,7 @@ in
                 vaultServer:
                 lists.forEach (get.listeners vaultServer) (listener: ''
                   retry_join {
-                    leader_api_addr = "http://${listener.address}:${toString listener.port}"
+                    leader_api_addr = "https://${get.hostFqdn vaultServer}:${toString listener.port}"
                     leader_ca_cert_file = "${rootCaFile}"
                     leader_client_cert_file = "${tlsCert}"
                     leader_client_key_file = "${tlsKey}"

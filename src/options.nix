@@ -167,7 +167,7 @@ let
           }'';
       };
 
-      servicesAddresses = mkOption {
+      serviceAddresses = mkOption {
         description = "A list of attributes with service addresses (ip + port) for a service role and an additional config that is added to the nixosModules of the machine";
         type = listOf (submodule serviceAddressType);
         default = [ ];

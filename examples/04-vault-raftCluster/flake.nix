@@ -76,6 +76,15 @@
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
                   definition = clusterConfigFlake.clusterServices.staticDns;
+                  extraConfig = {
+                    services.staticDns.customEntries = {
+                      # You can set additional host entries, e.g. a default
+                      # machine that points to vault
+                      # This setting is not used by this example and only seves demonstration purposes
+                      "vault.example.com" = "192.168.122.200";
+                      "vault" = "192.168.122.200";
+                    };
+                  };
                 };
 
                 vault = {
@@ -89,21 +98,23 @@
                     (filters.hostname "vm2")
                   ];
                   definition = clusterConfigFlake.clusterServices.vault;
-                  extraConfig = {
-                    services.vault.cluster = {
-                      enableUi = true;
-                      certificates = {
-                        organizationUnit = "Demonstrations";
-                        organization = "ExampleOrg";
-                        country = "DE";
-                        locality = "TownStadt";
-                        province = "Bundesland";
+                  extraConfig =
+                    { config, ... }:
+                    {
+                      services.vault.cluster = {
+                        enableUi = true;
+                        certificates = {
+                          organizationUnit = "Demonstrations";
+                          organization = "ExampleOrg";
+                          country = "DE";
+                          locality = "TownStadt";
+                          province = "Bundesland";
+                        };
                       };
-                    };
 
-                    # Allow vault to be installed while other unfree packages are still blocked
-                    nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (pkgs.lib.getName pkg) [ "vault-bin" ];
-                  };
+                      # Allow vault to be installed while other unfree packages are still blocked
+                      nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (pkgs.lib.getName pkg) [ "vault-bin" ];
+                    };
                 };
 
               };
@@ -136,79 +147,132 @@
                 };
               };
 
-              machines = {
+              machines =
+                let
+                  # All machines need certificates for TLS communication
+                  # We deploy them with a function that takes a machine configuration
+                  # and turns it into the deployment keys (as used by colmena or nixops).
+                  vaultKeys =
+                    machineConfig:
+                    let
+                      cfg = machineConfig.services.vault.cluster;
+                      basePath = cfg.certificates.path.serverBase;
+                      rootCertName = cfg.certificates.path.caRootCertName + ".crt";
+                      tlsCertName = cfg.certificates.path.vaultCertName + ".crt";
+                      tlsKeyName = cfg.certificates.path.vaultKeyName + ".key";
+                    in
+                    {
 
-                vm0 =
-                  let
-                    ip = "192.168.122.200";
-                  in
-                  {
-                    inherit system;
+                      vaultRootCertFile = {
+                        destDir = basePath;
+                        name = rootCertName;
+                        user = "vault";
+                        keyFile = (basePath + rootCertName);
+                        permissions = "0444";
+                      };
 
-                    servicesAddresses = [
+                      vaultTlsCertFile = {
+                        destDir = basePath;
+                        name = tlsCertName;
+                        user = "vault";
+                        keyFile = (basePath + tlsCertName);
+                        permissions = "0444";
+                      };
 
-                      (clusterlib.ip.tag {
-                        role = "vault-listener";
-                        address = ip;
-                        port = 8200;
-                      })
+                      vaultTlsCertKey = {
+                        destDir = basePath;
+                        name = tlsKeyName;
+                        user = "vault";
+                        keyCommand = [
+                          "sudo"
+                          "cat"
+                          (basePath + tlsKeyName)
+                        ];
+                        permissions = "0440";
+                      };
 
-                      (clusterlib.ip.tag {
-                        role = "vault-apiAddress";
-                        address = ip;
-                        port = 8200;
-                      })
+                    };
+                in
+                {
 
-                      (clusterlib.ip.tag {
-                        role = "vault-clusterAddress";
-                        address = ip;
-                        port = 8201;
-                      })
+                  vm0 =
+                    let
+                      machineConfig = self.nixosConfigurations.vm0.config;
+                      ip = "192.168.122.200";
+                    in
+                    {
+                      inherit system;
 
-                      # ip.staticIpV4OpenUdp
-                      # {
-                      #   inherit ip;
-                      #   role = "vault";
-                      #   interface = "eth0";
-                      # }
+                      serviceAddresses = [
 
-                    ];
+                        (clusterlib.ip.tag {
+                          role = "vault-listener";
+                          address = ip;
+                          port = 8200;
+                        })
 
-                    deployment = {
-                      targetHost = ip;
+                        # ip.staticIpV4OpenUdp
+                        # {
+                        #   inherit ip;
+                        #   role = "vault";
+                        #   interface = "eth0";
+                        # }
+
+                      ];
+
+                      deployment = {
+                        targetHost = ip;
+                        keys = vaultKeys machineConfig;
+                        formatScript = "disko";
+                      };
+
+                      nixosModules = [
+                        machines.vm0
+                        # since the vms use disko for mounting, we still need to include the NixOs module
+                        inputs.disko.nixosModules.default
+                      ];
+
                     };
 
-                    nixosModules = [
-                      machines.vm0
-                      # since the vms use disko for mounting, we still need to include the NixOs module
-                      inputs.disko.nixosModules.default
-                    ];
+                  vm1 =
+                    let
+                      machineConfig = self.nixosConfigurations.vm1.config;
+                      ip = "192.168.122.201";
+                    in
+                    {
+                      inherit system;
+                      deployment = {
+                        targetHost = ip;
+                        keys = vaultKeys machineConfig;
+                        formatScript = "disko";
+                      };
+                      nixosModules = [
+                        machines.vm1
+                        inputs.disko.nixosModules.default
+                      ];
 
-                  };
+                    };
 
-                vm1 = {
-                  inherit system;
-                  deployment = {
-                    targetHost = "192.168.122.201";
-                  };
-                  nixosModules = [
-                    machines.vm1
-                    inputs.disko.nixosModules.default
-                  ];
+                  vm2 =
+                    let
+                      machineConfig = self.nixosConfigurations.vm2.config;
+                      ip = "192.168.122.202";
+                    in
+                    {
+                      inherit system;
+                      deployment = {
+                        targetHost = ip;
+                        keys = vaultKeys machineConfig;
+                        formatScript = "disko";
+                      };
+                      nixosModules = [
+                        machines.vm2
+                        inputs.disko.nixosModules.default
+                      ];
+
+                    };
+
                 };
-
-                vm2 = {
-                  inherit system;
-                  deployment = {
-                    targetHost = "192.168.122.202";
-                  };
-                  nixosModules = [
-                    machines.vm2
-                    inputs.disko.nixosModules.default
-                  ];
-                };
-
-              };
             };
 
           };

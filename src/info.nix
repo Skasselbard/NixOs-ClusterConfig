@@ -81,40 +81,11 @@ let
       }
     );
 
-  serviceInfoAnnotation =
-    config:
-    add.servicePackages config (
-      machineName: machineConfig: serviceName: serviceConfig: config: {
-
-        status =
-          let
-            cfg = machineConfig.deployment;
-            host = cfg.targetHost;
-            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
-          in
-          # FIXME: serviceName does not necessarily match the name in systemd
-          pkgs.writeScriptBin "statusOf-${machineName}-${serviceName}"
-            "${pkgs.openssh}/bin/ssh ${user}${host} \"systemctl status ${serviceName}.service\"";
-
-        log =
-          let
-            cfg = machineConfig.deployment;
-            host = cfg.targetHost;
-            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
-          in
-          # FIXME: serviceName does not necessarily match the name in systemd
-          pkgs.writeScriptBin "logOf-${machineName}-${serviceName}"
-            "${pkgs.openssh}/bin/ssh ${user}${host} \"journalctl -xu ${serviceName}.service\"";
-
-      }
-    );
-
 in
 {
   config.extensions.deploymentTransformations = [
     appsAnnotation
     connectionAnnotation
-    serviceInfoAnnotation
   ];
   config.extensions.infoTransformations = [
     clusterInfoAnnotation

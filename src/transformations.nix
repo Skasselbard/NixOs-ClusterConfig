@@ -27,6 +27,12 @@ let
 
       in
       [
+        {
+          # make clusterlib available for machine and service configs
+          _module.args = {
+            inherit clusterlib;
+          };
+        }
 
         {
           # machine config

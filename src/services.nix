@@ -60,12 +60,71 @@ let
       lists.flatten (attrsets.attrValues serviceModules)
     );
 
+  serviceScriptsAnnotation =
+    config:
+    add.servicePackages config (
+      machineName: machineConfig: serviceName: serviceConfig: config: {
+
+        restart =
+          let
+            cfg = machineConfig.deployment;
+            host = cfg.targetHost;
+            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+          in
+          # FIXME: serviceName does not necessarily match the name in systemd
+          pkgs.writeScriptBin "start-${machineName}-${serviceName}"
+            "${pkgs.openssh}/bin/ssh ${user}${host} \"systemctl restart ${serviceName}.service\"";
+
+        start =
+          let
+            cfg = machineConfig.deployment;
+            host = cfg.targetHost;
+            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+          in
+          # FIXME: serviceName does not necessarily match the name in systemd
+          pkgs.writeScriptBin "start-${machineName}-${serviceName}"
+            "${pkgs.openssh}/bin/ssh ${user}${host} \"systemctl start ${serviceName}.service\"";
+
+        status =
+          let
+            cfg = machineConfig.deployment;
+            host = cfg.targetHost;
+            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+          in
+          # FIXME: serviceName does not necessarily match the name in systemd
+          pkgs.writeScriptBin "statusOf-${machineName}-${serviceName}"
+            "${pkgs.openssh}/bin/ssh ${user}${host} \"systemctl status ${serviceName}.service\"";
+
+        stop =
+          let
+            cfg = machineConfig.deployment;
+            host = cfg.targetHost;
+            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+          in
+          # FIXME: serviceName does not necessarily match the name in systemd
+          pkgs.writeScriptBin "start-${machineName}-${serviceName}"
+            "${pkgs.openssh}/bin/ssh ${user}${host} \"systemctl stop ${serviceName}.service\"";
+
+        log =
+          let
+            cfg = machineConfig.deployment;
+            host = cfg.targetHost;
+            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+          in
+          # FIXME: serviceName does not necessarily match the name in systemd
+          pkgs.writeScriptBin "logOf-${machineName}-${serviceName}"
+            "${pkgs.openssh}/bin/ssh ${user}${host} \"journalctl -xu ${serviceName}.service\"";
+
+      }
+    );
+
 in
 {
 
   config.extensions = {
     clusterTransformations = [ clusterServiceToMachineServices ];
     moduleTransformations = [ machineServiceToNixOsConfiguration ];
+    deploymentTransformations = [ serviceScriptsAnnotation ];
   };
 
 }

@@ -46,29 +46,6 @@ def "main create cert intermediate" [configJson] {
 
 }
 
-
-# def parseConfig [json] {
-
-# # populate variables from config
-# # {
-# # let org = $json | get certData.org
-# # let orgUnit = $json | get certData.orgUnit
-# # let country = $json | get certData.country
-# # let province = $json | get certData.province
-# # let locality = $json | get certData.locality
-# # let domain = $json | get certData.domain
-# # let issuer = $json | get certData.issuer
-# # let role = $json | get role
-# # let certPath = $json | get certPath
-
-# # let rootCertName = $json | get rootCert.name
-# # let rootCertPassPhrase = $json | get rootCert.passPhrase
-# # let intermediateCertName = $json | get intermediate.name
-# # let intermediateCertPassPhrase = $json | get intermediate.passPhrase
-# # }
-# from json
-# }
-
 def "main vault setup" [token configJson] {
   let config = $configJson | from json
 
@@ -127,8 +104,7 @@ def createIntermediateCsr [config] {
     --locality ($config.certData.locality) 
     --common-name $config.intermediate.name 
     --passphrase $config.intermediate.passPhrase
-    --ip "127.0.0.1"
-    --domain ($config.certData.domain)
+    --domain ("*.vault." + $config.certData.domain)
   )
 }
 
@@ -146,7 +122,7 @@ def signIntermediate [config] {
     $config.intermediate.name
   )
 
-  sudo chown vault:vault ($config.intermediate.name + .crt)  ($config.intermediate.name + .key)
+  # sudo chown vault:vault ($config.intermediate.name + .crt)  ($config.intermediate.name + .key)
   sudo chmod 0444 ($config.intermediate.name + .crt) 
   sudo chmod 0440 ($config.intermediate.name + .key)
 }

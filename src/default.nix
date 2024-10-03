@@ -159,7 +159,7 @@ let
             inherit clusterName machineName;
             ips = get.ips machineConfig.nixosConfiguration;
             fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
-            servicesAddresses = lists.forEach machineConfig.servicesAddresses (entry: entry.tag);
+            serviceAddresses = lists.forEach machineConfig.serviceAddresses (entry: entry.tag);
           };
         }
       );

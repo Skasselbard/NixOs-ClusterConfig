@@ -18,6 +18,7 @@ let
 in
 
 let
+  colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
 
   # redefine types to nest submodules at the right place
   domainType = clusterlib.domainType { inherit clusterType; };
@@ -26,9 +27,6 @@ let
   # Defining deployment options for machines.
   # We import and reuse the colmena options
   machineType.options.deployment =
-    let
-      colmenaOptions = (import "${colmena.outPath}/src/nix/hive/options.nix");
-    in
     attrsets.recursiveUpdate
       # import colmena deployment options
       (colmenaOptions.deploymentOptions {
@@ -205,8 +203,12 @@ let
       );
 
     };
+
 in
 {
   options.domain = domainType;
-  config.extensions.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions = {
+    deploymentTransformations = [ deploymentAnnotation ];
+  };
+
 }

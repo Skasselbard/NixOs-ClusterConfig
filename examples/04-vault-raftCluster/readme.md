@@ -24,12 +24,16 @@ Use the Vault Cluster-Service to deploy a highly available Vault-Cluster on thre
 ## Deployment
 
 If you haven't, deploy a base system as described in the [first example](../01-simpleCluster/).
-1. create certificates
-2. Run
-  ```bash
-  nix run .#colmena apply
-  ```
-  - You can also run the deployment script with ``bash deploy.sh``.
+1. create certificates with
+   - ``sudo nix run .#cluster.example.vault.createTlsCertificate``
+   - ``sudo nix run .#example.vault.createRootCertificate``
+2. Run the deployment script with ``bash deploy.sh``.
+3. open the browser on one of the vault servers, e.g. :``https://192.168.122.200:8200``
+   - ignore the security warning, your browser does not know about the certificates we created in step 1
+4. create a new raft cluster
+   - save the unseal key and root token
+5. unseal the remaining vault servers
+   - e.g. in the browser while connecting to the other servers like in step 3
 
 
 ## Test Setup
