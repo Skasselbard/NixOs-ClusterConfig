@@ -24,7 +24,7 @@ in
     );
 
   # resolves a filter function to the attribute it points to and returns its annotations 
-  resolve =
+  resolveAnnotations =
     filter: clusterName: config:
     lists.flatten (
       lists.forEach (filtersToPaths filter clusterName config) (
@@ -38,6 +38,19 @@ in
           );
         in
         resolvedElement.annotations
+      )
+    );
+
+  # resolves a filter function to the attribute it points to and returns the complete definition 
+  resolveDefinitions =
+    filter: clusterName: config:
+    lists.flatten (
+      lists.forEach (filtersToPaths filter clusterName config) (
+        path:
+        (attrsets.attrByPath (strings.splitString "." path) {
+          # this is the default element if the path was not found
+          # TODO: throw an error if the path cannot be found?
+        } config)
       )
     );
 

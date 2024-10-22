@@ -174,10 +174,12 @@ let
     service =
       config: clusterName: serviceDefinition: machineConfig:
       let
-        selectors = (filters.resolve serviceDefinition.selectors clusterName config);
+        selectors = (filters.resolveAnnotations serviceDefinition.selectors clusterName config);
 
         roles = (
-          forEachAttrIn serviceDefinition.roles (roleName: role: (filters.resolve role clusterName config))
+          forEachAttrIn serviceDefinition.roles (
+            roleName: role: (filters.resolveAnnotations role clusterName config)
+          )
         );
 
         clusterInfo = (get.clusterInfo config).domain.clusters."${clusterName}";

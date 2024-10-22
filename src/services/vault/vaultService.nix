@@ -23,6 +23,7 @@ let
   forEach = lists.forEach;
 
   str = lib.types.str;
+  listOf = lib.types.listOf;
   enum = lib.types.enum;
 
   mkOption = lib.mkOption;
@@ -63,7 +64,7 @@ let
         ]
       else
         listeners;
-    
+
     otherServers = builtins.filter (server: server.fqdn != this.fqdn) selectors;
 
     serverIps =
@@ -77,7 +78,7 @@ let
       in
       remove "del" (
         flatten (
-          lists.forEach (get.listeners server) (
+          forEach (get.listeners server) (
             listener:
             if isAllInterfaces listener then
               parseRealIps server.ips
@@ -91,6 +92,9 @@ let
 
     hostFqdn = host: "${host.machineName}.vault.${clusterInfo.fqdn}";
 
+    hostEndpoints =
+      host: forEach (get.listeners host) (listener: "${get.hostFqdn host}:${toString listener.port}");
+
     hostsEntries = flatten (
       lists.forEach selectors (
         host: lists.forEach (get.serverIps host) (ip: "${ip} ${host.machineName} ${get.hostFqdn host}")
@@ -102,6 +106,11 @@ let
 in
 
 {
+  imports = [
+    # root module for the initialization modules for firrst time vault configuration
+    ./initialization/initScript.nix
+  ];
+
   ##########################################################
   # Additional options for cluster configuration.
   # Other options are defined in the nixos service module for vault.
@@ -114,6 +123,15 @@ in
       type = str;
       default = "vault." + clusterInfo.fqdn;
       description = "https://developer.hashicorp.com/vault/docs/configuration#cluster_name";
+    };
+
+    apiEndpoints = mkOption {
+      type = listOf str;
+      default = lists.flatten (forEach selectors (host: get.hostEndpoints host));
+      description = ''
+        List of url+port combination where a vault listener is configured. Depending on your configuration, not
+        all enpoints are reachable.
+      '';
     };
 
     logLevel = mkOption {

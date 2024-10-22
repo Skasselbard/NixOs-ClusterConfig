@@ -1,60 +1,8 @@
-{
-  pkgs,
-  nixpkgs,
-  clusterlib,
-  ...
-}:
+{ pkgs, clusterlib, ... }:
 let
 
   add = clusterlib.add;
   filters = clusterlib.filters;
-
-  createDummyMachine =
-    config: clusterName: clusterConfig:
-    let
-
-      # Build and evaluate a dummy cluster with a dummy machine to extract the vault configuration.
-      #
-      # The dummy machine will be evaluated and added to the nixosConfigurations of the dummy cluster.
-      # From there we can read the actual evaluated config.
-      #
-      #
-      # Additional thoughts:
-      # This approach does only work this way, if the needed configuration is machine independent.
-      # To extract machine dependent configurations, the actual machines have to be used instead of a dummy machine.
-      # Machine dependent configurations may or may not trap evaluation in an infinite loop.
-      #
-      # Another approach to read machine dependent config might be, to evaluate the cluster given with 'config'.
-      # However, to avoid infinite recursion, the clusterModule (this file) probably has to be deleted from 'config.modules'
-      # Additionally the machines on wich the service (in this case vault) should be deployed need to be known.
-      # This should be resolvable with the selectors defined in 'config.domain.clusters.${clusterName}.services.vault'
-      dummyCluster = clusterlib.buildCluster {
-
-        domain.suffix = config.domain.suffix;
-
-        domain.clusters."${clusterName}" = {
-
-          services.vault = {
-            roles = {
-              apiAddress = [ (filters.hostname "dummyMachine") ];
-              clusterAddress = [ (filters.hostname "dummyMachine") ];
-            };
-            selectors = [ (filters.hostname "dummyMachine") ];
-            definition = clusterConfig.services.vault.definition;
-            extraConfig = clusterConfig.services.vault.extraConfig;
-          };
-
-          machines.dummyMachine = {
-            system = "x86_64-linux";
-            nixosModules = [ { imports = [ "${nixpkgs}/nixos/modules/profiles/base.nix" ]; } ];
-          };
-
-        };
-
-      };
-
-    in
-    dummyCluster.nixosConfigurations.dummyMachine.config;
 
   deploymentAnnotation =
     config:
@@ -64,9 +12,16 @@ let
       vaultScripts = add.clusterPackage config (
         clusterName: clusterConfig:
         let
-          cfg = (createDummyMachine config clusterName clusterConfig).services.vault;
+          # get the attrset of the curent cluster 
+          cluster = config.domain.clusters.${clusterName};
+          # get all machines selected by the vault service definition
+          vaultMachines = filters.resolveDefinitions cluster.services.vault.selectors clusterName config;
+          # pick an arbitrary machine from the vault machines
+          firstMachine = builtins.head vaultMachines;
+          # get the config from the picked machines
+          cfg = pkgs.lib.debug.traceSeqN 1 firstMachine firstMachine.nixosConfiguration.config.services.vault;
 
-          scriptParams = {
+          certificateScriptParams = {
             certData = {
               org = cfg.cluster.certificates.organization;
               orgUnit = cfg.cluster.certificates.organizationUnit;
@@ -91,24 +46,31 @@ let
         in
         {
 
-          vault.createRootCertificate =
-            if clusterConfig.services ? vault then
-              (pkgs.writeShellScriptBin "createRootCertificate" ''
-                PATH=$PATH:${pkgs.certstrap}/bin
-                ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert root ''\'${builtins.toJSON scriptParams}''\' ''${@:1}
-              '')
-            else
-              pkgs.writeScriptBin "createRootCertificate" "echo \"vault is not configured for this cluster\"";
+          vault = {
+            createRootCertificate =
+              if clusterConfig.services ? vault then
+                (pkgs.writeShellScriptBin "createRootCertificate" ''
+                  PATH=$PATH:${pkgs.certstrap}/bin
+                  ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert root ''\'${builtins.toJSON certificateScriptParams}''\' ''${@:1}
+                '')
+              else
+                pkgs.writeScriptBin "createRootCertificate" "echo \"vault is not configured for this cluster\"";
 
-          vault.createTlsCertificate =
-            if clusterConfig.services ? vault then
-              (pkgs.writeShellScriptBin "createTlsCertificate" ''
-                PATH=$PATH:${pkgs.certstrap}/bin
-                ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert intermediate ''\'${builtins.toJSON scriptParams}''\' ''${@:1}
-              '')
-            else
-              pkgs.writeScriptBin "createRootCertificate" "echo \"vault is not configured for this cluster\"";
+            createTlsCertificate =
+              if clusterConfig.services ? vault then
+                (pkgs.writeShellScriptBin "createTlsCertificate" ''
+                  PATH=$PATH:${pkgs.certstrap}/bin
+                  ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert intermediate ''\'${builtins.toJSON certificateScriptParams}''\' ''${@:1}
+                '')
+              else
+                pkgs.writeScriptBin "createTlsCertificate" "echo \"vault is not configured for this cluster\"";
 
+            initialize =
+              if clusterConfig.services ? vault then
+                (pkgs.writeShellScriptBin "initialize-vault" cfg.initialization.script)
+              else
+                pkgs.writeScriptBin "initialize-vault" "echo \"vault is not configured for this cluster\"";
+          };
         }
       );
 

@@ -165,13 +165,13 @@ let
       );
       serviceAnnotation = update.services machineAnnotaion (
         clusterName: serviceName: serviceConfig: {
-          annotations.selectors = lists.forEach (filters.resolve serviceConfig.selectors clusterName
+          annotations.selectors = lists.forEach (filters.resolveAnnotations serviceConfig.selectors clusterName
             machineAnnotaion
           ) (annotation: annotation.machineName);
           annotations.roles = (
             forEachAttrIn serviceConfig.roles (
               roleName: role:
-              (lists.forEach (filters.resolve role clusterName machineAnnotaion) (
+              (lists.forEach (filters.resolveAnnotations role clusterName machineAnnotaion) (
                 annotation: annotation.machineName
               ))
             )

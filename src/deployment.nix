@@ -124,6 +124,7 @@ let
 
           # copy all interfaces and a selcetion of users
           networking.interfaces = interfaces;
+          # TODO: nameservers and gateway!
           users.users =
             forEachAttrIn users
               # remove attributes that cannot be used on the installation environment
