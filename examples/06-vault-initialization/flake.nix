@@ -222,6 +222,7 @@
 
                       deployment = {
                         targetHost = ip;
+                        # targetUser = "admin";
                         keys = vaultKeys machineConfig;
                         formatScript = "disko";
                       };

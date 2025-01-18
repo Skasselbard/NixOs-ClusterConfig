@@ -1,8 +1,16 @@
-{ pkgs, clusterlib, ... }:
+{
+  pkgs,
+  clusterlib,
+  lib,
+  ...
+}:
 let
 
   add = clusterlib.add;
   filters = clusterlib.filters;
+
+  forEach = lib.lists.forEach;
+  concatStringsSep = lib.strings.concatStringsSep;
 
   deploymentAnnotation =
     config:
@@ -19,7 +27,7 @@ let
           # pick an arbitrary machine from the vault machines
           firstMachine = builtins.head vaultMachines;
           # get the config from the picked machines
-          cfg = pkgs.lib.debug.traceSeqN 1 firstMachine firstMachine.nixosConfiguration.config.services.vault;
+          cfg = firstMachine.nixosConfiguration.config.services.vault;
 
           certificateScriptParams = {
             certData = {
@@ -67,9 +75,44 @@ let
 
             initialize =
               if clusterConfig.services ? vault then
-                (pkgs.writeShellScriptBin "initialize-vault" cfg.initialization.script)
+                let
+                  connectionData = forEach vaultMachines (machine: {
+                    host = machine.deployment.targetHost;
+                    user =
+                      if machine.deployment ? targetUser && machine.deployment.targetUser != null then
+                        machine.deployment.targetUser + "@"
+                      else
+                        "";
+                  });
+
+                  initScript = (pkgs.writeShellScript "initialize-vault" cfg.initialization.script);
+                in
+                pkgs.writeScriptBin "initialize-vault-remote" ''
+                  connectionData=(
+                    ${concatStringsSep " " (map (data: "${data.user}${data.host}") connectionData)}
+                  )
+
+                  script_path="${initScript.outPath}"
+
+                  # SSH options
+                  ssh_options="-o ConnectTimeout=5"
+
+                  for conn in "''${connectionData[@]}"; do
+                      echo "Attempting to connect to $conn..."
+                      if ssh $ssh_options "$conn" "echo 'Connected successfully to $conn'"; then
+                          echo "Running script $script_path on $conn"
+                          ssh $ssh_options "$conn" 'bash -s' < "$script_path"
+                          exit 0
+                      else
+                          echo "Unable to reach $conn, trying next entry..."
+                      fi
+                  done
+
+                  echo "All machines are unreachable."
+                  exit 1
+                ''
               else
-                pkgs.writeScriptBin "initialize-vault" "echo \"vault is not configured for this cluster\"";
+                pkgs.writeScriptBin "initialize-vault-remote" "echo \"vault is not configured for this cluster\"";
           };
         }
       );

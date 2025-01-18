@@ -186,13 +186,13 @@ let
             in
             pkgs.writeScriptBin "deploy-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} switch --target-host '${user}${host}' \${@:1}";
 
-          deploySecrets =
-            let
-              cfg = machineConfig.deployment;
-              host = cfg.targetHost;
-              user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
-            in
-            pkgs.writeScriptBin "deploy-${machineName}" "${pkgs.colmena}/bin/colmena upload-keys --on ${machineName}";
+          # deploySecrets =
+          #   let
+          #     cfg = machineConfig.deployment;
+          #     host = cfg.targetHost;
+          #     user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+          #   in
+          #   pkgs.writeScriptBin "deploy-${machineName}" "${pkgs.colmena}/bin/colmena upload-keys --on ${machineName}";
 
         }
       );
