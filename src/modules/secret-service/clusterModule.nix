@@ -22,14 +22,13 @@ let
   # Helper to generate secret paths
   generateSecretPath = account: secret: "/run/nixos-secret-service/deployment/${account}/${secret}";
 
-  deploymentScript =
-    machineConfig:
+  secretDeploymentScript =
+    deploymentUser: deploymentHost: nixosConfig:
     let
-      enabledBackends = filterAttrs (_: v: v.enable) machineConfig.secrets.backends;
+      backends = nixosConfig.services.secrets.backends;
       userSecrets = mapAttrs (
         user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig.secrets
-      ) machineConfig.users.users;
-      deploymentConfig = machineConfig.secrets.deployment;
+      ) nixosConfig.users.users;
     in
     pkgs.writeScript "deploy-secrets.sh" ''
       #!/usr/bin/env bash
@@ -38,54 +37,60 @@ let
       ${concatStringsSep "\n" (
         mapAttrsToList (backend: backendConfig: ''
           echo "Requesting credentials for backend: ${backend}..."
-        '') enabledBackends
+        '') backends
       )}
 
       echo "Validating secrets..."
       ${concatStringsSep "\n" (
         concatMap (
-          user: secrets:
+          user:
           concatMap (
-            backend: backendSecrets:
+            backend:
             concatMap (
-              secretName: secretConfig:
+              secretName:
               let
-                validateCommand = enabledBackends.${backend}.validateSecretCommand secretName secretConfig.path;
+                secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
+                validateCommand = (backends.${backend}.validateSecretCommand secretName secretConfig.path);
               in
-              ''
-                if ! ${validateCommand}; then
-                  echo "Validation failed for secret ${secretName}."
-                  echo "Aborting"
-                  exit 1
-                fi
-              ''
-            ) (attrNames backendSecrets)
-          ) (attrNames secrets)
+              [
+                ''
+                  if ! ${validateCommand}; then
+                    echo "Validation failed for secret ${secretName}."
+                    echo "Aborting"
+                    exit 1
+                  fi
+                ''
+              ]
+            ) (attrNames userSecrets."${user}"."${backend}")
+          ) (attrNames userSecrets."${user}")
         ) (attrNames userSecrets)
       )}
 
       ${concatStringsSep "\n" (
         concatMap (
-          user: secrets:
+          user:
           concatMap (
-            backend: backendSecrets:
+            backend:
             concatMap (
-              secretName: secretConfig:
+              secretName:
               let
-                backendConfig = enabledBackends.${backend}.config or { };
+                secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
+                backendConfig = backends.${backend}.config or { };
                 path = generateSecretPath user secretName;
-                retrieveCommand = enabledBackends.${backend}.retrieveSecretCommand secretName secretConfig.path;
+                retrieveCommand = backends.${backend}.retrieveSecretCommand secretName secretConfig.path;
                 targetPath = path;
               in
-              ''
-                echo "Fetching secret ${secretName} for user ${user} from backend ${backend}..."
-                SECRET=$(${retrieveCommand})
-                echo "Deploying secret ${secretName} to remote machine..."
-                ${deploymentConfig.command targetPath}
-                echo "Secret ${secretName} deployed to ${deploymentConfig.host}:${targetPath}."
-              ''
-            ) (attrNames backendSecrets)
-          ) (attrNames secrets)
+              [
+                ''
+                  echo "Fetching secret ${secretName} for user ${user} from backend ${backend}..."
+                  SECRET=$(${retrieveCommand})
+                  echo "Deploying secret ${secretName} to remote machine..."
+                  ssh "${deploymentUser}@${deploymentHost}" "mkdir -p \"$(dirname ${targetPath})\" && echo -n $SECRET > \"${targetPath}\""
+                  echo "Secret ${secretName} deployed to ${deploymentHost}:${targetPath}."
+                ''
+              ]
+            ) (attrNames userSecrets."${user}"."${backend}")
+          ) (attrNames userSecrets."${user}")
         ) (attrNames userSecrets)
       )}
 
@@ -106,7 +111,7 @@ let
 
       echo "Generating encryption key..."
       ENCRYPTION_KEY=$(
-        ${machineConfig.services.secrets.deployment.command}
+        ${nixosConfig.services.secrets.deriveEncryptionKey}
       )
 
       echo "Encrypting deployment folder..."
@@ -134,11 +139,47 @@ let
 
           deploySecrets =
             let
-              cfg = machineConfig.deployment;
-              host = cfg.targetHost;
-              user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
+              deploymentConfig = machineConfig.deployment;
+              nixosConfig = machineConfig.nixosConfiguration.config;
+              host = deploymentConfig.targetHost;
+              secretServiceUser = nixosConfig.users.users.secret-service.name;
+              deploymentUser =
+                if deploymentConfig ? targetUser && deploymentConfig.targetUser != null then
+                  deploymentConfig.targetUser
+                else
+                  "";
+              rootUser = nixosConfig.users.users.root.name;
+              deployCmd =
+                user: host:
+                "nix copy --to ssh://${user}@${host} ${secretDeploymentScript user host nixosConfig}; bash ${
+                  secretDeploymentScript user host nixosConfig
+                }";
             in
-            pkgs.writeScriptBin "deploy-secrets-${machineName}" (deploymentScript machineConfig);
+            pkgs.writeScriptBin "connect-secrets.sh" ''
+              #!/usr/bin/env bash
+              set -e
+              echo "Deploying Secrets to host: ${host}"
+
+              echo "Trying to connect as user: ${secretServiceUser}"
+              if ssh "${secretServiceUser}@${host}" "${(deployCmd secretServiceUser host)}"; then
+                exit 0
+              fi
+
+              echo "Connection failed with user: ${secretServiceUser}. Trying deployment user: ${deploymentUser}"
+              if ssh "${
+                if deploymentUser != "" then deploymentUser + "@" else ""
+              }${host}" "${(deployCmd deploymentUser host)}"; then
+                exit 0
+              fi
+
+              echo "Connection failed with deployment user: ${deploymentUser}. Trying root user: ${rootUser}"
+              if ssh "${rootUser}@${host}" "${(deployCmd rootUser host)}"; then
+                exit 0
+              fi
+
+              echo "Failed to deploy secrets. All connection attempts failed."
+              exit 1
+            '';
 
         }
       );

@@ -138,6 +138,11 @@
                           testSecret.path = "~/.zshrc";
                         };
                       };
+                      users.users.admin = {
+                        secrets.file = {
+                          adminSecret.path = "~/.zshrc";
+                        };
+                      };
                     })
                   ];
                 };
