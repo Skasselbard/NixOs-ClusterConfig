@@ -82,10 +82,9 @@ let
               in
               [
                 ''
-                  echo "Fetching secret ${secretName} for user ${user} from backend ${backend}..."
-                  SECRET=$(${retrieveCommand})
                   echo "Deploying secret ${secretName} to remote machine..."
-                  ssh "${deploymentUser}@${deploymentHost}" "mkdir -p \"$(dirname ${targetPath})\" && echo -n $SECRET > \"${targetPath}\""
+                  ssh "${deploymentUser}@${deploymentHost}" "mkdir -p \"$(dirname ${targetPath})\""
+                  ${retrieveCommand} | ssh "${deploymentUser}@${deploymentHost}" "cat > \"${targetPath}\""
                   echo "Secret ${secretName} deployed to ${deploymentHost}:${targetPath}."
                 ''
               ]
@@ -151,32 +150,38 @@ let
               rootUser = nixosConfig.users.users.root.name;
               deployCmd =
                 user: host:
-                "nix copy --to ssh://${user}@${host} ${secretDeploymentScript user host nixosConfig}; bash ${
-                  secretDeploymentScript user host nixosConfig
-                }";
+                # "nix copy --to ssh://${user}@${host} ${(secretDeploymentScript user host nixosConfig)}; 
+                "bash ${(secretDeploymentScript user host nixosConfig)}";
             in
             pkgs.writeScriptBin "connect-secrets.sh" ''
               #!/usr/bin/env bash
               set -e
               echo "Deploying Secrets to host: ${host}"
 
+              echo
               echo "Trying to connect as user: ${secretServiceUser}"
-              if ssh "${secretServiceUser}@${host}" "${(deployCmd secretServiceUser host)}"; then
+              if ssh -o 'NumberOfPasswordPrompts 1' "${secretServiceUser}@${host}" "echo successfully connected"; then
+                ${(deployCmd secretServiceUser host)}
                 exit 0
               fi
 
+              echo
               echo "Connection failed with user: ${secretServiceUser}. Trying deployment user: ${deploymentUser}"
-              if ssh "${
+              if ssh -o 'NumberOfPasswordPrompts 1' "${
                 if deploymentUser != "" then deploymentUser + "@" else ""
-              }${host}" "${(deployCmd deploymentUser host)}"; then
+              }${host}" "echo successfully connected"; then
+                 ${(deployCmd deploymentUser host)}
                 exit 0
               fi
 
+              echo
               echo "Connection failed with deployment user: ${deploymentUser}. Trying root user: ${rootUser}"
-              if ssh "${rootUser}@${host}" "${(deployCmd rootUser host)}"; then
+              if ssh -o 'NumberOfPasswordPrompts 1' "${rootUser}@${host}" "echo successfully connected"; then
+                ${(deployCmd rootUser host)}
                 exit 0
               fi
 
+              echo
               echo "Failed to deploy secrets. All connection attempts failed."
               exit 1
             '';

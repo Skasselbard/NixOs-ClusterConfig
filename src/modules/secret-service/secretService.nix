@@ -25,7 +25,7 @@ in
       backends.file = {
         retrieveSecretCommand = mkOption {
           type = rawType; # (types.str -> types.str -> types.str);
-          default = secretName: secretPath: "echo ${secretPath}";
+          default = secretName: secretPath: "cat ${secretPath}";
           description = ''
             A function that takes the secret name and the secret path and returns a shell command string
             to retrieve the secret. For the file backend, this could simply return content of the secret in the given path.
