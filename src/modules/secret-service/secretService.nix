@@ -42,7 +42,8 @@ in
       };
       deriveEncryptionKey = mkOption {
         type = str;
-        default = ''echo -n "$REVISION-$DATE-$CONFIG_HASH" | sha256sum | awk '{print $1}'';
+        default =
+          ''${pkgs.jq}/bin/jq .configHash | sha256sum | awk '{print $1}' '';
         description = ''
           A shell command that generates a deterministic encryption key. The default uses SHA-256.
         '';

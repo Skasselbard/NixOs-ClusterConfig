@@ -20,7 +20,8 @@ let
   add = clusterlib.add;
 
   # Helper to generate secret paths
-  generateSecretPath = account: secret: "/run/nixos-secret-service/deployment/${account}/${secret}";
+  tmpPath = "/dev/shm/nixos-secret-service";
+  generateSecretPath = account: secret: "${tmpPath}/${account}/${secret}";
 
   secretDeploymentScript =
     deploymentUser: deploymentHost: nixosConfig:
@@ -66,6 +67,8 @@ let
         ) (attrNames userSecrets)
       )}
 
+      mkdir -p ${tmpPath}
+      chmod 700 ${tmpPath}
       ${concatStringsSep "\n" (
         concatMap (
           user:
@@ -75,17 +78,15 @@ let
               secretName:
               let
                 secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
-                backendConfig = backends.${backend}.config or { };
-                path = generateSecretPath user secretName;
+                targetPath = generateSecretPath user secretName;
                 retrieveCommand = backends.${backend}.retrieveSecretCommand secretName secretConfig.path;
-                targetPath = path;
               in
               [
                 ''
-                  echo "Deploying secret ${secretName} to remote machine..."
-                  ssh "${deploymentUser}@${deploymentHost}" "mkdir -p \"$(dirname ${targetPath})\""
-                  ${retrieveCommand} | ssh "${deploymentUser}@${deploymentHost}" "cat > \"${targetPath}\""
-                  echo "Secret ${secretName} deployed to ${deploymentHost}:${targetPath}."
+                  echo "retrieving secret ${secretName}"
+                  mkdir -p "$(dirname ${targetPath})"
+                  ${retrieveCommand} | cat > ${targetPath}
+                  chmod 700 ${targetPath}
                 ''
               ]
             ) (attrNames userSecrets."${user}"."${backend}")
@@ -94,31 +95,27 @@ let
       )}
 
       echo "Encrypting secrets to persistent storage..."
-      METADATA_FILE="/var/lib/nixos-secret-service/deployment-info.yaml"
+      METADATA_FILE="/var/lib/nixos-secret-service/deployment-info.json"
       ENCRYPTED_ARCHIVE="/var/lib/nixos-secret-service/secrets.enc"
 
       DATE=$(date --iso-8601=seconds)
-      REVISION=$(nixos-version)
-      CONFIG_HASH=$(nix-store --query --hash /run/current-system)
+      CONFIG_HASH=${builtins.hashString "sha256" (builtins.toJSON userSecrets)}
 
       echo "Writing deployment metadata..."
-      cat > "$METADATA_FILE" <<EOL
-      date: "$DATE"
-      revision: "$REVISION"
-      configHash: "$CONFIG_HASH"
-      EOL
+      METADATA="{\"date\": \"$DATE\", \"configHash\": \"$CONFIG_HASH\"}" 
+      echo $METADATA | ssh "${deploymentUser}@${deploymentHost}" "cat > \"$METADATA_FILE\""
 
       echo "Generating encryption key..."
-      ENCRYPTION_KEY=$(
-        ${nixosConfig.services.secrets.deriveEncryptionKey}
-      )
+      ENCRYPTION_KEY=$(echo $METADATA | ${nixosConfig.services.secrets.deriveEncryptionKey})
 
       echo "Encrypting deployment folder..."
-      tar -cf - /run/nixos-secret-service/deployment | \
-        openssl enc -aes-256-cbc -salt -out "$ENCRYPTED_ARCHIVE" -pass pass:"$ENCRYPTION_KEY"
+      tar -cf - ${tmpPath} | ${pkgs.openssl}/bin/openssl enc -aes-256-cbc -pbkdf2 -out ${tmpPath}/secrets.enc -pass pass:"$ENCRYPTION_KEY"
 
-      echo "Deleting deployment folder..."
-      rm -rf /run/nixos-secret-service/deployment
+      echo "Copying archive to remote..."
+      scp ${tmpPath}/secrets.enc "${deploymentUser}@${deploymentHost}:$ENCRYPTED_ARCHIVE"
+
+      echo "Deleting temp folder..."
+      rm -rf ${tmpPath}
 
       echo "Deployment completed."
     '';
