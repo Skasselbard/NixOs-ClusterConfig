@@ -21,7 +21,7 @@ let
 
   # Helper to generate secret paths
   tmpPath = "/dev/shm/nixos-secret-service";
-  generateSecretPath = account: secret: "${tmpPath}/${account}/${secret}";
+  generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
 
   secretDeploymentScript =
     deploymentUser: deploymentHost: nixosConfig:
@@ -33,7 +33,17 @@ let
     in
     pkgs.writeScript "deploy-secrets.sh" ''
       #!/usr/bin/env bash
-      set -e
+      set -eE
+
+      cleanup() {
+        trap - EXIT ERR
+        echo "Deleting temp folder..."
+        # Weird Workaround to get the path to fusermount
+        # If we use the path from a pkg we get permission issues
+        $(nix-shell -p gocryptfs --run 'which fusermount') -u ${tmpPath}/secrets
+        rm -rf ${tmpPath}
+      }
+      trap cleanup EXIT ERR
 
       ${concatStringsSep "\n" (
         mapAttrsToList (backend: backendConfig: ''
@@ -56,7 +66,8 @@ let
               [
                 ''
                   if ! ${validateCommand}; then
-                    echo "Validation failed for secret ${secretName}."
+                    echo "Validation failed for secret '${secretName}' from user '${user}' at '${secretConfig.path}'."
+                    echo "Validation command: '${validateCommand}'"
                     echo "Aborting"
                     exit 1
                   fi
@@ -67,8 +78,22 @@ let
         ) (attrNames userSecrets)
       )}
 
+      DATABASE_FILE_NAME=$(basename '${nixosConfig.services.secrets.deployment.database.path}')
       mkdir -p ${tmpPath}
       chmod 700 ${tmpPath}
+      mkdir -p ${tmpPath}/secrets # Store unencrypted secrets here
+      mkdir -p ${tmpPath}/$DATABASE_FILE_NAME # Encrypted folder
+
+      echo "Generating metadata"
+      DATE=$(date --iso-8601=seconds)
+      CONFIG_HASH=${builtins.hashString "sha256" (builtins.toJSON userSecrets)}
+      METADATA="{\"date\": \"$DATE\", \"configHash\": \"$CONFIG_HASH\"}" 
+      ENCRYPTION_KEY=$(echo $METADATA | ${nixosConfig.services.secrets.deriveEncryptionKey})
+
+      echo "Initializing encrypted folder..."
+      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -init -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/$DATABASE_FILE_NAME
+      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/$DATABASE_FILE_NAME ${tmpPath}/secrets
+
       ${concatStringsSep "\n" (
         concatMap (
           user:
@@ -94,28 +119,12 @@ let
         ) (attrNames userSecrets)
       )}
 
-      echo "Encrypting secrets to persistent storage..."
-      METADATA_FILE="/var/lib/nixos-secret-service/deployment-info.json"
-      ENCRYPTED_ARCHIVE="/var/lib/nixos-secret-service/secrets.enc"
-
-      DATE=$(date --iso-8601=seconds)
-      CONFIG_HASH=${builtins.hashString "sha256" (builtins.toJSON userSecrets)}
-
       echo "Writing deployment metadata..."
-      METADATA="{\"date\": \"$DATE\", \"configHash\": \"$CONFIG_HASH\"}" 
-      echo $METADATA | ssh "${deploymentUser}@${deploymentHost}" "cat > \"$METADATA_FILE\""
-
-      echo "Generating encryption key..."
-      ENCRYPTION_KEY=$(echo $METADATA | ${nixosConfig.services.secrets.deriveEncryptionKey})
-
-      echo "Encrypting deployment folder..."
-      tar -cf - ${tmpPath} | ${pkgs.openssl}/bin/openssl enc -aes-256-cbc -pbkdf2 -out ${tmpPath}/secrets.enc -pass pass:"$ENCRYPTION_KEY"
+      ssh "${deploymentUser}@${deploymentHost}" "mkdir -p $(dirname '${nixosConfig.services.secrets.deployment.metadata.path}')"
+      echo $METADATA | ssh "${deploymentUser}@${deploymentHost}" "cat > '${nixosConfig.services.secrets.deployment.metadata.path}'"
 
       echo "Copying archive to remote..."
-      scp ${tmpPath}/secrets.enc "${deploymentUser}@${deploymentHost}:$ENCRYPTED_ARCHIVE"
-
-      echo "Deleting temp folder..."
-      rm -rf ${tmpPath}
+      ${pkgs.rsync}/bin/rsync -avz --progress ${tmpPath}/$DATABASE_FILE_NAME "${deploymentUser}@${deploymentHost}:$(dirname '${nixosConfig.services.secrets.deployment.database.path}')"
 
       echo "Deployment completed."
     '';
@@ -145,10 +154,7 @@ let
                 else
                   "";
               rootUser = nixosConfig.users.users.root.name;
-              deployCmd =
-                user: host:
-                # "nix copy --to ssh://${user}@${host} ${(secretDeploymentScript user host nixosConfig)}; 
-                "bash ${(secretDeploymentScript user host nixosConfig)}";
+              deployCmd = user: host: "bash ${(secretDeploymentScript user host nixosConfig)}";
             in
             pkgs.writeScriptBin "connect-secrets.sh" ''
               #!/usr/bin/env bash
