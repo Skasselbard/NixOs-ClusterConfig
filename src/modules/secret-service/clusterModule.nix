@@ -19,10 +19,6 @@ let
   get = clusterlib.get;
   add = clusterlib.add;
 
-  # Helper to generate secret paths
-  tmpPath = "/dev/shm/nixos-secret-service";
-  generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
-
   secretDeploymentScript =
     deploymentUser: deploymentHost: nixosConfig:
     let
@@ -30,6 +26,12 @@ let
       userSecrets = mapAttrs (
         user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig.secrets
       ) nixosConfig.users.users;
+
+      tmpPath = nixosConfig.services.secrets.deployment.tempPath;
+      persistentPath = nixosConfig.services.secrets.deployment.persistentPath;
+      databaseFileName = nixosConfig.services.secrets.deployment.database.fileName;
+      metadataFileName = nixosConfig.services.secrets.deployment.metadata.fileName;
+      generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
     in
     pkgs.writeScript "deploy-secrets.sh" ''
       #!/usr/bin/env bash
@@ -78,11 +80,10 @@ let
         ) (attrNames userSecrets)
       )}
 
-      DATABASE_FILE_NAME=$(basename '${nixosConfig.services.secrets.deployment.database.path}')
       mkdir -p ${tmpPath}
       chmod 700 ${tmpPath}
       mkdir -p ${tmpPath}/secrets # Store unencrypted secrets here
-      mkdir -p ${tmpPath}/$DATABASE_FILE_NAME # Encrypted folder
+      mkdir -p ${tmpPath}/${databaseFileName} # Encrypted folder
 
       echo "Generating metadata"
       DATE=$(date --iso-8601=seconds)
@@ -91,8 +92,8 @@ let
       ENCRYPTION_KEY=$(echo $METADATA | ${nixosConfig.services.secrets.deriveEncryptionKey})
 
       echo "Initializing encrypted folder..."
-      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -init -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/$DATABASE_FILE_NAME
-      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/$DATABASE_FILE_NAME ${tmpPath}/secrets
+      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -init -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName}
+      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName} ${tmpPath}/secrets
 
       ${concatStringsSep "\n" (
         concatMap (
@@ -120,11 +121,13 @@ let
       )}
 
       echo "Writing deployment metadata..."
-      ssh "${deploymentUser}@${deploymentHost}" "mkdir -p $(dirname '${nixosConfig.services.secrets.deployment.metadata.path}')"
-      echo $METADATA | ssh "${deploymentUser}@${deploymentHost}" "cat > '${nixosConfig.services.secrets.deployment.metadata.path}'"
+      ssh "${deploymentUser}@${deploymentHost}" "mkdir -p '${persistentPath}'"
+      echo $METADATA | ssh "${deploymentUser}@${deploymentHost}" "cat > '${persistentPath}/${metadataFileName}'"
+      ssh "${deploymentUser}@${deploymentHost}" chown secret-service '${persistentPath}/${metadataFileName}'
 
       echo "Copying archive to remote..."
-      ${pkgs.rsync}/bin/rsync -avz --progress ${tmpPath}/$DATABASE_FILE_NAME "${deploymentUser}@${deploymentHost}:$(dirname '${nixosConfig.services.secrets.deployment.database.path}')"
+      ${pkgs.rsync}/bin/rsync -avz --progress ${tmpPath}/${databaseFileName} "${deploymentUser}@${deploymentHost}:${persistentPath}"
+      ssh "${deploymentUser}@${deploymentHost}" chown -R secret-service '${persistentPath}/${databaseFileName}'
 
       echo "Deployment completed."
     '';

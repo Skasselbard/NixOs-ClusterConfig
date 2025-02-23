@@ -26,16 +26,30 @@ in
 
     services.secrets = {
       deployment = {
-        metadata.path = mkOption {
+        persistentPath = mkOption {
           type = str;
-          default = "/var/lib/nixos-secret-service/deployment-info.json";
+          default = "/var/lib/nixos-secret-service";
+          description = ''
+            Working directory for persisting encrypted files.
+          '';
+        };
+        tempPath = mkOption {
+          type = str;
+          default = "/dev/shm/nixos-secret-service";
+          description = ''
+            Working directory for persisting encrypted files.
+          '';
+        };
+        metadata.fileName = mkOption {
+          type = str;
+          default = "deployment-info.json";
           description = ''
             Deployment location for the metadata file about the deployment.
           '';
         };
-        database.path = mkOption {
+        database.fileName = mkOption {
           type = str;
-          default = "/var/lib/nixos-secret-service/secrets.enc";
+          default = "secrets.enc";
           description = ''
             Deployment location for the encrypted archive containing the secrets.
           '';
@@ -84,14 +98,6 @@ in
           };
         };
 
-        # backendOptions = {
-        #   options = mkOption {
-        #     type = attrsOf (submodule secretOptions);
-        #     default = { };
-        #     description = "Secrets for the user, organized by backend and name.";
-        #   };
-        # };
-
         userOptions = {
           options.secrets = mkOption {
             type = attrsOf (attrsOf (submodule secretOptions));
@@ -104,30 +110,35 @@ in
   };
 
   config = # mkIf (config.secrets.backends != { }) # TODO: disable config if no secrets are configured
+    let
+      tmpPath = config.services.secrets.deployment.tempPath;
+      persistentPath = config.services.secrets.deployment.persistentPath;
+      databaseFileName = config.services.secrets.deployment.database.fileName;
+      metadataFileName = config.services.secrets.deployment.metadata.fileName;
+    in
     {
       users.groups.secret-service = { };
 
       users.users.secret-service = {
         isSystemUser = true;
         description = "User for managing and deploying secrets.";
-        home = "/var/lib/nixos-secret-service";
+        home = persistentPath;
         group = "secret-service";
         extraGroups = [ "fuse" ];
       };
 
-      systemd.tmpfiles.rules = [
-        "d /run/nixos-secret-service 0750 root root -"
-        "d /var/lib/nixos-secret-service 0700 root root -"
+      environment.systemPackages = with pkgs; [
+        gocryptfs
+        fuse
       ];
-      environment.systemPackages = with pkgs; [ gocryptfs ];
 
       programs.fuse.userAllowOther = true;
 
       systemd.services.secret-service =
         let
-          mountPath = "/dev/shm/nixos-secret-service/mount"; # Location where secrets are decrypted
-          encryptedArchive = config.services.secrets.deployment.database.path; # Path to the encrypted file
-          encryptionKeyCommand = "cat ${config.services.secrets.deployment.metadata.path} | ${config.services.secrets.deriveEncryptionKey}"; # Derives the encryption key
+          mountPath = "${tmpPath}/mount"; # Location where secrets are decrypted
+          encryptedArchive = "${persistentPath}/${databaseFileName}"; # Path to the encrypted file
+          encryptionKeyCommand = "cat ${persistentPath}/${metadataFileName} | ${config.services.secrets.deriveEncryptionKey}"; # Derives the encryption key
           users = attrNames (filterAttrs (_: v: v ? secrets && v.secrets != { }) config.users.users); # List of users with secrets
 
           decryptSecretsScript = pkgs.writeScript "decrypt-secrets.sh" ''
@@ -139,27 +150,28 @@ in
 
             echo "Creating mount point..."
             mkdir -p ${mountPath}
-            chmod 700 ${mountPath}
+            chmod 755 ${mountPath}
+            chown "secret-service:secret-service" ${tmpPath}
             chown "secret-service:secret-service" ${mountPath}
 
             echo "Mounting secrets file system..."
             userId=$(id -u secret-service)
             groupId=$(id -g secret-service)
-            ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${encryptedArchive}  ${mountPath}
+            gocryptfs -allow_other -quiet -extpass "echo $ENCRYPTION_KEY" ${encryptedArchive}  ${mountPath}
 
             echo "Setting up bind mounts for users..."
             for user in ${toString users}; do
-              userMount="/dev/shm/nixos-secret-service/$user"
+              userMount="${tmpPath}/$user"
               mkdir -p "$userMount"
-              chmod -R 777 "$userMount"
               chown "$user:secret-service" "$userMount"
               chown -R "$user:secret-service" "${mountPath}/$user"
+              chmod -R 550 "$userMount"
+              chmod -R 500 "${mountPath}/$user"
 
               echo "Mounting secrets for $user..."
               userId=$(id -u $user)
               groupId=$(id -g secret-service)
-              mount -o bind,ro,umask=0777 "${mountPath}/$user" "$userMount"
-              # mount --make-private "$userMount"
+              mount -o bind,ro,umask=0500 "${mountPath}/$user" "$userMount"
             done
 
             echo "Secret Service started."
@@ -171,7 +183,7 @@ in
 
             echo "Unmounting user secrets..."
             for user in ${toString users}; do
-              userMount="/dev/shm/nixos-secret-service/$user"
+              userMount="${tmpPath}/$user"
               umount "$userMount" || true
               rmdir "$userMount" || true
             done
@@ -189,20 +201,21 @@ in
           after = [ "network.target" ];
           wantedBy = [ "multi-user.target" ];
           path = with pkgs; [
-            archivemount
             bash
             coreutils
             gawk
-            gnutar
+            fuse
             gocryptfs
             jq
-            openssl
             util-linux
           ];
           serviceConfig = {
             Type = "oneshot";
             ExecStart = "${decryptSecretsScript}";
             ExecStop = "${stopSecretServiceScript}";
+            # TODO: What is needed to run as non-root?
+            # User = "secret-service";
+            # Group = "secret-service";
             RemainAfterExit = true;
             Restart = "on-failure";
           };
