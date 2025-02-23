@@ -63,12 +63,12 @@ let
               secretName:
               let
                 secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
-                validateCommand = (backends.${backend}.validateSecretCommand secretName secretConfig.path);
+                validateCommand = (backends.${backend}.validateSecretCommand secretName secretConfig.backendPath);
               in
               [
                 ''
                   if ! ${validateCommand}; then
-                    echo "Validation failed for secret '${secretName}' from user '${user}' at '${secretConfig.path}'."
+                    echo "Validation failed for secret '${secretName}' from user '${user}' at '${secretConfig.backendPath}'."
                     echo "Validation command: '${validateCommand}'"
                     echo "Aborting"
                     exit 1
@@ -105,7 +105,7 @@ let
               let
                 secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
                 targetPath = generateSecretPath user secretName;
-                retrieveCommand = backends.${backend}.retrieveSecretCommand secretName secretConfig.path;
+                retrieveCommand = backends.${backend}.retrieveSecretCommand secretName secretConfig.backendPath;
               in
               [
                 ''

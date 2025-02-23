@@ -19,6 +19,7 @@ let
 
   attrNames = lib.attrNames;
   filterAttrs = lib.filterAttrs;
+  mapAttrs = lib.mapAttrs;
 
 in
 {
@@ -91,9 +92,9 @@ in
               default = { };
               description = "Configuration specific to this secret.";
             };
-            path = mkOption {
+            backendPath = mkOption {
               type = str;
-              description = "Path to the secret for file-based backends.";
+              description = "Path to the secret as expected by the backend. E.g. simple file path for the 'file' backend.";
             };
           };
         };
@@ -119,12 +120,14 @@ in
     {
       users.groups.secret-service = { };
 
-      users.users.secret-service = {
-        isSystemUser = true;
-        description = "User for managing and deploying secrets.";
-        home = persistentPath;
-        group = "secret-service";
-        extraGroups = [ "fuse" ];
+      users.users = {
+        secret-service = {
+          isSystemUser = true;
+          description = "User for managing and deploying secrets.";
+          home = persistentPath;
+          group = "secret-service";
+          extraGroups = [ "fuse" ];
+        };
       };
 
       environment.systemPackages = with pkgs; [

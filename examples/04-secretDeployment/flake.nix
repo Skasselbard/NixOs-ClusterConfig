@@ -135,12 +135,12 @@
                         isSystemUser = true;
                         group = "testService";
                         secrets.file = {
-                          testSecret.path = "~/.zshrc";
+                          testSecret.backendPath = "~/.zshrc";
                         };
                       };
                       users.users.admin = {
                         secrets.file = {
-                          adminSecret.path = "~/.zshrc";
+                          adminSecret.backendPath = "~/.zshrc";
                         };
                       };
                     })
