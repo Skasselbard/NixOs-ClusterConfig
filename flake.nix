@@ -66,6 +66,7 @@
       clusterServices = {
         staticDns = import "${self}/src/services/dns/staticDns.nix";
         vault = import "${self}/src/services/vault/vaultService.nix";
+        kubernetes = import "${self}/src/services/kubernetes/kubernetesService.nix";
       };
 
       clusterConfigModules = {
@@ -92,7 +93,7 @@
 
         # Makes a deployment script available (currently) for each machine
         # under 'clusterconfig.packages.{system}.{machinename}.setup'.
-        # The script remotly deploys the machines sytem (build from the machine nixosConfiguration) to 
+        # The script remotly deploys the machines sytem (build from the machine nixosConfiguration) to
         # a running linux machine reachable under '...{machineConfig}.deployment.targetHost'.
         # The currently running system will be overwritten.
         nixos-anywhere = {
@@ -115,7 +116,10 @@
         # Module to add scripts for vault initialization to the flake packages
         vault.imports = [ "${self}/src/services/vault/vaultClusterModule.nix" ];
 
-      };
+        kubernetes.imports = [ "${self}/src/services/kubernetes/kubernetesClusterModule.nix" ];
 
+        secret-service.imports = [ "${self}/src/modules/secret-service/clusterModule.nix" ];
+
+      };
     };
 }
