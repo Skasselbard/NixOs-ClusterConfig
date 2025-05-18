@@ -150,7 +150,7 @@ let
     config:
     let
 
-      # build an iso package for each machine configuration 
+      # build an iso package for each machine configuration
       isoScripts = add.machinePackages config (
         _machineName: machineConfig: _config: {
           iso = nixos-generators.nixosGenerate (
@@ -169,14 +169,14 @@ let
               user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
               port = if cfg ? targetPort && cfg.targetPort != null then ":" + cfg.targetPort else "";
             in
-            pkgs.writeScriptBin "hardware-configuration-${machineName}" "${pkgs.openssh}/bin/ssh ${user}${host}${port} -t 'nixos-generate-config --show-hardware-config --no-filesystems'";
+            pkgs.writeShellScriptBin "hardware-configuration-${machineName}" "${pkgs.openssh}/bin/ssh ${user}${host}${port} -t 'nixos-generate-config --show-hardware-config --no-filesystems'";
         }
       );
 
       buildScripts = add.machinePackages hardwareConfigScripts (
         machineName: machineConfig: _config: {
 
-          build = pkgs.writeScriptBin "build-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} build \${@:1}";
+          build = pkgs.writeShellScriptBin "build-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} build \${@:1}";
 
           deploy =
             let
@@ -184,7 +184,7 @@ let
               host = cfg.targetHost;
               user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
             in
-            pkgs.writeScriptBin "deploy-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} switch --target-host '${user}${host}' \${@:1}";
+            pkgs.writeShellScriptBin "deploy-${machineName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${machineName} switch --target-host '${user}${host}' \${@:1}";
 
           # deploySecrets =
           #   let
@@ -192,7 +192,7 @@ let
           #     host = cfg.targetHost;
           #     user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
           #   in
-          #   pkgs.writeScriptBin "deploy-${machineName}" "${pkgs.colmena}/bin/colmena upload-keys --on ${machineName}";
+          #   pkgs.writeShellScriptBin "deploy-${machineName}" "${pkgs.colmena}/bin/colmena upload-keys --on ${machineName}";
 
         }
       );

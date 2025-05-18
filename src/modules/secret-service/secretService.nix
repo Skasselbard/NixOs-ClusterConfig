@@ -21,6 +21,12 @@ let
   filterAttrs = lib.filterAttrs;
   mapAttrs = lib.mapAttrs;
 
+  concatMapStringsSep = lib.concatMapStringsSep;
+  mapAttrsToList = lib.mapAttrsToList;
+  escapeShellArg = lib.escapeShellArg;
+  concatStringsSep = lib.concatStringsSep;
+  concatMap = lib.concatMap;
+
 in
 {
   options = {
@@ -96,6 +102,10 @@ in
               type = str;
               description = "Path to the secret as expected by the backend. E.g. simple file path for the 'file' backend.";
             };
+            linkPath = mkOption {
+              type = str;
+              description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
+            };
           };
         };
 
@@ -151,6 +161,12 @@ in
             echo "Deriving encryption key..."
             ENCRYPTION_KEY=$(${encryptionKeyCommand})
 
+            if mountpoint -q ${mountPath}; then
+              echo "Cleaning up old mount at ${mountPath}"
+              fusermount -u ${mountPath} || umount -l ${mountPath}
+            fi
+            rm -rf ${mountPath}
+
             echo "Creating mount point..."
             mkdir -p ${mountPath}
             chmod 755 ${mountPath}
@@ -160,11 +176,23 @@ in
             echo "Mounting secrets file system..."
             userId=$(id -u secret-service)
             groupId=$(id -g secret-service)
-            gocryptfs -allow_other -quiet -extpass "echo $ENCRYPTION_KEY" ${encryptedArchive}  ${mountPath}
+            if ! gocryptfs -allow_other -quiet -extpass "echo $ENCRYPTION_KEY" ${encryptedArchive} ${mountPath}; then
+              echo "ERROR: Failed to mount gocryptfs"
+              exit 1
+            fi
 
             echo "Setting up bind mounts for users..."
             for user in ${toString users}; do
               userMount="${tmpPath}/$user"
+              if grep -q "$userMount" /proc/mounts; then
+                echo "Cleaning up old mount at $userMount"
+                umount "$userMount" || umount -l "$userMount" || true
+                rmdir "$userMount" || true
+              fi
+              if [ ! -d "${mountPath}/$user" ]; then
+                echo "ERROR: Decrypted folder ${mountPath}/$user does not exist"
+                exit 1
+              fi
               mkdir -p "$userMount"
               chown "$user:secret-service" "$userMount"
               chown -R "$user:secret-service" "${mountPath}/$user"
@@ -187,15 +215,100 @@ in
             echo "Unmounting user secrets..."
             for user in ${toString users}; do
               userMount="${tmpPath}/$user"
-              umount "$userMount" || true
+              umount "$userMount" || umount -l "$userMount" || true
               rmdir "$userMount" || true
             done
 
             echo "Unmounting decrypted archive..."
-            fusermount -u ${mountPath} || true
+            fusermount -u ${mountPath} || umount -l ${mountPath} || true
             rmdir ${mountPath} || true
 
             echo "Secret Service stopped."
+          '';
+
+          linkSecretsScript = pkgs.writeScript "link-secrets.sh" ''
+            #!/usr/bin/env bash
+            set -e
+
+            echo "Linking secrets to user-specified paths..."
+
+            ${concatStringsSep "\n" (
+              concatMap (
+                user:
+                let
+                  userSecrets = config.users.users.${user}.secrets;
+                in
+                concatMap (
+                  backend:
+                  let
+                    secrets = userSecrets.${backend};
+                  in
+                  concatMap (
+                    secret:
+                    let
+                      secretCfg = secrets.${secret};
+                      source = "${tmpPath}/${user}/${secret}";
+                      target = secretCfg.linkPath;
+                    in
+                    if secretCfg ? linkPath then
+                      [
+                        ''
+                          echo "Linking ${source} -> ${target}"
+                          mkdir -p -m 755 mkdir -p "$(dirname "${target}")"
+                          ln -sf "${source}" "${target}"
+                          chown -h "${user}:${user}" "${target}"
+                          chmod -h 400 "${target}"  # Read-only
+                        ''
+                      ]
+                    else
+                      [ ]
+                  ) (attrNames secrets)
+                ) (attrNames userSecrets)
+              ) users
+            )}
+
+            echo "All secret symlinks created."
+          '';
+
+          unlinkSecretsScript = pkgs.writeScript "unlink-secrets.sh" ''
+            #!/usr/bin/env bash
+            set -e
+
+            echo "Removing secret symlinks..."
+
+            ${concatStringsSep "\n" (
+              concatMap (
+                user:
+                let
+                  userSecrets = config.users.users.${user}.secrets;
+                in
+                concatMap (
+                  backend:
+                  let
+                    secrets = userSecrets.${backend};
+                  in
+                  concatMap (
+                    secret:
+                    let
+                      secretCfg = secrets.${secret};
+                      target = secretCfg.linkPath;
+                    in
+                    if secretCfg ? linkPath then
+                      [
+                        ''
+                          echo "Unlinking ${target}"
+                          rm -f "${target}"
+                        ''
+                      ]
+                    else
+                      [ ]
+
+                  ) (attrNames secrets)
+                ) (attrNames userSecrets)
+              ) users
+            )}
+
+            echo "All secret symlinks removed."
           '';
 
         in
@@ -215,6 +328,8 @@ in
           serviceConfig = {
             Type = "oneshot";
             ExecStart = "${decryptSecretsScript}";
+            ExecStartPost = "${linkSecretsScript}";
+            ExecStopPre = "${unlinkSecretsScript}";
             ExecStop = "${stopSecretServiceScript}";
             # TODO: What is needed to run as non-root?
             # User = "secret-service";
