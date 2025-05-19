@@ -1,4 +1,10 @@
 {
+  clusterInfo,
+  selectors,
+  roles,
+  this,
+}:
+{
   lib,
   config,
   pkgs,
@@ -212,6 +218,8 @@ in
             #!/usr/bin/env bash
             set -e
 
+            bash ${unlinkSecretsScript}
+
             echo "Unmounting user secrets..."
             for user in ${toString users}; do
               userMount="${tmpPath}/$user"
@@ -302,7 +310,6 @@ in
                       ]
                     else
                       [ ]
-
                   ) (attrNames secrets)
                 ) (attrNames userSecrets)
               ) users
@@ -329,7 +336,6 @@ in
             Type = "oneshot";
             ExecStart = "${decryptSecretsScript}";
             ExecStartPost = "${linkSecretsScript}";
-            ExecStopPre = "${unlinkSecretsScript}";
             ExecStop = "${stopSecretServiceScript}";
             # TODO: What is needed to run as non-root?
             # User = "secret-service";

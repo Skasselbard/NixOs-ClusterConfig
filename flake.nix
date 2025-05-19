@@ -67,6 +67,7 @@
         staticDns = import "${self}/src/services/dns/staticDns.nix";
         vault = import "${self}/src/services/vault/vaultService.nix";
         kubernetes = import "${self}/src/services/kubernetes/kubernetesService.nix";
+        secret-service = import "${self}/src/services/secret-service/secretService.nix";
       };
 
       clusterConfigModules = {
@@ -118,7 +119,7 @@
 
         kubernetes.imports = [ "${self}/src/services/kubernetes/kubernetesClusterModule.nix" ];
 
-        secret-service.imports = [ "${self}/src/modules/secret-service/clusterModule.nix" ];
+        secret-service.imports = [ "${self}/src/services/secret-service/clusterModule.nix" ];
 
       };
     };
