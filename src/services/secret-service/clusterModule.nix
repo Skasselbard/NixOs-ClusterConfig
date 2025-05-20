@@ -22,6 +22,8 @@ let
   secretDeploymentScript =
     deploymentUser: deploymentHost: nixosConfig:
     let
+      secretServiceName = nixosConfig.systemd.services.secret-service.name;
+
       backends = nixosConfig.services.secrets.backends;
       userSecrets = mapAttrs (
         user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig.secrets
@@ -128,6 +130,9 @@ let
       echo "Copying archive to remote..."
       ${pkgs.rsync}/bin/rsync -avz --progress ${tmpPath}/${databaseFileName} "${deploymentUser}@${deploymentHost}:${persistentPath}"
       ssh "${deploymentUser}@${deploymentHost}" chown -R secret-service '${persistentPath}/${databaseFileName}'
+
+      echo "Restarting ${secretServiceName}"
+      ssh "${deploymentUser}@${deploymentHost}" systemctl restart ${secretServiceName}
 
       echo "Deployment completed."
     '';
