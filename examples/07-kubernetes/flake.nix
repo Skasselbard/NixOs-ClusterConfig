@@ -82,6 +82,11 @@
                   definition = clusterConfigFlake.clusterServices.staticDns;
                 };
 
+                secrets = {
+                  selectors = [ filters.clusterMachines ];
+                  definition = clusterConfigFlake.clusterServices.secret-service;
+                };
+
                 kubernetes = {
 
                   roles = {
@@ -156,7 +161,6 @@
                     machines.vm0
                     # since the vms use disko for mounting, we still need to include the NixOs module
                     inputs.disko.nixosModules.default
-                    ../../src/modules/secret-service/secretService.nix # TODO:
                     (
                       { config, ... }:
                       {
@@ -165,10 +169,26 @@
                           isNormalUser = false;
                           isSystemUser = true;
                           group = "etcd";
-                          secrets.file = {
+                          secrets.file = with config.services.kubernetes.cluster.certificates; {
                             ca-cert = {
                               backendPath = "./etcd-ca.crt";
-                              linkPath = "/etc/kubernetes/pki/etcd/ca.crt";
+                              # linkPath = "/etc/kubernetes/pki/etcd/ca.crt";
+                              linkPath = etcd.caCertFile;
+                            };
+                            ca-key = {
+                              backendPath = "./etcd-ca.key";
+                              # linkPath = "/etc/kubernetes/pki/etcd/ca.key";
+                              linkPath = etcd.caKeyFile;
+                            };
+                            server-cert = {
+                              backendPath = "./etcd-server.crt";
+                              # linkPath = "/etc/kubernetes/pki/etcd/server.crt";
+                              linkPath = etcd.serverCertFile;
+                            };
+                            server-key = {
+                              backendPath = "./etcd-server.key";
+                              # linkPath = "/etc/kubernetes/pki/etcd/server.key";
+                              linkPath = etcd.serverKeyFile;
                             };
                           };
                         };

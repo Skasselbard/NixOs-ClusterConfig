@@ -27,13 +27,14 @@
 with lib;
 
 let
-  certOption = name: default: {
-    options.${name} = mkOption {
+  certOption =
+    name: default:
+    mkOption {
       type = types.str;
       default = default;
       description = "Path to the ${name} file. Defaults to ${default}";
     };
-  };
+
 in
 {
   options.services.kubernetes.cluster.certificates = {

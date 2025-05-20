@@ -60,23 +60,24 @@ fi
 if [[ ! -f "$SERVER_CRT" ]]; then
   echo "[INFO] Creating etcd server certificate request"
 
-  # Build domain and IP arguments
-  DOMAIN_ARGS=()
-  for domainName in "${SERVER_DOMAIN_LIST[@]}"; do
-    DOMAIN_ARGS+=(--domain "$domainName")
-  done
+# Build domain and IP arguments
+DOMAIN_ARG=""
+if [ ${#SERVER_DOMAIN_LIST[@]} -gt 0 ]; then
+  DOMAIN_ARG="--domain $(IFS=,; echo "${SERVER_DOMAIN_LIST[*]}")"
+fi
 
-  IP_ARGS=()
-  for ip in "${SERVER_IPS_LIST[@]}"; do
-    IP_ARGS+=(--ip "$ip")
-  done
+# Join IP list into comma-separated string
+IP_ARG=""
+if [ ${#SERVER_IPS_LIST[@]} -gt 0 ]; then
+  IP_ARG="--ip $(IFS=,; echo "${SERVER_IPS_LIST[*]}")"
+fi
 
-set -x
+# set -x
   certstrap --depot-path "." request-cert \
     --curve P-256 \
     --common-name "$SERVER_NAME" \
-    "${DOMAIN_ARGS[@]}" \
-    "${IP_ARGS[@]}" \
+    $DOMAIN_ARG \
+    $IP_ARG \
     --organization "$ORG" \
     --organizational-unit "$ORG_UNIT" \
     --country "$COUNTRY" \
@@ -89,7 +90,8 @@ set -x
     --csr "$SERVER_NAME.csr" \
     --cert "$SERVER_NAME.crt" \
     --CA "$CA_NAME" \
-    --expires "5 year"
+    --expires "5 year" \
+    $SERVER_NAME
 
   chmod 0444 "$SERVER_NAME.crt"
   chmod 0440 "$SERVER_NAME.key"
