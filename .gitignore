@@ -162,3 +162,9 @@ example/bin/*
 example/generated/*
 .vscode/*
 **/result
+
+# Certificates
+*.crt
+*.key
+*.csr
+*.crl

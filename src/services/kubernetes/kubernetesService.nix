@@ -149,7 +149,10 @@ in
   };
 
   ###############################################
-  imports = [ ./certificates.nix ];
+  imports = [
+    ./certificates.nix
+    ./control-plane/etcd.nix
+  ];
 
   config =
 
