@@ -172,23 +172,27 @@
                           secrets.file = with config.services.kubernetes.cluster.certificates; {
                             ca-cert = {
                               backendPath = "./etcd-ca.crt";
-                              # linkPath = "/etc/kubernetes/pki/etcd/ca.crt";
                               linkPath = etcd.caCertFile;
                             };
                             ca-key = {
                               backendPath = "./etcd-ca.key";
-                              # linkPath = "/etc/kubernetes/pki/etcd/ca.key";
                               linkPath = etcd.caKeyFile;
                             };
                             server-cert = {
                               backendPath = "./etcd-server.crt";
-                              # linkPath = "/etc/kubernetes/pki/etcd/server.crt";
                               linkPath = etcd.serverCertFile;
                             };
                             server-key = {
                               backendPath = "./etcd-server.key";
-                              # linkPath = "/etc/kubernetes/pki/etcd/server.key";
                               linkPath = etcd.serverKeyFile;
+                            };
+                            peer-cert = {
+                              backendPath = "./etcd-peer.crt";
+                              linkPath = etcd.peerCertFile;
+                            };
+                            peer-key = {
+                              backendPath = "./etcd-peer.key";
+                              linkPath = etcd.peerKeyFile;
                             };
                           };
                         };

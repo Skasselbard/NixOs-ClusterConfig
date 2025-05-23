@@ -68,6 +68,12 @@ let
               ips = [ ]; # We don't add ips and only use host names fro verification
               passPhrase = "";
             };
+            peer = {
+              name = "etcd-peer";
+              domains = map (machine: machine.annotations.fqdn) etcdMachines;
+              ips = [ ]; # We don't add ips and only use host names fro verification
+              passPhrase = "";
+            };
           };
 
         in
