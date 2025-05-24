@@ -164,11 +164,7 @@
                     (
                       { config, ... }:
                       {
-                        users.groups.etcd = { };
                         users.users.etcd = {
-                          isNormalUser = false;
-                          isSystemUser = true;
-                          group = "etcd";
                           secrets.file = with config.services.kubernetes.cluster.certificates; {
                             ca-cert = {
                               backendPath = "./etcd-ca.crt";

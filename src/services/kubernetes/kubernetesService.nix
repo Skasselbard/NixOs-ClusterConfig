@@ -12,7 +12,6 @@
 }:
 
 let
-
   #imports
 
   head = builtins.head;
@@ -151,7 +150,14 @@ in
   ###############################################
   imports = [
     ./certificates.nix
-    ./control-plane/etcd.nix
+    (import ./control-plane/etcd.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
   ];
 
   config =
@@ -163,6 +169,8 @@ in
     in
 
     {
+      # TODO: Validation
+      # check if controlplane role is empty
 
       environment.systemPackages = with pkgs; [
         kubernetes

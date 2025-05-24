@@ -1,92 +1,78 @@
 {
+  clusterInfo,
+  selectors,
+  roles,
+  this,
+}:
+{
   config,
   lib,
-  resources,
-  resourcesByRole,
-  self,
+  pkgs,
   ...
 }:
 let
   cfg = config.services.kubernetes.cluster;
-
-  nodeName = "vm0";
-  controlPlaneNodes = [
-    {
-      name = "vm0";
-      hostnames = [
-        "vm0.internal"
-        "localhost"
-      ];
-      listening = {
-        peers = [ "0.0.0.0" ];
-        clients = [ "0.0.0.0" ];
-      };
-    }
-    # {
-    #   name = "cp2";
-    #   hostnames = [ "cp2.internal" ];
-    #   advertiseHostname = "cp2.internal";
-    # }
-    # {
-    #   name = "cp3";
-    #   hostnames = [ "cp3.internal" ];
-    # }
-  ];
+  mappedClusterConfig = (
+    import ./etcd-mapper.nix
+      {
+        inherit
+          clusterInfo
+          selectors
+          roles
+          this
+          ;
+      }
+      {
+        inherit config lib pkgs;
+      }
+  );
 
   #############################
   # Helper Functions
 
-  thisNode = lib.findFirst (n: n.name == nodeName) null controlPlaneNodes;
+  # thisNode = lib.findFirst (n: n.name == nodeName) null controlPlaneNodes;
 
-  assertThisNode =
-    if thisNode == null then throw "Node '${nodeName}' not found in controlPlaneNodes" else thisNode;
+  # assertThisNode =
+  #   if thisNode == null then throw "Node '${nodeName}' not found in controlPlaneNodes" else thisNode;
 
-  # Determine advertise hostname
-  advertiseHostname =
-    if assertThisNode ? advertiseHostname then
-      assertThisNode.advertiseHostname
-    else if (builtins.length assertThisNode.hostnames) > 0 then
-      builtins.elemAt assertThisNode.hostnames 0
-    else
-      throw "Node '${nodeName}' has no hostnames and no advertiseHostname";
+  # # Determine advertise hostname
+  # advertiseHostname =
+  #   if assertThisNode ? advertiseHostname then
+  #     assertThisNode.advertiseHostname
+  #   else if (builtins.length assertThisNode.hostnames) > 0 then
+  #     builtins.elemAt assertThisNode.hostnames 0
+  #   else
+  #     throw "Node '${nodeName}' has no hostnames and no advertiseHostname";
 
   # Compose initial cluster string
   initialCluster = map (
-    n:
-    let
-      peerHost =
-        if n ? advertiseHostname then
-          n.advertiseHostname
-        else if (builtins.length n.hostnames) > 0 then
-          builtins.elemAt n.hostnames 0
-        else
-          throw "Node '${n.name}' missing both 'advertiseHostname' and 'hostnames'";
-    in
-    "${n.name}=${mkUrl 2380 peerHost}"
-  ) controlPlaneNodes;
+    node: "${node.name}=${node.initialAdvertisePeerUrl}"
+  ) mappedClusterConfig.allNodes;
 
-  # Create URL from hostname and port
-  mkUrl = port: address: "https://${address}:${toString port}";
-  mkUrls = port: addresses: map (address: mkUrl port address) addresses;
 in
-#############################
-# TODO: mkif silf is in controlplane nodes
-{
+lib.mkIf mappedClusterConfig.enable {
   networking.firewall.allowedTCPPorts = [
     2379
     2380
   ];
 
+  users.groups.etcd = { };
+  users.users.etcd = {
+    isNormalUser = false;
+    isSystemUser = true;
+    group = "etcd";
+  };
+
   services.etcd = {
     enable = true;
 
-    name = nodeName;
+    name = mappedClusterConfig.nodeName;
     initialCluster = initialCluster;
     # initialClusterToken = "";
-    advertiseClientUrls = mkUrls 2379 [ advertiseHostname ];
-    initialAdvertisePeerUrls = mkUrls 2380 [ advertiseHostname ];
-    listenClientUrls = mkUrls 2379 assertThisNode.listening.clients;
-    listenPeerUrls = mkUrls 2380 assertThisNode.listening.peers;
+    advertiseClientUrls = mappedClusterConfig.advertiseClientUrls;
+    initialAdvertisePeerUrls = [ mappedClusterConfig.initialAdvertisePeerUrl ];
+    listenClientUrls = mappedClusterConfig.listening.clients;
+    listenPeerUrls = mappedClusterConfig.listening.peers;
 
     # TODO: discovery
 
