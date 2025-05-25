@@ -102,49 +102,6 @@ in
       default = "kubernetes." + clusterInfo.fqdn;
     };
 
-    certificates = {
-
-      organization = mkOption {
-        type = str;
-        description = "";
-      };
-
-      organizationUnit = mkOption {
-        type = str;
-        description = "";
-      };
-
-      country = mkOption {
-        type = str;
-        description = "";
-      };
-
-      province = mkOption {
-        type = str;
-        description = "";
-      };
-
-      locality = mkOption {
-        type = str;
-        description = "";
-      };
-
-      domain = mkOption {
-        type = str;
-        default = clusterInfo.fqdn;
-        description = "";
-      };
-
-      issuer = mkOption {
-        type = str;
-        default =
-          config.services.kubernetes.cluster.certificates.organizationUnit
-          + "/"
-          + config.services.kubernetes.cluster.certificates.organization;
-        description = "";
-      };
-
-    };
   };
 
   ###############################################

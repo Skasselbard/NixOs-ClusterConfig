@@ -48,16 +48,15 @@ let
 
           certificateScriptParams = {
             certData = {
-              org = cfg.cluster.certificates.organization;
-              orgUnit = cfg.cluster.certificates.organizationUnit;
-              country = cfg.cluster.certificates.country;
-              province = cfg.cluster.certificates.province;
-              locality = cfg.cluster.certificates.locality;
-              domain = cfg.cluster.certificates.domain;
-              issuer = cfg.cluster.certificates.issuer;
+              org = cfg.cluster.certificates.generation.organization;
+              orgUnit = cfg.cluster.certificates.generation.organizationUnit;
+              country = cfg.cluster.certificates.generation.country;
+              province = cfg.cluster.certificates.generation.province;
+              locality = cfg.cluster.certificates.generation.locality;
+              domain = cfg.cluster.certificates.generation.domain;
+              issuer = cfg.cluster.certificates.generation.issuer;
             };
             role = clusterName + "-certification";
-            # certPath = cfg.cluster.certificates.path.localBase;
             ca = {
               name = "etcd-ca";
               passPhrase = "";

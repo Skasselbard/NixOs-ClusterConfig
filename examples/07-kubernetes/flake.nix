@@ -97,21 +97,53 @@
                   selectors = [ filters.clusterMachines ];
                   definition = clusterConfigFlake.clusterServices.kubernetes;
 
-                  extraConfig = {
-                    services.kubernetes.cluster = {
+                  extraConfig =
+                    { config, ... }:
+                    {
+                      services.kubernetes.cluster = {
 
-                      # Used to self sign tls certificates for https communication
-                      certificates = {
-                        organizationUnit = "Demonstrations";
-                        organization = "ExampleOrg";
-                        country = "DE";
-                        locality = "TownStadt";
-                        province = "Bundesland";
+                        # Used to self sign tls certificates for https communication
+                        certificates.generation = {
+                          organizationUnit = "Demonstrations";
+                          organization = "ExampleOrg";
+                          country = "DE";
+                          locality = "TownStadt";
+                          province = "Bundesland";
+                        };
+
+                      };
+
+                      # configuring the secrets to deploy them with the secret-service cluster service
+                      users.users.etcd = {
+                        secrets.file = with config.services.kubernetes.cluster.certificates; {
+                          ca-cert = {
+                            backendPath = "./etcd-ca.crt";
+                            linkPath = etcd.caCertFile.sourcePath;
+                          };
+                          ca-key = {
+                            backendPath = "./etcd-ca.key";
+                            linkPath = etcd.caKeyFile.sourcePath;
+                          };
+                          server-cert = {
+                            backendPath = "./etcd-server.crt";
+                            linkPath = etcd.serverCertFile.sourcePath;
+                          };
+                          server-key = {
+                            backendPath = "./etcd-server.key";
+                            linkPath = etcd.serverKeyFile.sourcePath;
+                          };
+                          peer-cert = {
+                            backendPath = "./etcd-peer.crt";
+                            linkPath = etcd.peerCertFile.sourcePath;
+                          };
+                          peer-key = {
+                            backendPath = "./etcd-peer.key";
+                            linkPath = etcd.peerKeyFile.sourcePath;
+                          };
+                        };
                       };
 
                     };
-
-                  };
                 };
 
               };
@@ -161,39 +193,6 @@
                     machines.vm0
                     # since the vms use disko for mounting, we still need to include the NixOs module
                     inputs.disko.nixosModules.default
-                    (
-                      { config, ... }:
-                      {
-                        users.users.etcd = {
-                          secrets.file = with config.services.kubernetes.cluster.certificates; {
-                            ca-cert = {
-                              backendPath = "./etcd-ca.crt";
-                              linkPath = etcd.caCertFile.sourcePath;
-                            };
-                            ca-key = {
-                              backendPath = "./etcd-ca.key";
-                              linkPath = etcd.caKeyFile.sourcePath;
-                            };
-                            server-cert = {
-                              backendPath = "./etcd-server.crt";
-                              linkPath = etcd.serverCertFile.sourcePath;
-                            };
-                            server-key = {
-                              backendPath = "./etcd-server.key";
-                              linkPath = etcd.serverKeyFile.sourcePath;
-                            };
-                            peer-cert = {
-                              backendPath = "./etcd-peer.crt";
-                              linkPath = etcd.peerCertFile.sourcePath;
-                            };
-                            peer-key = {
-                              backendPath = "./etcd-peer.key";
-                              linkPath = etcd.peerKeyFile.sourcePath;
-                            };
-                          };
-                        };
-                      }
-                    )
                   ];
                 };
 

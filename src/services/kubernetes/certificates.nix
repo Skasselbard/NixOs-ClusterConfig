@@ -50,7 +50,7 @@ let
 
   certs = config.services.kubernetes.cluster.certificates;
 
-  # helper functions
+  # Helper to build the options each cert uses
   certOptions = name: default: {
     sourcePath = mkOption {
       type = types.str;
@@ -64,6 +64,7 @@ let
     };
   };
 
+  # build a tmpfile.rules link entry
   lnk =
     target: source: user: group: permissions:
     "L+ ${target} ${permissions} ${user} ${group} - ${source}";
@@ -71,6 +72,50 @@ let
 in
 {
   options.services.kubernetes.cluster.certificates = {
+    generation = {
+
+      organization = mkOption {
+        type = str;
+        description = "";
+      };
+
+      organizationUnit = mkOption {
+        type = str;
+        description = "";
+      };
+
+      country = mkOption {
+        type = str;
+        description = "";
+      };
+
+      province = mkOption {
+        type = str;
+        description = "";
+      };
+
+      locality = mkOption {
+        type = str;
+        description = "";
+      };
+
+      domain = mkOption {
+        type = str;
+        default = clusterInfo.fqdn;
+        description = "";
+      };
+
+      issuer = mkOption {
+        type = str;
+        default =
+          config.services.kubernetes.cluster.certificates.organizationUnit
+          + "/"
+          + config.services.kubernetes.cluster.certificates.organization;
+        description = "";
+      };
+
+    };
+
     caCertFile = certOptions "caCertFile" "ca.crt";
     caKeyFile = certOptions "caKeyFile" "ca.key";
 
@@ -114,6 +159,7 @@ in
 
   config.systemd.tmpfiles.rules =
     (
+      # if kubernetes user is undefined, no kubernetes config was made
       if hasAttr "kubernetes" config.users.users then
         [
           # Root CA
@@ -167,6 +213,7 @@ in
         [ ]
     )
     ++ (
+      # if etcd user is undefined, no etcd config was made
       if hasAttr "etcd" config.users.users then
         [
           # etcd
