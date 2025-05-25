@@ -168,27 +168,27 @@
                           secrets.file = with config.services.kubernetes.cluster.certificates; {
                             ca-cert = {
                               backendPath = "./etcd-ca.crt";
-                              linkPath = etcd.caCertFile;
+                              linkPath = etcd.caCertFile.sourcePath;
                             };
                             ca-key = {
                               backendPath = "./etcd-ca.key";
-                              linkPath = etcd.caKeyFile;
+                              linkPath = etcd.caKeyFile.sourcePath;
                             };
                             server-cert = {
                               backendPath = "./etcd-server.crt";
-                              linkPath = etcd.serverCertFile;
+                              linkPath = etcd.serverCertFile.sourcePath;
                             };
                             server-key = {
                               backendPath = "./etcd-server.key";
-                              linkPath = etcd.serverKeyFile;
+                              linkPath = etcd.serverKeyFile.sourcePath;
                             };
                             peer-cert = {
                               backendPath = "./etcd-peer.crt";
-                              linkPath = etcd.peerCertFile;
+                              linkPath = etcd.peerCertFile.sourcePath;
                             };
                             peer-key = {
                               backendPath = "./etcd-peer.key";
-                              linkPath = etcd.peerKeyFile;
+                              linkPath = etcd.peerKeyFile.sourcePath;
                             };
                           };
                         };

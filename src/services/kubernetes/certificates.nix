@@ -22,60 +22,186 @@
 # /etc/kubernetes/pki/sa.key
 # /etc/kubernetes/pki/sa.pub
 
-{ lib, ... }:
+{ config, lib, ... }:
 
 with lib;
 
 let
-  certOption =
-    name: default:
-    mkOption {
+  # static values
+  defaultSourcePrefix = "/var/lib/kubernetes/pki/";
+  defaultTargetPrefix = "/etc/kubernetes/pki/";
+
+  user = {
+    root = config.users.users.root.name;
+    etcd = config.users.users.etcd.name;
+    kubernetes = config.users.users.kubernetes.name;
+  };
+
+  group = {
+    root = config.users.groups.root.name;
+    etcd = config.users.groups.etcd.name;
+    kubernetes = config.users.groups.kubernetes.name;
+  };
+
+  permissions = {
+    privateUser = "0600";
+    publicRead = "0644";
+  };
+
+  certs = config.services.kubernetes.cluster.certificates;
+
+  # helper functions
+  certOptions = name: default: {
+    sourcePath = mkOption {
       type = types.str;
-      default = default;
-      description = "Path to the ${name} file. Defaults to ${default}";
+      default = defaultSourcePrefix + default;
+      description = "Path to the ${name} file from where the file will be linked. Defaults to ${defaultSourcePrefix + default}";
     };
+    targetPath = mkOption {
+      type = types.str;
+      default = defaultTargetPrefix + default;
+      description = "Path to the ${name} file. Defaults to ${defaultTargetPrefix + default}";
+    };
+  };
+
+  lnk =
+    target: source: user: group: permissions:
+    "L+ ${target} ${permissions} ${user} ${group} - ${source}";
 
 in
 {
   options.services.kubernetes.cluster.certificates = {
-    caCertFile = certOption "caCertFile" "/etc/kubernetes/pki/ca.crt";
-    caKeyFile = certOption "caKeyFile" "/etc/kubernetes/pki/ca.key";
+    caCertFile = certOptions "caCertFile" "ca.crt";
+    caKeyFile = certOptions "caKeyFile" "ca.key";
 
     etcd = {
-      caCertFile = certOption "etcdCaCertFile" "/etc/kubernetes/pki/etcd/ca.crt";
-      caKeyFile = certOption "etcdCaKeyFile" "/etc/kubernetes/pki/etcd/ca.key";
+      caCertFile = certOptions "etcdCaCertFile" "etcd/ca.crt";
+      caKeyFile = certOptions "etcdCaKeyFile" "etcd/ca.key";
 
-      serverCertFile = certOption "etcdServerCertFile" "/etc/kubernetes/pki/etcd/server.crt";
-      serverKeyFile = certOption "etcdServerKeyFile" "/etc/kubernetes/pki/etcd/server.key";
+      serverCertFile = certOptions "etcdServerCertFile" "etcd/server.crt";
+      serverKeyFile = certOptions "etcdServerKeyFile" "etcd/server.key";
 
-      peerCertFile = certOption "etcdPeerCertFile" "/etc/kubernetes/pki/etcd/peer.crt";
-      peerKeyFile = certOption "etcdPeerKeyFile" "/etc/kubernetes/pki/etcd/peer.key";
+      peerCertFile = certOptions "etcdPeerCertFile" "etcd/peer.crt";
+      peerKeyFile = certOptions "etcdPeerKeyFile" "etcd/peer.key";
 
-      etcdHealthcheckClientCertFile = certOption "etcdHealthcheckClientCertFile" "/etc/kubernetes/pki/etcd/healthcheck-client.crt";
-      etcdHealthcheckClientKeyFile = certOption "etcdHealthcheckClientKeyFile" "/etc/kubernetes/pki/etcd/healthcheck-client.key";
+      etcdHealthcheckClientCertFile = certOptions "etcdHealthcheckClientCertFile" "etcd/healthcheck-client.crt";
+      etcdHealthcheckClientKeyFile = certOptions "etcdHealthcheckClientKeyFile" "etcd/healthcheck-client.key";
     };
 
     apiServer = {
-      certFile = certOption "apiserverCertFile" "/etc/kubernetes/pki/apiserver.crt";
-      keyFile = certOption "apiserverKeyFile" "/etc/kubernetes/pki/apiserver.key";
+      certFile = certOptions "apiserverCertFile" "apiserver.crt";
+      keyFile = certOptions "apiserverKeyFile" "apiserver.key";
 
-      kubeletClientCertFile = certOption "apiserverKubeletClientCertFile" "/etc/kubernetes/pki/apiserver-kubelet-client.crt";
-      kubeletClientKeyFile = certOption "apiserverKubeletClientKeyFile" "/etc/kubernetes/pki/apiserver-kubelet-client.key";
+      kubeletClientCertFile = certOptions "apiserverKubeletClientCertFile" "apiserver-kubelet-client.crt";
+      kubeletClientKeyFile = certOptions "apiserverKubeletClientKeyFile" "apiserver-kubelet-client.key";
 
-      etcdClientCertFile = certOption "apiserverEtcdClientCertFile" "/etc/kubernetes/pki/apiserver-etcd-client.crt";
-      etcdClientKeyFile = certOption "apiserverEtcdClientKeyFile" "/etc/kubernetes/pki/apiserver-etcd-client.key";
+      etcdClientCertFile = certOptions "apiserverEtcdClientCertFile" "apiserver-etcd-client.crt";
+      etcdClientKeyFile = certOptions "apiserverEtcdClientKeyFile" "apiserver-etcd-client.key";
     };
 
     # front-proxy certificates are required only if you run kube-proxy to support an extension API server.
     # ###
-    # frontProxyCaCertFile = certOption "frontProxyCaCertFile" "/etc/kubernetes/pki/front-proxy-ca.crt";
-    # frontProxyCaKeyFile = certOption "frontProxyCaKeyFile" "/etc/kubernetes/pki/front-proxy-ca.key";
+    # frontProxyCaCertFile = certOption "frontProxyCaCertFile" "front-proxy-ca.crt";
+    # frontProxyCaKeyFile = certOption "frontProxyCaKeyFile" "front-proxy-ca.key";
 
-    # frontProxyClientCertFile = certOption "frontProxyClientCertFile" "/etc/kubernetes/pki/front-proxy-client.crt";
-    # frontProxyClientKeyFile = certOption "frontProxyClientKeyFile" "/etc/kubernetes/pki/front-proxy-client.key";
+    # frontProxyClientCertFile = certOption "frontProxyClientCertFile" "front-proxy-client.crt";
+    # frontProxyClientKeyFile = certOption "frontProxyClientKeyFile" "front-proxy-client.key";
 
-    saKeyFile = certOption "saKeyFile" "/etc/kubernetes/pki/sa.key";
-    saPubFile = certOption "saPubFile" "/etc/kubernetes/pki/sa.pub";
+    saKeyFile = certOptions "saKeyFile" "sa.key";
+    saPubFile = certOptions "saPubFile" "sa.pub";
 
   };
+
+  config.systemd.tmpfiles.rules =
+    (
+      if hasAttr "kubernetes" config.users.users then
+        [
+          # Root CA
+          (lnk certs.caCertFile.targetPath certs.caCertFile.sourcePath user.kubernetes group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.caKeyFile.targetPath certs.caKeyFile.sourcePath user.kubernetes group.kubernetes
+            permissions.privateUser
+          )
+
+          # API server
+          (lnk certs.apiServer.certFile.targetPath certs.apiServer.certFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.apiServer.keyFile.targetPath certs.apiServer.keyFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+          (lnk certs.apiServer.kubeletClientCertFile.targetPath
+            certs.apiServer.kubeletClientCertFile.sourcePath
+            user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.apiServer.kubeletClientKeyFile.targetPath certs.apiServer.kubeletClientKeyFile.sourcePath
+            user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+          (lnk certs.apiServer.etcdClientCertFile.targetPath certs.apiServer.etcdClientCertFile.sourcePath
+            user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.apiServer.etcdClientKeyFile.targetPath certs.apiServer.etcdClientKeyFile.sourcePath
+            user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+
+          # Service account keys
+          (lnk certs.saKeyFile.targetPath certs.saKeyFile.sourcePath user.kubernetes group.kubernetes
+            permissions.privateUser
+          )
+          (lnk certs.saPubFile.targetPath certs.saPubFile.sourcePath user.kubernetes group.kubernetes
+            permissions.publicRead
+          )
+        ]
+      else
+        [ ]
+    )
+    ++ (
+      if hasAttr "etcd" config.users.users then
+        [
+          # etcd
+          (lnk certs.etcd.caCertFile.targetPath certs.etcd.caCertFile.sourcePath user.etcd group.etcd
+            permissions.publicRead
+          )
+          (lnk certs.etcd.caKeyFile.targetPath certs.etcd.caKeyFile.sourcePath user.etcd group.etcd
+            permissions.privateUser
+          )
+          (lnk certs.etcd.serverCertFile.targetPath certs.etcd.serverCertFile.sourcePath user.etcd group.etcd
+            permissions.privateUser
+          )
+          (lnk certs.etcd.serverKeyFile.targetPath certs.etcd.serverKeyFile.sourcePath user.etcd group.etcd
+            permissions.privateUser
+          )
+          (lnk certs.etcd.peerCertFile.targetPath certs.etcd.peerCertFile.sourcePath user.etcd group.etcd
+            permissions.publicRead
+          )
+          (lnk certs.etcd.peerKeyFile.targetPath certs.etcd.peerKeyFile.sourcePath user.etcd group.etcd
+            permissions.privateUser
+          )
+          (lnk certs.etcd.etcdHealthcheckClientCertFile.targetPath
+            certs.etcd.etcdHealthcheckClientCertFile.sourcePath
+            user.etcd
+            group.etcd
+            permissions.publicRead
+          )
+          (lnk certs.etcd.etcdHealthcheckClientKeyFile.targetPath
+            certs.etcd.etcdHealthcheckClientKeyFile.sourcePath
+            user.etcd
+            group.etcd
+            permissions.privateUser
+          )
+        ]
+      else
+        [ ]
+    );
 }

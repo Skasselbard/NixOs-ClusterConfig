@@ -79,10 +79,10 @@ lib.mkIf mappedClusterConfig.enable {
     clientCertAuth = true;
     peerClientCertAuth = true;
 
-    trustedCaFile = cfg.certificates.etcd.caCertFile;
+    trustedCaFile = cfg.certificates.etcd.caCertFile.targetPath;
 
-    certFile = cfg.certificates.etcd.serverCertFile;
-    keyFile = cfg.certificates.etcd.serverKeyFile;
+    certFile = cfg.certificates.etcd.serverCertFile.targetPath;
+    keyFile = cfg.certificates.etcd.serverKeyFile.targetPath;
   };
 
   systemd.services.etcd = {
