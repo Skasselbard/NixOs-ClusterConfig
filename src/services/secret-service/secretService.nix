@@ -24,6 +24,7 @@ let
   mkIf = lib.mkIf;
 
   attrNames = lib.attrNames;
+  attrValues = lib.attrValues;
   filterAttrs = lib.filterAttrs;
   mapAttrs = lib.mapAttrs;
 
@@ -33,6 +34,13 @@ let
   concatStringsSep = lib.concatStringsSep;
   concatMap = lib.concatMap;
 
+  tmpPath = config.services.secrets.deployment.tempPath;
+  persistentPath = config.services.secrets.deployment.persistentPath;
+  databaseFileName = config.services.secrets.deployment.database.fileName;
+  metadataFileName = config.services.secrets.deployment.metadata.fileName;
+  mountPath = "${tmpPath}/mount"; # Location where secrets are decrypted
+  encryptedArchive = "${persistentPath}/${databaseFileName}"; # Path to the encrypted file
+  encryptionKeyCommand = "cat ${persistentPath}/${metadataFileName} | ${config.services.secrets.deriveEncryptionKey}"; # Derives the encryption key
 in
 {
   options = {
@@ -88,7 +96,7 @@ in
       };
       deriveEncryptionKey = mkOption {
         type = str;
-        default = ''${pkgs.jq}/bin/jq .configHash | sha256sum | awk '{print $1}' '';
+        default = ''${pkgs.jq}/bin/jq .configHash | sha256sum | ${pkgs.gawk}/bin/awk '{print $1}' '';
         description = ''
           A shell command that generates a deterministic encryption key. The default uses SHA-256.
         '';
@@ -112,6 +120,11 @@ in
               type = str;
               description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
             };
+            permissions = mkOption {
+              type = str;
+              default = "400";
+              description = "Permissions of the file. By default only readable by the owner.";
+            };
           };
         };
 
@@ -127,12 +140,7 @@ in
   };
 
   config = # mkIf (config.secrets.backends != { }) # TODO: disable config if no secrets are configured
-    let
-      tmpPath = config.services.secrets.deployment.tempPath;
-      persistentPath = config.services.secrets.deployment.persistentPath;
-      databaseFileName = config.services.secrets.deployment.database.fileName;
-      metadataFileName = config.services.secrets.deployment.metadata.fileName;
-    in
+
     {
       users.groups.secret-service = { };
 
@@ -155,10 +163,64 @@ in
 
       systemd.services.secret-service =
         let
-          mountPath = "${tmpPath}/mount"; # Location where secrets are decrypted
-          encryptedArchive = "${persistentPath}/${databaseFileName}"; # Path to the encrypted file
-          encryptionKeyCommand = "cat ${persistentPath}/${metadataFileName} | ${config.services.secrets.deriveEncryptionKey}"; # Derives the encryption key
-          users = attrNames (filterAttrs (_: v: v ? secrets && v.secrets != { }) config.users.users); # List of users with secrets
+          users = attrNames usersWithSecrets; # List of users with secrets
+          usersWithSecrets = filterAttrs (_: user: user ? secrets && user.secrets != { }) config.users.users;
+
+          generateBindMountsScript =
+            user: userCfg:
+            let
+              userSecrets = userCfg.secrets;
+
+              perBackend = mapAttrsToList (
+                backend: secrets:
+                let
+                  userMount = "${tmpPath}/${user}";
+                  setSecretPermissions = mapAttrsToList (
+                    secret: secretCfg:
+                    let
+                      perm = secretCfg.permissions;
+                      secretPath = "${mountPath}/${user}/${secret}";
+                    in
+                    ''
+                      # Secret ${secret}
+                      #-----------------
+                      echo "Setting Permissions for secret '${secret}' for user '${user}'..."
+                      if [ ! -f "${secretPath}" ]; then
+                        echo "ERROR: Secret file '${secretPath}' does not exist"
+                        exit 1
+                      fi
+
+                      chmod ${perm} "${secretPath}" || echo "WARN: Failed to chmod ${secretPath}"
+                      chown ${user}:secret-service "${secretPath}" || echo "WARN: Failed to chown ${secretPath}"
+                      #-----------------
+
+                    ''
+                  ) secrets;
+                in
+                ''
+                  # User ${user}
+                  ##############
+                  if grep -q "${userMount}" /proc/mounts; then
+                    echo "Cleaning up old mount at ${userMount}"
+                    umount "${userMount}" || umount -l "${userMount}" || true
+                    rmdir "${userMount}" || true
+                  fi
+                  if [ ! -d "${mountPath}/${user}" ]; then
+                    echo "ERROR: Decrypted folder ${mountPath}/${user} does not exist"
+                    exit 1
+                  fi
+
+                  ${concatStringsSep "\n" setSecretPermissions}
+
+                  echo "Mounting secrets for ${user}..."
+                  mount -o bind,ro "${mountPath}/${user}" "${userMount}"
+                  ##############
+
+                ''
+              ) userSecrets;
+
+            in
+            concatStringsSep "\n" (lib.flatten perBackend);
 
           decryptSecretsScript = pkgs.writeScript "decrypt-secrets.sh" ''
             #!/usr/bin/env bash
@@ -188,28 +250,7 @@ in
             fi
 
             echo "Setting up bind mounts for users..."
-            for user in ${toString users}; do
-              userMount="${tmpPath}/$user"
-              if grep -q "$userMount" /proc/mounts; then
-                echo "Cleaning up old mount at $userMount"
-                umount "$userMount" || umount -l "$userMount" || true
-                rmdir "$userMount" || true
-              fi
-              if [ ! -d "${mountPath}/$user" ]; then
-                echo "ERROR: Decrypted folder ${mountPath}/$user does not exist"
-                exit 1
-              fi
-              mkdir -p "$userMount"
-              chown "$user:secret-service" "$userMount"
-              chown -R "$user:secret-service" "${mountPath}/$user"
-              chmod -R 550 "$userMount"
-              chmod -R 500 "${mountPath}/$user"
-
-              echo "Mounting secrets for $user..."
-              userId=$(id -u $user)
-              groupId=$(id -g secret-service)
-              mount -o bind,ro,umask=0500 "${mountPath}/$user" "$userMount"
-            done
+            ${concatStringsSep "\n" (mapAttrsToList generateBindMountsScript usersWithSecrets)}
 
             echo "Secret Service started."
           '';
@@ -264,8 +305,6 @@ in
                           echo "Linking ${source} -> ${target}"
                           mkdir -p -m 755 mkdir -p "$(dirname "${target}")"
                           ln -sf "${source}" "${target}"
-                          chown -h "${user}:${user}" "${target}"
-                          chmod -h 400 "${target}"  # Read-only
                         ''
                       ]
                     else

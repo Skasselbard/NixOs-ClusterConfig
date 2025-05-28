@@ -119,6 +119,7 @@
                           ca-cert = {
                             backendPath = "./etcd-ca.crt";
                             linkPath = etcd.caCertFile.sourcePath;
+                            permissions = "444";
                           };
                           ca-key = {
                             backendPath = "./etcd-ca.key";
@@ -127,6 +128,7 @@
                           server-cert = {
                             backendPath = "./etcd-server.crt";
                             linkPath = etcd.serverCertFile.sourcePath;
+                            permissions = "444";
                           };
                           server-key = {
                             backendPath = "./etcd-server.key";
@@ -135,6 +137,7 @@
                           peer-cert = {
                             backendPath = "./etcd-peer.crt";
                             linkPath = etcd.peerCertFile.sourcePath;
+                            permissions = "444";
                           };
                           peer-key = {
                             backendPath = "./etcd-peer.key";
