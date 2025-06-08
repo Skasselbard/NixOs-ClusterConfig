@@ -13,13 +13,13 @@ if ! command -v jq &>/dev/null || ! command -v certstrap &>/dev/null; then
 fi
 
 CONFIG_JSON="$(< "$CONFIG_FILE")"
-CA_NAME=$(echo "$CONFIG_JSON" | jq -r '.ca.name')
-CA_PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r '.ca.passPhrase')
-ORG=$(echo "$CONFIG_JSON" | jq -r '.certData.org')
-ORG_UNIT=$(echo "$CONFIG_JSON" | jq -r '.certData.orgUnit')
-COUNTRY=$(echo "$CONFIG_JSON" | jq -r '.certData.country')
-PROVINCE=$(echo "$CONFIG_JSON" | jq -r '.certData.province')
-LOCALITY=$(echo "$CONFIG_JSON" | jq -r '.certData.locality')
+CA_NAME=$(echo "$CONFIG_JSON" | jq -r '.etcd.ca.name')
+CA_PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r '.etcd.ca.passPhrase')
+ORG=$(echo "$CONFIG_JSON" | jq -r '.common.org')
+ORG_UNIT=$(echo "$CONFIG_JSON" | jq -r '.common.orgUnit')
+COUNTRY=$(echo "$CONFIG_JSON" | jq -r '.common.country')
+PROVINCE=$(echo "$CONFIG_JSON" | jq -r '.common.province')
+LOCALITY=$(echo "$CONFIG_JSON" | jq -r '.common.locality')
 
 # Create CA certificate if not exists
 if [[ ! -f "$CA_NAME.crt" ]]; then
@@ -41,19 +41,19 @@ fi
 create_and_sign_cert() {
   local ROLE=$1
   
-  if [[ -z $(echo "$CONFIG_JSON" | jq -r ".${ROLE} // empty") ]]; then
+  if [[ -z $(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE} // empty") ]]; then
     echo "[INFO] Skipping role '$ROLE': undefined in config"
     return 0
   fi
 
-  local NAME=$(echo "$CONFIG_JSON" | jq -r ".${ROLE}.name // empty")
-  local PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r ".${ROLE}.passPhrase // empty")
+  local NAME=$(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.name // empty")
+  local PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.passPhrase // empty")
   local CRT="$NAME.crt"
   local KEY="$NAME.key"
   local CSR="$NAME.csr"
 
-  mapfile -t DOMAINS < <(echo "$CONFIG_JSON" | jq -r ".${ROLE}.domains[]?")
-  mapfile -t IPS < <(echo "$CONFIG_JSON" | jq -r ".${ROLE}.ips[]?")
+  mapfile -t DOMAINS < <(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.domains[]?")
+  mapfile -t IPS < <(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.ips[]?")
 
   local DOMAIN_ARG=""
   if [[ ${#DOMAINS[@]} -gt 0 ]]; then

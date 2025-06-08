@@ -19,7 +19,7 @@ let
       kubernetesScripts = add.clusterPackage config (
         clusterName: clusterConfig:
         let
-          # get the attrset of the curent cluster
+          # get the attrset of the current cluster
           cluster = config.domain.clusters.${clusterName};
           # get all machines selected by the kubernetes service definition
           kubernetesMachines =
@@ -42,60 +42,93 @@ let
             in
             if etcdRoles == [ ] then controlPlaneMachines else etcdRoles;
           # pick an arbitrary machine from the kubernetes machines
-          firstMachine = builtins.head etcdMachines;
-          # get the config from the picked machines
-          cfg = firstMachine.nixosConfiguration.config.services.kubernetes;
+          firstMachine = builtins.head controlPlaneMachines;
 
-          certificateScriptParams = {
-            certData = {
-              org = cfg.cluster.certificates.generation.organization;
-              orgUnit = cfg.cluster.certificates.generation.organizationUnit;
-              country = cfg.cluster.certificates.generation.country;
-              province = cfg.cluster.certificates.generation.province;
-              locality = cfg.cluster.certificates.generation.locality;
-              domain = cfg.cluster.certificates.generation.domain;
-              issuer = cfg.cluster.certificates.generation.issuer;
-            };
-            role = clusterName + "-certification";
-            ca = {
-              name = "etcd-ca";
-              passPhrase = "";
-            };
-            server = {
-              name = "etcd-server";
-              domains = map (machine: machine.annotations.fqdn) etcdMachines;
-              ips = [ ]; # We don't add ips and only use host names fro verification
-              passPhrase = "";
-            };
-            peer = {
-              name = "etcd-peer";
-              domains = map (machine: machine.annotations.fqdn) etcdMachines;
-              ips = [ ]; # We don't add ips and only use host names fro verification
-              passPhrase = "";
-            };
+          certData-mapping = import ./control-plane/cert-data-mapper.nix {
+            inherit
+              pkgs
+              lib
+              controlPlaneMachines
+              etcdMachines
+              ;
+            control-plane-config = firstMachine.nixosConfiguration.config;
           };
+          certData = certData-mapping.certData;
+          certDate-json-file = certData-mapping.certDate-json-file;
 
         in
         {
 
-          kubernetes = # lib.debug.traceSeqN 5 certificateScriptParams
-            {
-              createEtcdCertificates =
-                if clusterConfig.services ? kubernetes then
-                  if etcdMachines != [ ] then
-                    let
-                      certConfigJson = pkgs.writeText "etcd-cert-config.json" (builtins.toJSON certificateScriptParams);
-                    in
-                    (pkgs.writeShellScriptBin "createRootCertificate" ''
-                      PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                      ${pkgs.bash}/bin/bash ${./scripts/create-etcd-certs.sh} ${certConfigJson}
-                    '')
-                  else
-                    pkgs.writeShellScriptBin "createRootCertificate" "echo \"no etcd machine is configured for this cluster\""
+          kubernetes = {
+            createEtcdCertificates =
+              if clusterConfig.services ? kubernetes then
+                if etcdMachines != [ ] then
+                  (pkgs.writeShellScriptBin "createEtcdCertificates" ''
+                    mkdir -p certs
+                    cd certs
+                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
+                    ${pkgs.bash}/bin/bash ${./scripts/create-etcd-certs.sh} ${certDate-json-file}
+                  '')
                 else
-                  pkgs.writeShellScriptBin "createRootCertificate" "echo \"kubernetes is not configured for this cluster\"";
+                  pkgs.writeShellScriptBin "createEtcdCertificates" "echo \"no etcd machine is configured for this cluster\""
+              else
+                pkgs.writeShellScriptBin "createEtcdCertificates" "echo \"kubernetes is not configured for this cluster\"";
 
-            };
+            createK8sCA =
+              if clusterConfig.services ? kubernetes then
+                if controlPlaneMachines != [ ] then
+                  (pkgs.writeShellScriptBin "createK8sCA" ''
+                    mkdir -p certs
+                    cd certs
+                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
+                    ${pkgs.bash}/bin/bash ${./scripts/create-k8s-ca.sh} ${certDate-json-file}
+                  '')
+                else
+                  pkgs.writeShellScriptBin "createK8sCA" "echo \"no control-plane machine is configured for this cluster\""
+              else
+                pkgs.writeShellScriptBin "createK8sCA" "echo \"kubernetes is not configured for this cluster\"";
+
+            createK8sCerts =
+              let
+                roles = builtins.attrNames certData.k8s.roles;
+              in
+              if clusterConfig.services ? kubernetes then
+                if controlPlaneMachines != [ ] then
+                  (pkgs.writeShellScriptBin "createK8sCert" ''
+                    set -euo pipefail
+                    mkdir -p certs
+                    cd certs
+                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
+
+                      for role in ${builtins.concatStringsSep " " roles}; do
+                        if jq -e ".k8s.roles.\"$role\"" ${certDate-json-file}  >/dev/null; then
+                          echo "[INFO] Generating kube-config for role: $role"
+                          ${pkgs.bash}/bin/bash ${./scripts/create-k8s-cert.sh} "$role" ${certDate-json-file} 
+                        else
+                          echo "[INFO] Skipping role: $role (not in config)"
+                        fi
+                      done
+                  '')
+                else
+                  pkgs.writeShellScriptBin "createK8sCert" "echo \"no control-plane machine is configured for this cluster\""
+              else
+                pkgs.writeShellScriptBin "createK8sCert" "echo \"kubernetes is not configured for this cluster\"";
+
+            createKubeConfigs =
+              if clusterConfig.services ? kubernetes then
+                if controlPlaneMachines != [ ] then
+                  (pkgs.writeShellScriptBin "createKubeConfigs" ''
+                    mkdir -p certs
+                    cd certs
+                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
+                    ${pkgs.bash}/bin/bash ${./scripts/create-kubeConfigs.sh} ${certDate-json-file}
+                  '')
+                else
+                  pkgs.writeShellScriptBin "createKubeConfigs" "echo \"no control-plane machine is configured for this cluster\""
+              else
+                pkgs.writeShellScriptBin "createKubeConfigs" "echo \"kubernetes is not configured for this cluster\"";
+
+          };
         }
       );
 

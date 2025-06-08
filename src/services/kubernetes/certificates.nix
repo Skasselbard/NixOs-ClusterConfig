@@ -21,6 +21,12 @@
 # /etc/kubernetes/pki/etcd/healthcheck-client.crt
 # /etc/kubernetes/pki/sa.key
 # /etc/kubernetes/pki/sa.pub
+{
+  clusterInfo,
+  selectors,
+  roles,
+  this,
+}:
 
 { config, lib, ... }:
 
@@ -75,44 +81,44 @@ in
     generation = {
 
       organization = mkOption {
-        type = str;
+        type = types.str;
         description = "";
       };
 
       organizationUnit = mkOption {
-        type = str;
+        type = types.str;
         description = "";
       };
 
       country = mkOption {
-        type = str;
+        type = types.str;
         description = "";
       };
 
       province = mkOption {
-        type = str;
+        type = types.str;
         description = "";
       };
 
       locality = mkOption {
-        type = str;
+        type = types.str;
         description = "";
       };
 
-      domain = mkOption {
-        type = str;
-        default = clusterInfo.fqdn;
-        description = "";
-      };
+      # domain = mkOption {
+      #   type = types.str;
+      #   default = clusterInfo.fqdn;
+      #   description = "";
+      # };
 
-      issuer = mkOption {
-        type = str;
-        default =
-          config.services.kubernetes.cluster.certificates.organizationUnit
-          + "/"
-          + config.services.kubernetes.cluster.certificates.organization;
-        description = "";
-      };
+      # issuer = mkOption {
+      #   type = types.str;
+      #   default =
+      #     config.services.kubernetes.cluster.certificates.generation.organizationUnit
+      #     + "/"
+      #     + config.services.kubernetes.cluster.certificates.generation.organization;
+      #   description = "";
+      # };
 
     };
 

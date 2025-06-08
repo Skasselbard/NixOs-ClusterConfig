@@ -142,7 +142,7 @@ let
       ];
     };
 
-  # Add a 'nixosConfiguration' attribute to each machine configuration, 
+  # Add a 'nixosConfiguration' attribute to each machine configuration,
   # (e.g. domain.cluster.{clustername}.machines.{machinename}.nixosConfiguration)
   # wich holds an evaluated system configuration based on the modules defined for the machine.
   evalMachines = config: add.nixosConfigurations config;
@@ -151,7 +151,10 @@ let
     config:
     let
       clusterAnnotation = update.clusters config (
-        clusterName: clusterConfig: { fqdn = clusterName + "." + config.domain.suffix; }
+        clusterName: clusterConfig: {
+          name = clusterName;
+          fqdn = clusterName + "." + config.domain.suffix;
+        }
       );
       machineAnnotaion = update.machines clusterAnnotation (
         clusterName: machineName: machineConfig: {
@@ -165,7 +168,8 @@ let
       );
       serviceAnnotation = update.services machineAnnotaion (
         clusterName: serviceName: serviceConfig: {
-          annotations.selectors = lists.forEach (filters.resolveAnnotations serviceConfig.selectors clusterName
+          annotations.selectors = lists.forEach (filters.resolveAnnotations serviceConfig.selectors
+            clusterName
             machineAnnotaion
           ) (annotation: annotation.machineName);
           annotations.roles = (

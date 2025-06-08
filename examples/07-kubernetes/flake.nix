@@ -119,7 +119,7 @@
                           ca-cert = {
                             backendPath = "./etcd-ca.crt";
                             linkPath = etcd.caCertFile.sourcePath;
-                            permissions = "444";
+                            permissions = "777";
                           };
                           ca-key = {
                             backendPath = "./etcd-ca.key";

@@ -106,7 +106,14 @@ in
 
   ###############################################
   imports = [
-    ./certificates.nix
+    (import ./certificates.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
     (import ./control-plane/etcd.nix {
       inherit
         clusterInfo
