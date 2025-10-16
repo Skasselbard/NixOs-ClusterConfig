@@ -150,13 +150,11 @@ in
       etcdClientKeyFile = certOptions "apiserverEtcdClientKeyFile" "apiserver-etcd-client.key";
     };
 
-    # front-proxy certificates are required only if you run kube-proxy to support an extension API server.
-    # ###
-    # frontProxyCaCertFile = certOption "frontProxyCaCertFile" "front-proxy-ca.crt";
-    # frontProxyCaKeyFile = certOption "frontProxyCaKeyFile" "front-proxy-ca.key";
+    controllerManagerCertFile = certOptions "controllerManagerCertFile" "controller-manager.crt";
+    controllerManagerKeyFile = certOptions "controllerManagerKeyFile" "controller-manager.key";
 
-    # frontProxyClientCertFile = certOption "frontProxyClientCertFile" "front-proxy-client.crt";
-    # frontProxyClientKeyFile = certOption "frontProxyClientKeyFile" "front-proxy-client.key";
+    schedulerCertFile = certOptions "schedulerCertFile" "scheduler.crt";
+    schedulerKeyFile = certOptions "schedulerKeyFile" "scheduler.key";
 
     saKeyFile = certOptions "saKeyFile" "sa.key";
     saPubFile = certOptions "saPubFile" "sa.pub";
@@ -203,6 +201,26 @@ in
           )
           (lnk certs.apiServer.etcdClientKeyFile.targetPath certs.apiServer.etcdClientKeyFile.sourcePath
             user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+
+          # Other Controll-Plane roles
+          (lnk certs.controllerManagerCertFile.targetPath certs.controllerManagerCertFile.sourcePath
+            user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.controllerManagerKeyFile.targetPath certs.controllerManagerKeyFile.sourcePath
+            user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+          (lnk certs.schedulerCertFile.targetPath certs.schedulerCertFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.schedulerKeyFile.targetPath certs.schedulerKeyFile.sourcePath user.kubernetes
             group.kubernetes
             permissions.privateUser
           )

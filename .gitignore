@@ -168,3 +168,5 @@ example/generated/*
 *.key
 *.csr
 *.crl
+examples/07-kubernetes/certs/*
+examples/07-kubernetes/kubeconfigs/*

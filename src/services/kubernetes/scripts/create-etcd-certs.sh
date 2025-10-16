@@ -39,21 +39,21 @@ else
 fi
 
 create_and_sign_cert() {
-  local ROLE=$1
+  local ROLE="$1"
   
-  if [[ -z $(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE} // empty") ]]; then
+  if [[ -z $(echo "$CONFIG_JSON" | jq -r ".etcd[\"${ROLE}\"] // empty") ]]; then
     echo "[INFO] Skipping role '$ROLE': undefined in config"
     return 0
   fi
 
-  local NAME=$(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.name // empty")
-  local PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.passPhrase // empty")
+  local NAME=$(echo "$CONFIG_JSON" | jq -r ".etcd[\"${ROLE}\"].name // empty")
+  local PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r ".etcd[\"${ROLE}\"].passPhrase // empty")
   local CRT="$NAME.crt"
   local KEY="$NAME.key"
   local CSR="$NAME.csr"
 
-  mapfile -t DOMAINS < <(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.domains[]?")
-  mapfile -t IPS < <(echo "$CONFIG_JSON" | jq -r ".etcd.${ROLE}.ips[]?")
+  mapfile -t DOMAINS < <(echo "$CONFIG_JSON" | jq -r ".etcd[\"${ROLE}\"].domains[]?")
+  mapfile -t IPS < <(echo "$CONFIG_JSON" | jq -r ".etcd[\"${ROLE}\"].ips[]?")
 
   local DOMAIN_ARG=""
   if [[ ${#DOMAINS[@]} -gt 0 ]]; then
@@ -105,6 +105,8 @@ create_and_sign_cert() {
   fi
 }
 
-# Generate both server and peer certs
-create_and_sign_cert "server"
-create_and_sign_cert "peer"
+# Generate certs
+for role in $(jq -r '.etcd | keys[] | select(. != "ca")' "$CONFIG_FILE"); do
+  echo "[INFO] Generating cert for $role"
+  create_and_sign_cert "$role"
+done

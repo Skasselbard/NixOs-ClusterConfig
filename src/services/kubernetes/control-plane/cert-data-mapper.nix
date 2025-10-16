@@ -7,10 +7,23 @@
   ...
 }:
 let
+  # imports
+  flatten = lib.lists.flatten;
+  remove = lib.lists.remove;
+
+  # get a list of ips excluding dhcp configurations
+  parseRealIps =
+    ips:
+    let
+      ipList = flatten (lib.attrsets.mapAttrsToList (name: value: value) ips);
+    in
+    remove "dhcp" ipList;
+
   # get the config from the picked machines
   cfg = control-plane-config.services.kubernetes;
 
-  certData = {
+  # Certdata to configure: https://kubernetes.io/docs/setup/best-practices/certificates/
+  common-cert-data = {
     common = {
       org = cfg.cluster.certificates.generation.organization;
       orgUnit = cfg.cluster.certificates.generation.organizationUnit;
@@ -20,58 +33,114 @@ let
       # domain = cfg.cluster.certificates.generation.domain;
       # issuer = cfg.cluster.certificates.generation.issuer;
     };
-    # role = clusterInfo.name + "-certification";
+  };
+
+  etcd-cert-data = {
+    etcd = {
+      ca = {
+        name = "etcd-ca";
+        passPhrase = "";
+      };
+    }
+    // builtins.listToAttrs (
+      builtins.concatMap (machine: [
+        {
+          name = "server-${machine.annotations.machineName}";
+          value = {
+            name = "etcd-server-${machine.annotations.machineName}";
+            domains = [
+              "localhost"
+              machine.annotations.fqdn
+            ];
+            ips = [ "127.0.0.1" ] ++ parseRealIps machine.annotations.ips;
+            passPhrase = "";
+          };
+        }
+        {
+          name = "peer-${machine.annotations.machineName}";
+          value = {
+            name = "etcd-peer-${machine.annotations.machineName}";
+            domains = [
+              "localhost"
+              machine.annotations.fqdn
+            ];
+            ips = [ "127.0.0.1" ] ++ parseRealIps machine.annotations.ips;
+            passPhrase = "";
+          };
+        }
+        {
+          name = "apiserver-etcd-client-${machine.annotations.machineName}";
+          value = {
+            name = "apiserver-etcd-client-${machine.annotations.machineName}";
+            domains = [ machine.annotations.fqdn ];
+            ips = [ ];
+            passPhrase = "";
+          };
+        }
+      ]) etcdMachines
+    );
+  };
+
+  k8s-cert-data = {
     k8s = {
       ca = {
         name = "k8s-ca";
         passPhrase = "";
       };
       roles = {
-        apiserver = {
-          name = "kube-apiserver";
-          domains = map (machine: machine.annotations.fqdn) controlPlaneMachines;
-          ips = [ ]; # We don't add ips and only use host names fro verification
-          passPhrase = "";
-        };
-        kubelet = {
-          name = "system:node:worker-0";
-          domains = map (machine: machine.annotations.fqdn) controlPlaneMachines;
-          ips = [ ]; # We don't add ips and only use host names fro verification
-          passPhrase = "";
-        };
-        controller-manager = {
-          name = "system:kube-controller-manager";
-          passPhrase = "";
-        };
-        scheduler = {
-          name = "system:kube-scheduler";
-          passPhrase = "";
-        };
         admin = {
           name = "admin";
+          kubernetesGroup = "system:masters";
           passPhrase = "";
         };
-      };
-    };
-    etcd = {
-      ca = {
-        name = "etcd-ca";
-        passPhrase = "";
-      };
-      server = {
-        name = "etcd-server";
-        domains = map (machine: machine.annotations.fqdn) etcdMachines;
-        ips = [ ]; # We don't add ips and only use host names fro verification
-        passPhrase = "";
-      };
-      peer = {
-        name = "etcd-peer";
-        domains = map (machine: machine.annotations.fqdn) etcdMachines;
-        ips = [ ]; # We don't add ips and only use host names fro verification
-        passPhrase = "";
-      };
+      }
+      // builtins.listToAttrs (
+        builtins.concatMap (machine: [
+          {
+            name = "apiserver-${machine.annotations.machineName}";
+            value = {
+              name = "apiserver-${machine.annotations.machineName}";
+              domains = [
+                "localhost"
+                machine.annotations.fqdn
+              ];
+              ips = [ "127.0.0.1" ] ++ parseRealIps machine.annotations.ips;
+              passPhrase = "";
+            };
+          }
+          {
+            name = "kubelet-client-${machine.annotations.machineName}";
+            value = {
+              name = "kubelet-client-${machine.annotations.machineName}";
+              domains = [ ];
+              ips = [ ];
+              passPhrase = "";
+            };
+          }
+          {
+            name = "controller-manager-${machine.annotations.machineName}";
+            value = {
+              name = "system:kube-controller-manager";
+              domains = [ ];
+              ips = [ ];
+              passPhrase = "";
+            };
+          }
+          {
+            name = "scheduler-${machine.annotations.machineName}";
+            value = {
+              name = "system:kube-scheduler";
+              domains = [ ];
+              ips = [ ];
+              passPhrase = "";
+            };
+          }
+        ]) controlPlaneMachines
+      );
     };
   };
+
+  certData = common-cert-data // etcd-cert-data // k8s-cert-data;
 
   certData-json = builtins.toJSON certData;
 

@@ -1,27 +1,38 @@
-{ resourcesByRole, ... }:
+{
+  clusterInfo,
+  selectors,
+  roles,
+  this,
+}:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
-  inherit (import ../../consts.nix) virtualIP;
+  cfg = config.services.kubernetes.cluster;
+  apiServerPort = 6443;
+  controlPlaneNodeList = roles.controlPlane;
+
+  #############################
+  # Helper Functions
+
+  # Create URL from hostname and port
+  mkUrl = port: address: "https://${address}:${toString port}";
+  mkUrls = port: addresses: map (address: mkUrl port address) addresses;
+
 in
 {
-  deployment.keys = {
-    "scheduler.pem" = {
-      keyFile = ../../certs/generated/kubernetes/scheduler.pem;
-      destDir = "/var/lib/secrets/kubernetes";
-      user = "kubernetes";
-    };
-    "scheduler-key.pem" = {
-      keyFile = ../../certs/generated/kubernetes/scheduler-key.pem;
-      destDir = "/var/lib/secrets/kubernetes";
-      user = "kubernetes";
-    };
-  };
 
   services.kubernetes.scheduler = {
     enable = true;
     kubeconfig = {
-      certFile = "/var/lib/secrets/kubernetes/scheduler.pem";
-      keyFile = "/var/lib/secrets/kubernetes/scheduler-key.pem";
-      server = "https://${virtualIP}";
+      certFile = cfg.certificates.schedulerCertFile.targetPath;
+      keyFile = cfg.certificates.schedulerKeyFile.targetPath;
+      server = builtins.head (mkUrls apiServerPort (map (node: node.fqdn) controlPlaneNodeList));
     };
+
   };
+
 }

@@ -29,7 +29,7 @@ let
     description = ''
       A list of modules included by homeManager.
 
-      Home manager has its own module system which is evaluated independantly from the NixOs modules.
+      Home manager has its own module system which is evaluated independently from the NixOs modules.
       However, the form of home manager modules is identical to NixOs modules.
 
       This list will not be evaluated by the cluster configuration.

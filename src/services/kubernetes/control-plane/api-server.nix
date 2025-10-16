@@ -1,80 +1,58 @@
-{ lib, resourcesByRole, ... }:
+{
+  clusterInfo,
+  selectors,
+  roles,
+  this,
+}:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+
 let
-  etcdServers = map (r: "https://${r.values.name}:2379") (resourcesByRole "etcd");
-
-  mkSecret = filename: {
-    keyFile = ../../certs/generated/kubernetes/apiserver + "/${filename}";
-    destDir = "/var/lib/secrets/kubernetes/apiserver";
-    user = "kubernetes";
-  };
-
-  corednsPolicies = map
-    (r: {
-      apiVersion = "abac.authorization.kubernetes.io/v1beta1";
-      kind = "Policy";
-      spec = {
-        user = "system:coredns";
-        namespace = "*";
-        resource = r;
-        readonly = true;
-      };
-    }) [ "endpoints" "services" "pods" "namespaces" ]
-  ++ lib.singleton
-    {
-      apiVersion = "abac.authorization.kubernetes.io/v1beta1";
-      kind = "Policy";
-      spec = {
-        user = "system:coredns";
-        namespace = "*";
-        resource = "endpointslices";
-        apiGroup = "discovery.k8s.io";
-        readonly = true;
-      };
-    };
+  cfg = config.services.kubernetes.cluster;
+  mappedClusterConfig = (
+    import ./api-server-mapper.nix
+      {
+        inherit
+          clusterInfo
+          selectors
+          roles
+          this
+          ;
+      }
+      {
+        inherit config lib pkgs;
+      }
+  );
 in
 {
-  deployment.keys = {
-    "server.pem" = mkSecret "server.pem";
-    "server-key.pem" = mkSecret "server-key.pem";
-
-    "kubelet-client.pem" = mkSecret "kubelet-client.pem";
-    "kubelet-client-key.pem" = mkSecret "kubelet-client-key.pem";
-
-    "etcd-ca.pem" = {
-      keyFile = ../../certs/generated/etcd/ca.pem;
-      destDir = "/var/lib/secrets/kubernetes/apiserver";
-      user = "kubernetes";
-    };
-    "etcd-client.pem" = mkSecret "etcd-client.pem";
-    "etcd-client-key.pem" = mkSecret "etcd-client-key.pem";
-  };
 
   networking.firewall.allowedTCPPorts = [ 6443 ];
 
   services.kubernetes.apiserver = {
     enable = true;
-    serviceClusterIpRange = "10.32.0.0/24";
-
-    # Using ABAC for CoreDNS running outside of k8s
-    # is more simple in this case than using kube-addon-manager
-    authorizationMode = [ "RBAC" "Node" "ABAC" ];
-    authorizationPolicy = corednsPolicies;
+    # serviceClusterIpRange = "10.0.0.0/24"; # <- use this default
 
     etcd = {
-      servers = etcdServers;
-      caFile = "/var/lib/secrets/kubernetes/apiserver/etcd-ca.pem";
-      certFile = "/var/lib/secrets/kubernetes/apiserver/etcd-client.pem";
-      keyFile = "/var/lib/secrets/kubernetes/apiserver/etcd-client-key.pem";
+      servers = mappedClusterConfig.etcd.servers;
+      caFile = cfg.certificates.etcd.caCertFile.targetPath;
+      certFile = cfg.certificates.apiServer.etcdClientCertFile.targetPath;
+      keyFile = cfg.certificates.apiServer.etcdClientKeyFile.targetPath;
     };
 
-    kubeletClientCertFile = "/var/lib/secrets/kubernetes/apiserver/kubelet-client.pem";
-    kubeletClientKeyFile = "/var/lib/secrets/kubernetes/apiserver/kubelet-client-key.pem";
+    clientCaFile = cfg.certificates.caCertFile.targetPath;
 
-    # TODO: separate from server keys
-    serviceAccountKeyFile = "/var/lib/secrets/kubernetes/apiserver/server.pem";
-    serviceAccountSigningKeyFile = "/var/lib/secrets/kubernetes/apiserver/server-key.pem";
+    kubeletClientCertFile = cfg.certificates.apiServer.kubeletClientCertFile.targetPath;
+    kubeletClientKeyFile = cfg.certificates.apiServer.kubeletClientKeyFile.targetPath;
 
-    tlsCertFile = "/var/lib/secrets/kubernetes/apiserver/server.pem";
-    tlsKeyFile = "/var/lib/secrets/kubernetes/apiserver/server-key.pem";
+    serviceAccountKeyFile = cfg.certificates.saPubFile.targetPath;
+    serviceAccountSigningKeyFile = cfg.certificates.saKeyFile.targetPath;
+
+    tlsCertFile = cfg.certificates.apiServer.certFile.targetPath;
+    tlsKeyFile = cfg.certificates.apiServer.keyFile.targetPath;
+
   };
 }

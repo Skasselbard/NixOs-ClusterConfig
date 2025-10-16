@@ -122,6 +122,30 @@ in
         this
         ;
     })
+    (import ./control-plane/api-server.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
+    (import ./control-plane/controller-manager.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
+    (import ./control-plane/scheduler.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
   ];
 
   config =

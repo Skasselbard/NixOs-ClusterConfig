@@ -18,6 +18,12 @@ COUNTRY=$(echo "$CONFIG_JSON" | jq -r '.common.country')
 PROVINCE=$(echo "$CONFIG_JSON" | jq -r '.common.province')
 LOCALITY=$(echo "$CONFIG_JSON" | jq -r '.common.locality')
 
+# Override organization if kubernetesGroup is set
+K8S_GROUP=$(echo "$CONFIG_JSON" | jq -r ".k8s.roles[\"${ROLE}\"].kubernetesGroup // empty")
+if [[ -n "$K8S_GROUP" && "$K8S_GROUP" != "null" ]]; then
+  ORG="$K8S_GROUP"
+fi
+
 NAME=$(echo "$CONFIG_JSON" | jq -r ".k8s.roles[\"${ROLE}\"].name // empty")
 PASSPHRASE=$(echo "$CONFIG_JSON" | jq -r ".k8s.roles[\"${ROLE}\"].passPhrase // empty")
 

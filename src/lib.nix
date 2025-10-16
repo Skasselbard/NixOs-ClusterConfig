@@ -4,7 +4,7 @@
   flake-utils,
 }:
 let
-  # imports 
+  # imports
   filters = import ./filters.nix { inherit lib; };
 
   attrsets = lib.attrsets;
@@ -34,10 +34,22 @@ let
         config = { };
       };
 
-    # generate metadata and a config that 
+    # generate metaData and open tcp port
+    openTcp =
+      {
+        role,
+        address,
+        port ? null, # don't define port if not set, so the service can define a default port
+      }:
+      {
+        tag = if port == null then { inherit role address; } else { inherit role address port; };
+        config.networking.firewall.allowedTCPPorts = [ port ];
+      };
+
+    # generate metadata and a config that
     #   1. defines a single static address on the given interface
     #   2. opens the given port for UDP connections in the firewall
-    staticIpV4OpenUdp =
+    staticIpV4OpenTcp =
       {
         role,
         address,
@@ -189,7 +201,7 @@ let
       [
         serviceDefinition.extraConfig
 
-        # call the service definition with clusterInfo 
+        # call the service definition with clusterInfo
         (serviceDefinition.definition {
           inherit selectors roles clusterInfo;
           this = machineConfig.annotations;

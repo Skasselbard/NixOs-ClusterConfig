@@ -56,19 +56,19 @@ let # imports
             machineConfig.deployment.formatScript;
       in
       {
-        create = pkgs.writeScriptBin "create-${machineName}" ''
+        create = pkgs.writeShellScriptBin "create-${machineName}" ''
           ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${machineConfig.deployment.targetUser}@${machineConfig.deployment.targetHost}
         '';
         format =
           if machineConfig.deployment.formatScript == null then
-            pkgs.writeScriptBin "format-${machineName}" "echo no format script configured"
+            pkgs.writeShellScriptBin "format-${machineName}" "echo no format script configured"
           else
             let
               ip = machineConfig.deployment.targetHost;
               sshArgs = [ "-t" ];
               script = formatScript;
             in
-            pkgs.writeScriptBin "deploy" ''
+            pkgs.writeShellScriptBin "deploy" ''
               echo "Run format script on host ${machineName}?"
               echo "WARNING: disk content will be erased if you select yes!"
               [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit

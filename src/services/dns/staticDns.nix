@@ -26,7 +26,7 @@ let
   # Expect a hosts role 
   hosts = roles.hosts;
 
-  # get a list of ips excluding dhcp cobfigurations
+  # get a list of ips excluding dhcp configurations
   parseRealIps =
     ips:
     let

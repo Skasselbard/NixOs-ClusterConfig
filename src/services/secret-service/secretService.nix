@@ -210,6 +210,10 @@ in
                     exit 1
                   fi
 
+                  mkdir -p "${userMount}"
+                  chown "${user}:secret-service" "${userMount}"
+                  chmod -R 550 "${userMount}"
+
                   ${concatStringsSep "\n" setSecretPermissions}
 
                   echo "Mounting secrets for ${user}..."

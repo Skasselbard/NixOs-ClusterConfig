@@ -53,6 +53,29 @@ let
         ] interfaceDefinition
       );
 
+      wireless = # filter old options that are deprecated or cause conflicts
+        attrsets.filterAttrs (
+          optionName: optionDefinition:
+          !(builtins.elem optionName [
+            "environmentFile"
+            "userControlled"
+          ])
+        ) nixosConfig.networking.wireless;
+
+      networkmanager = # filter old options that are deprecated or cause conflicts
+        attrsets.filterAttrs (
+          optionName: optionDefinition:
+          !(builtins.elem optionName [
+            "firewallBackend"
+            "dynamicHosts"
+            "enableFccUnlock"
+            "extraConfig"
+            "packages"
+            "fccUnlockScripts"
+            "useDnsmasq"
+          ])
+        ) nixosConfig.networking.networkmanager;
+
       users = # filter some users that get created by default
         attrsets.filterAttrs (
           userName: userDefinition:
@@ -122,9 +145,13 @@ let
           i18n.defaultLocale = nixosConfig.i18n.defaultLocale;
           time.timeZone = nixosConfig.time.timeZone;
 
-          # copy all interfaces and a selcetion of users
+          # copy all interfaces
           networking.interfaces = interfaces;
           # TODO: nameservers and gateway!
+          networking.wireless = wireless;
+          networking.networkmanager = networkmanager;
+
+          # copy a selection of users
           users.users =
             forEachAttrIn users
               # remove attributes that cannot be used on the installation environment

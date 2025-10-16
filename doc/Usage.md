@@ -62,7 +62,7 @@ The installation process is devised into stages:
 - can be used to retrieve the hardware-configuration.nix hardware-configuration.nix
 
 ## Stage 1: Remote Installation with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere/tree/main)
-- run the initial image on from Stage 0 on the machine you want to set up
+- run the initial image from Stage 0 on the machine you want to set up
 - run an initial installation with ``nix run .#machines.<machine name>.create``
 - optional: partitioning with [disko](https://github.com/nix-community/disko/tree/master)
   - the partitioning module helps to define formatting scripts

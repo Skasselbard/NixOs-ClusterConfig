@@ -54,12 +54,12 @@ let
             control-plane-config = firstMachine.nixosConfiguration.config;
           };
           certData = certData-mapping.certData;
-          certDate-json-file = certData-mapping.certDate-json-file;
+          certData-json-file = certData-mapping.certDate-json-file;
 
         in
         {
-
           kubernetes = {
+
             createEtcdCertificates =
               if clusterConfig.services ? kubernetes then
                 if etcdMachines != [ ] then
@@ -67,7 +67,7 @@ let
                     mkdir -p certs
                     cd certs
                     PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                    ${pkgs.bash}/bin/bash ${./scripts/create-etcd-certs.sh} ${certDate-json-file}
+                    ${pkgs.bash}/bin/bash ${./scripts/create-etcd-certs.sh} ${certData-json-file}
                   '')
                 else
                   pkgs.writeShellScriptBin "createEtcdCertificates" "echo \"no etcd machine is configured for this cluster\""
@@ -81,7 +81,7 @@ let
                     mkdir -p certs
                     cd certs
                     PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                    ${pkgs.bash}/bin/bash ${./scripts/create-k8s-ca.sh} ${certDate-json-file}
+                    ${pkgs.bash}/bin/bash ${./scripts/create-k8s-ca.sh} ${certData-json-file}
                   '')
                 else
                   pkgs.writeShellScriptBin "createK8sCA" "echo \"no control-plane machine is configured for this cluster\""
@@ -101,9 +101,9 @@ let
                     PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
 
                       for role in ${builtins.concatStringsSep " " roles}; do
-                        if jq -e ".k8s.roles.\"$role\"" ${certDate-json-file}  >/dev/null; then
+                        if jq -e ".k8s.roles.\"$role\"" ${certData-json-file}  >/dev/null; then
                           echo "[INFO] Generating kube-config for role: $role"
-                          ${pkgs.bash}/bin/bash ${./scripts/create-k8s-cert.sh} "$role" ${certDate-json-file} 
+                          ${pkgs.bash}/bin/bash ${./scripts/create-k8s-cert.sh} "$role" ${certData-json-file} 
                         else
                           echo "[INFO] Skipping role: $role (not in config)"
                         fi
@@ -117,17 +117,40 @@ let
             createKubeConfigs =
               if clusterConfig.services ? kubernetes then
                 if controlPlaneMachines != [ ] then
+                  let
+                    apiServer = firstMachine.annotations.fqdn;
+                  in
                   (pkgs.writeShellScriptBin "createKubeConfigs" ''
                     mkdir -p certs
-                    cd certs
                     PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                    ${pkgs.bash}/bin/bash ${./scripts/create-kubeConfigs.sh} ${certDate-json-file}
+                    ${pkgs.bash}/bin/bash ${./scripts/create-kubeconfigs.sh}\
+                      --role admin \
+                      --server https://${apiServer}:6443 \
+                      --cert-dir ./certs \
+                      --ca-name k8s-ca \
+                      --cluster-name ${clusterName} \
+                      --output-dir ./kubeconfigs 
                   '')
                 else
                   pkgs.writeShellScriptBin "createKubeConfigs" "echo \"no control-plane machine is configured for this cluster\""
               else
                 pkgs.writeShellScriptBin "createKubeConfigs" "echo \"kubernetes is not configured for this cluster\"";
 
+            createServiceAccount =
+              if clusterConfig.services ? kubernetes then
+                if controlPlaneMachines != [ ] then
+                  (pkgs.writeShellScriptBin "createServiceAccount" ''
+                    set -euo pipefail
+                    mkdir -p certs
+                    cd certs
+                    PATH=$PATH:${pkgs.openssl}/bin:${pkgs.jq}/bin
+                    echo "[INFO] Generating Service Account Keys"
+                    ${pkgs.bash}/bin/bash ${./scripts/create-sa-keys.sh} --config ${certData-json-file} --alg p384
+                  '')
+                else
+                  pkgs.writeShellScriptBin "createServiceAccount" "echo \"no control-plane machine is configured for this cluster\""
+              else
+                pkgs.writeShellScriptBin "createServiceAccount" "echo \"kubernetes is not configured for this cluster\"";
           };
         }
       );
