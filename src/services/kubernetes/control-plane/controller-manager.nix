@@ -11,16 +11,16 @@
   ...
 }:
 let
+  kubeLib = import ../kubelib.nix { inherit lib; };
+
   cfg = config.services.kubernetes.cluster;
-  apiServerPort = 6443;
-  controlPlaneNodeList = roles.controlPlane;
+  apiServerPort = config.services.kubernetes.apiserver.securePort;
 
   #############################
   # Helper Functions
 
   # Create URL from hostname and port
-  mkUrl = port: address: "https://${address}:${toString port}";
-  mkUrls = port: addresses: map (address: mkUrl port address) addresses;
+  mkUrl = kubeLib.mkUrl;
 
 in
 {
@@ -30,7 +30,8 @@ in
     kubeconfig = {
       certFile = cfg.certificates.controllerManagerCertFile.targetPath;
       keyFile = cfg.certificates.controllerManagerKeyFile.targetPath;
-      server = builtins.head (mkUrls apiServerPort (map (node: node.fqdn) controlPlaneNodeList));
+      # TODO: use kubernetes fqdn as server
+      server = mkUrl apiServerPort (builtins.head (kubeLib.getControlPlaneFqdns roles));
     };
 
     serviceAccountKeyFile = cfg.certificates.saPubFile.targetPath;

@@ -26,7 +26,7 @@ let
         inherit config lib pkgs;
       }
   );
-  
+
 in
 lib.mkIf mappedClusterConfig.enable {
 
@@ -37,9 +37,10 @@ lib.mkIf mappedClusterConfig.enable {
     group = "etcd";
   };
 
+  networking.firewall.allowedTCPPorts = mappedClusterConfig.firewallPorts;
+
   services.etcd = {
     enable = true;
-    openFirewall = true;
 
     name = mappedClusterConfig.nodeName;
     initialCluster = mappedClusterConfig.initialCluster;

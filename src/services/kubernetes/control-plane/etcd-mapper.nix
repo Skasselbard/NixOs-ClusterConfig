@@ -12,29 +12,40 @@
 }:
 
 let
-  clientRequestPort = 2379;
+  kubeLib = import ../kubelib.nix { inherit lib; };
+
+  clientRequestPort = 2378; # haProxy handles client requests on 2379
+
+  clientRequestAdvertisementPort = 2379;
   peerCommunicationPort = 2380;
-  etcdList = if roles ? etcd && roles.etcd != [ ] then roles.etcd else roles.controlPlane;
+
+  etcdList = kubeLib.getEtcdList roles;
 
   #############################
   # Helper Functions
 
   # Create URL from hostname and port
-  mkUrl = port: address: "https://${address}:${toString port}";
-  mkUrls = port: addresses: map (address: mkUrl port address) addresses;
+  mkUrl = kubeLib.mkUrl;
+  mkUrls = kubeLib.mkUrls;
 in
 
 {
   enable = builtins.any (node: node.machineName == this.machineName) etcdList;
 
+  firewallPorts =
+    if (builtins.any (node: node.machineName == this.machineName) etcdList) then
+      [ peerCommunicationPort ]
+    else
+      [ ];
+
   nodeName = this.machineName;
-  # TODO: use serviceAddresses
+
   listening = {
     peers = mkUrls peerCommunicationPort [ "0.0.0.0" ];
-    clients = mkUrls clientRequestPort [ "0.0.0.0" ];
+    clients = mkUrls clientRequestPort [ "127.0.0.1" ];
   };
 
-  advertiseClientUrls = mkUrls clientRequestPort [ this.fqdn ];
+  advertiseClientUrls = mkUrls clientRequestAdvertisementPort [ this.fqdn ];
   initialAdvertisePeerUrl = mkUrl peerCommunicationPort this.fqdn;
 
   allNodes = map (node: {

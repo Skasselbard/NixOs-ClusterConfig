@@ -5,12 +5,12 @@
 
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     disko = {
-      url = "github:nix-community/disko/v1.1.0";
+      url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nixos-anywhere = {
-      url = "github:nix-community/nixos-anywhere";
+      url = "github:nix-community/nixos-anywhere/1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.disko.follows = "disko";
     };

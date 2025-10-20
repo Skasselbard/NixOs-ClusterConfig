@@ -32,6 +32,12 @@ let
             else
               (builtins.trace "Warning: kubernetes controlPlane role is not defined" [ ]);
 
+          workerMachines =
+            if builtins.hasAttr "worker" cluster.services.kubernetes.roles then
+              filters.resolveDefinitions cluster.services.kubernetes.roles.controlPlane clusterName config
+            else
+              (builtins.trace "Warning: kubernetes worker role is not defined" [ ]);
+
           etcdMachines =
             let
               etcdRoles =
@@ -49,6 +55,7 @@ let
               pkgs
               lib
               controlPlaneMachines
+              workerMachines
               etcdMachines
               ;
             control-plane-config = firstMachine.nixosConfiguration.config;

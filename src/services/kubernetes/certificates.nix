@@ -153,6 +153,9 @@ in
     controllerManagerCertFile = certOptions "controllerManagerCertFile" "controller-manager.crt";
     controllerManagerKeyFile = certOptions "controllerManagerKeyFile" "controller-manager.key";
 
+    kubeletCertFile = certOptions "kubeletCertFile" "kubelet.crt";
+    kubeletKeyFile = certOptions "kubeletKeyFile" "kubelet.key";
+
     schedulerCertFile = certOptions "schedulerCertFile" "scheduler.crt";
     schedulerKeyFile = certOptions "schedulerKeyFile" "scheduler.key";
 
@@ -221,6 +224,16 @@ in
             permissions.publicRead
           )
           (lnk certs.schedulerKeyFile.targetPath certs.schedulerKeyFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+
+          # Worker roles
+          (lnk certs.kubeletCertFile.targetPath certs.kubeletCertFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.kubeletKeyFile.targetPath certs.kubeletKeyFile.sourcePath user.kubernetes
             group.kubernetes
             permissions.privateUser
           )

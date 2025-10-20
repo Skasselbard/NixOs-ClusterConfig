@@ -22,7 +22,7 @@
     # Import disko to configure partitioning
     # If you want to use disko for formatting or device definitions, this option is required
     disko = {
-      url = "github:nix-community/disko/v1.1.0";
+      url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -123,48 +123,47 @@
                             ca-cert = {
                               backendPath = "./certs/etcd-ca.crt";
                               linkPath = etcd.caCertFile.sourcePath;
-                              permissions = "777";
+                              permissions = "555";
                             };
                             ca-key = {
                               backendPath = "./certs/etcd-ca.key";
                               linkPath = etcd.caKeyFile.sourcePath;
                             };
-                            "peer-cert-${machineName}" = {
-                              backendPath = "./certs/etcd-peer-${machineName}.crt";
-                              linkPath = etcd.peerCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "peer-key-${machineName}" = {
-                              backendPath = "./certs/etcd-peer-${machineName}.key";
-                              linkPath = etcd.peerKeyFile.sourcePath;
-                            };
-                            "server-cert-${machineName}" = {
-                              backendPath = "./certs/etcd-server-${machineName}.crt";
+                            server-cert = {
+                              backendPath = "./certs/etcd-server.crt";
                               linkPath = etcd.serverCertFile.sourcePath;
                               permissions = "444";
                             };
-                            "server-key-${machineName}" = {
-                              backendPath = "./certs/etcd-server-${machineName}.key";
+                            server-key = {
+                              backendPath = "./certs/etcd-server.key";
                               linkPath = etcd.serverKeyFile.sourcePath;
                             };
-
+                            peer-cert = {
+                              backendPath = "./certs/etcd-peer.crt";
+                              linkPath = etcd.peerCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            peer-key = {
+                              backendPath = "./certs/etcd-peer.key";
+                              linkPath = etcd.peerKeyFile.sourcePath;
+                            };
                           };
                         };
                         kubernetes = {
                           secrets.file = {
-                            "apiserver-server-cert-${machineName}" = {
-                              backendPath = "./certs/apiserver-${machineName}.crt";
+                            apiserver-server-cert = {
+                              backendPath = "./certs/apiserver.crt";
                               linkPath = apiServer.certFile.sourcePath;
                               permissions = "444";
                             };
-                            "apiserver-server-key-${machineName}" = {
-                              backendPath = "./certs/apiserver-${machineName}.key";
+                            apiserver-server-key = {
+                              backendPath = "./certs/apiserver.key";
                               linkPath = apiServer.keyFile.sourcePath;
                             };
                             ca-cert = {
                               backendPath = "./certs/k8s-ca.crt";
                               linkPath = caCertFile.sourcePath;
-                              permissions = "777";
+                              permissions = "555";
                             };
                             ca-key = {
                               backendPath = "./certs/k8s-ca.key";
@@ -264,6 +263,7 @@
                   inherit system;
                   deployment = {
                     targetHost = "192.168.122.200";
+                    formatScript = "disko"; # format vms on recreation
                   };
                   nixosModules = [
                     machines.vm0
@@ -276,6 +276,7 @@
                   inherit system;
                   deployment = {
                     targetHost = "192.168.122.201";
+                    formatScript = "disko"; # format vms on recreation
                   };
                   nixosModules = [
                     machines.vm1
@@ -287,6 +288,7 @@
                   inherit system;
                   deployment = {
                     targetHost = "192.168.122.202";
+                    formatScript = "disko"; # format vms on recreation
                   };
                   nixosModules = [
                     machines.vm2

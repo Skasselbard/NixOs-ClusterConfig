@@ -1,28 +1,31 @@
 {
   control-plane-config,
   controlPlaneMachines,
+  workerMachines,
   etcdMachines,
   pkgs,
   lib,
   ...
 }:
 let
-  # imports
-  flatten = lib.lists.flatten;
-  remove = lib.lists.remove;
-
-  # get a list of ips excluding dhcp configurations
-  parseRealIps =
-    ips:
-    let
-      ipList = flatten (lib.attrsets.mapAttrsToList (name: value: value) ips);
-    in
-    remove "dhcp" ipList;
+  kubeLib = import ../kubelib.nix { inherit lib; };
 
   # get the config from the picked machines
   cfg = control-plane-config.services.kubernetes;
 
-  # Certdata to configure: https://kubernetes.io/docs/setup/best-practices/certificates/
+  control-plane-ip-list = kubeLib.getControlPlaneIps {
+    controlPlane = map (node: node.annotations) controlPlaneMachines;
+  };
+
+  control-plane-fqdn-list = kubeLib.getControlPlaneFqdns {
+    controlPlane = map (node: node.annotations) controlPlaneMachines;
+  };
+
+  etcd-ip-list = kubeLib.getEtcdIps { etcd = map (node: node.annotations) etcdMachines; };
+
+  etcd-fqdn-list = kubeLib.getEtcdFqdns { etcd = map (node: node.annotations) etcdMachines; };
+
+  # CertData to configure: https://kubernetes.io/docs/setup/best-practices/certificates/
   common-cert-data = {
     common = {
       org = cfg.cluster.certificates.generation.organization;
@@ -41,33 +44,21 @@ let
         name = "etcd-ca";
         passPhrase = "";
       };
+      server = {
+        name = "etcd-server";
+        domains = [ "localhost" ] ++ etcd-fqdn-list;
+        ips = [ "127.0.0.1" ] ++ etcd-ip-list;
+        passPhrase = "";
+      };
+      peer = {
+        name = "etcd-peer";
+        domains = [ "localhost" ] ++ etcd-fqdn-list;
+        ips = [ "127.0.0.1" ] ++ etcd-ip-list;
+        passPhrase = "";
+      };
     }
     // builtins.listToAttrs (
       builtins.concatMap (machine: [
-        {
-          name = "server-${machine.annotations.machineName}";
-          value = {
-            name = "etcd-server-${machine.annotations.machineName}";
-            domains = [
-              "localhost"
-              machine.annotations.fqdn
-            ];
-            ips = [ "127.0.0.1" ] ++ parseRealIps machine.annotations.ips;
-            passPhrase = "";
-          };
-        }
-        {
-          name = "peer-${machine.annotations.machineName}";
-          value = {
-            name = "etcd-peer-${machine.annotations.machineName}";
-            domains = [
-              "localhost"
-              machine.annotations.fqdn
-            ];
-            ips = [ "127.0.0.1" ] ++ parseRealIps machine.annotations.ips;
-            passPhrase = "";
-          };
-        }
         {
           name = "apiserver-etcd-client-${machine.annotations.machineName}";
           value = {
@@ -93,21 +84,16 @@ let
           kubernetesGroup = "system:masters";
           passPhrase = "";
         };
+        apiserver = {
+          name = "apiserver";
+          domains = [ "localhost" ] ++ control-plane-fqdn-list;
+          ips = [ "127.0.0.1" ] ++ control-plane-ip-list;
+          passPhrase = "";
+        };
       }
+      # Unique certs for each control-plane machine
       // builtins.listToAttrs (
         builtins.concatMap (machine: [
-          {
-            name = "apiserver-${machine.annotations.machineName}";
-            value = {
-              name = "apiserver-${machine.annotations.machineName}";
-              domains = [
-                "localhost"
-                machine.annotations.fqdn
-              ];
-              ips = [ "127.0.0.1" ] ++ parseRealIps machine.annotations.ips;
-              passPhrase = "";
-            };
-          }
           {
             name = "kubelet-client-${machine.annotations.machineName}";
             value = {
@@ -136,7 +122,24 @@ let
             };
           }
         ]) controlPlaneMachines
+      )
+
+      # Unique certs for each worker machine
+      // builtins.listToAttrs (
+        builtins.concatMap (machine: [
+          {
+            name = "kubelet-client-${machine.annotations.machineName}";
+            value = {
+              name = "system:node:${machine.annotations.fqdn}"; # Must match kubelet name
+              kubernetesGroup = "system:nodes";
+              domains = [ machine.annotations.fqdn ];
+              ips = [ ];
+              passPhrase = "";
+            };
+          }
+        ]) workerMachines
       );
+
     };
   };
 
