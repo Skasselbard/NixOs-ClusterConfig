@@ -91,9 +91,19 @@ let
           passPhrase = "";
         };
       }
-      # Unique certs for each control-plane machine
+      # Unique certs for each  machine
       // builtins.listToAttrs (
         builtins.concatMap (machine: [
+          {
+            name = "kubelet-server-${machine.annotations.machineName}";
+            value = {
+              name = "system:node:${machine.annotations.fqdn}"; # Must match kubelet name
+              kubernetesGroup = "system:nodes";
+              domains = [ machine.annotations.fqdn ];
+              ips = [ ];
+              passPhrase = "";
+            };
+          }
           {
             name = "kubelet-client-${machine.annotations.machineName}";
             value = {
@@ -122,24 +132,7 @@ let
             };
           }
         ]) controlPlaneMachines
-      )
-
-      # Unique certs for each worker machine
-      // builtins.listToAttrs (
-        builtins.concatMap (machine: [
-          {
-            name = "kubelet-client-${machine.annotations.machineName}";
-            value = {
-              name = "system:node:${machine.annotations.fqdn}"; # Must match kubelet name
-              kubernetesGroup = "system:nodes";
-              domains = [ machine.annotations.fqdn ];
-              ips = [ ];
-              passPhrase = "";
-            };
-          }
-        ]) workerMachines
       );
-
     };
   };
 

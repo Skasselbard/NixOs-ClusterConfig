@@ -150,6 +150,9 @@ in
       etcdClientKeyFile = certOptions "apiserverEtcdClientKeyFile" "apiserver-etcd-client.key";
     };
 
+    addonManagerCertFile = certOptions "addonManagerCertFile" "addon-manager.crt";
+    addonManagerKeyFile = certOptions "addonManagerKeyFile" "addon-manager.key";
+
     controllerManagerCertFile = certOptions "controllerManagerCertFile" "controller-manager.crt";
     controllerManagerKeyFile = certOptions "controllerManagerKeyFile" "controller-manager.key";
 
@@ -209,6 +212,14 @@ in
           )
 
           # Other Controll-Plane roles
+          (lnk certs.addonManagerCertFile.targetPath certs.addonManagerCertFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.addonManagerKeyFile.targetPath certs.addonManagerKeyFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
           (lnk certs.controllerManagerCertFile.targetPath certs.controllerManagerCertFile.sourcePath
             user.kubernetes
             group.kubernetes

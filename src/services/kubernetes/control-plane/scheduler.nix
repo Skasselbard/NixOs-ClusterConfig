@@ -14,7 +14,7 @@ let
   kubeLib = import ../kubelib.nix { inherit lib; };
 
   cfg = config.services.kubernetes.cluster;
-  apiServerPort = config.services.kubernetes.apiserver.securePort;
+  apiServerPort = 6443;
 
   #############################
   # Helper Functions
@@ -28,6 +28,7 @@ in
   services.kubernetes.scheduler = {
     enable = true;
     kubeconfig = {
+      caFile = cfg.certificates.caCertFile.targetPath;
       certFile = cfg.certificates.schedulerCertFile.targetPath;
       keyFile = cfg.certificates.schedulerKeyFile.targetPath;
       # TODO: use kubernetes fqdn as server

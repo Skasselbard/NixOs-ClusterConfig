@@ -83,6 +83,14 @@ in
         this
         ;
     })
+    (import ./kubelet/kubelet.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
   ];
 
   config =

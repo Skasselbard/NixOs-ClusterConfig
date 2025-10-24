@@ -163,6 +163,11 @@ let
             ips = get.ips machineConfig.nixosConfiguration;
             fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
             serviceAddresses = lists.forEach machineConfig.serviceAddresses (entry: entry.tag);
+            nixos = {
+              release = machineConfig.nixosConfiguration.config.system.nixos.release;
+              codeName = machineConfig.nixosConfiguration.config.system.nixos.codeName;
+              kernelVersion = machineConfig.nixosConfiguration.config.boot.kernelPackages.kernel.version;
+            };
           };
         }
       );

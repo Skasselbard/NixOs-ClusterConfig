@@ -198,6 +198,8 @@ The current default machine annotations in this step are:
     }
     ```
 
+- TODO: document additions like `nixos.release` `nixos.codeName` and `nixos.kernelVersion`
+
 ### 5. Module Transformations
 
 In this step The cluster config is rewritten for the second time by executing a list of `transformation function`.

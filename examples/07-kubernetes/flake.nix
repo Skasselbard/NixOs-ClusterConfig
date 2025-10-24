@@ -178,6 +178,15 @@
                               backendPath = "./certs/apiserver-etcd-client-${machineName}.key";
                               linkPath = apiServer.etcdClientKeyFile.sourcePath;
                             };
+                            "kubelet-server-cert-${machineName}" = {
+                              backendPath = "./certs/kubelet-server-${machineName}.crt";
+                              linkPath = kubeletCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "kubelet-server-key-${machineName}" = {
+                              backendPath = "./certs/kubelet-server-${machineName}.key";
+                              linkPath = kubeletKeyFile.sourcePath;
+                            };
                             "kubelet-client-cert-${machineName}" = {
                               backendPath = "./certs/kubelet-client-${machineName}.crt";
                               linkPath = apiServer.kubeletClientCertFile.sourcePath;
@@ -186,6 +195,15 @@
                             "kubelet-client-key-${machineName}" = {
                               backendPath = "./certs/kubelet-client-${machineName}.key";
                               linkPath = apiServer.kubeletClientKeyFile.sourcePath;
+                            };
+                            "addon-manager-cert-${machineName}" = {
+                              backendPath = "./certs/admin.crt";
+                              linkPath = addonManagerCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "addon-manager-key-${machineName}" = {
+                              backendPath = "./certs/admin.key";
+                              linkPath = addonManagerKeyFile.sourcePath;
                             };
                             "controller-manager-cert-${machineName}" = {
                               backendPath = "./certs/controller-manager-${machineName}.crt";
