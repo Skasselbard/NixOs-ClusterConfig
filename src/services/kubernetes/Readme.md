@@ -26,3 +26,6 @@
 - create etcd certificates
   - certificates are security relevant, use the script at your own risk
   - run with ``nix run .#cluster.<clusterName>.kubernetes.createEtcdCertificates``
+
+## Used Machine Annotations
+- kubernetes.nodeLabels -> these labels will be added to the node if this machines is registered by kubelet as node (by the addon manager).

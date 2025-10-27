@@ -279,6 +279,11 @@
 
                 vm0 = {
                   inherit system;
+                  annotations = {
+                    kubernetes.nodeLabels = {
+                      "cluster.example.com/LOCALTestLabel" = "vm0";
+                    };
+                  };
                   deployment = {
                     targetHost = "192.168.122.200";
                     formatScript = "disko"; # format vms on recreation
@@ -292,6 +297,11 @@
 
                 vm1 = {
                   inherit system;
+                  annotations = {
+                    kubernetes.nodeLabels = {
+                      "cluster.example.com/LOCALTestLabel" = "vm1";
+                    };
+                  };
                   deployment = {
                     targetHost = "192.168.122.201";
                     formatScript = "disko"; # format vms on recreation

@@ -148,6 +148,18 @@ let
 
   machineType = {
     options = {
+      annotations = mkOption {
+        description = "A set of annotations for the machine that can be used in service definitions.";
+        type = attrsOf raw;
+        default = { };
+        example = {
+          globalAnnotation = "myValue";
+          serviceName.importantInfo = {
+            InfoKey = "Please document this annotation in your cluster module documentation.";
+          };
+        };
+      };
+
       system = mkOption {
         description = lib."The type of system for this machine";
         example = "x86_64-linux";

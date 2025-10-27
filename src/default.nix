@@ -54,16 +54,16 @@ let
       ips =
         interfaceDefinition:
         let
-          v4Adresses = lists.forEach interfaceDefinition.ipv4.addresses (
+          v4Addresses = lists.forEach interfaceDefinition.ipv4.addresses (
             addressDefinition: addressDefinition.address
           );
-          v6Adresses = lists.forEach interfaceDefinition.ipv6.addresses (
+          v6Addresses = lists.forEach interfaceDefinition.ipv6.addresses (
             addressDefinition: addressDefinition.address
           );
         in
         lists.flatten [
-          v4Adresses
-          v6Adresses
+          v4Addresses
+          v6Addresses
         ]
         ++ (
           if interfaceDefinition ? useDHCP && interfaceDefinition.useDHCP == true then [ "dhcp" ] else [ ]
@@ -156,7 +156,7 @@ let
           fqdn = clusterName + "." + config.domain.suffix;
         }
       );
-      machineAnnotaion = update.machines clusterAnnotation (
+      machineAnnotation = update.machines clusterAnnotation (
         clusterName: machineName: machineConfig: {
           annotations = {
             inherit clusterName machineName;
@@ -168,19 +168,20 @@ let
               codeName = machineConfig.nixosConfiguration.config.system.nixos.codeName;
               kernelVersion = machineConfig.nixosConfiguration.config.boot.kernelPackages.kernel.version;
             };
-          };
+          }
+          // machineConfig.annotations; # merge user defined annotations
         }
       );
-      serviceAnnotation = update.services machineAnnotaion (
+      serviceAnnotation = update.services machineAnnotation (
         clusterName: serviceName: serviceConfig: {
           annotations.selectors = lists.forEach (filters.resolveAnnotations serviceConfig.selectors
             clusterName
-            machineAnnotaion
+            machineAnnotation
           ) (annotation: annotation.machineName);
           annotations.roles = (
             forEachAttrIn serviceConfig.roles (
               roleName: role:
-              (lists.forEach (filters.resolveAnnotations role clusterName machineAnnotaion) (
+              (lists.forEach (filters.resolveAnnotations role clusterName machineAnnotation) (
                 annotation: annotation.machineName
               ))
             )
@@ -205,7 +206,7 @@ let
   # - cluster annotations: fqdn, all ips, all machine names + fqdns, all service names, service selectors per service
   # maybe define cluster groups in the same way as services und users
 
-  # a function that builds and evaluates the clusterconfig to apply directly on the cluster definition
+  # a function that builds and evaluates the clusterConfig to apply directly on the cluster definition
   buildCluster =
     config:
     let
@@ -228,22 +229,33 @@ let
       # - the used IP addresses
       # - the FQDN
       # - resolved filters
-      evalAnnotatedCluser = annotate machineEvaluatedCluster;
+      evalAnnotatedCluster = annotate machineEvaluatedCluster;
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)
-      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluser evalAnnotatedCluser.extensions.moduleTransformations;
+      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluster evalAnnotatedCluster.extensions.moduleTransformations;
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
       nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
+
+      # TODO: Consider another extension step
+      # Reasoning: In the previous extension step (moduleTransformations) the nixos configuration of each machine
+      # is missing the service modules.
+      # If we want to add transformations that depend on the final nixos configuration (including services),
+      # we need another evaluation and extension step here.
+      # Example: I thought about a kubernetes option that includes all node labels from all nodes in the cluster.
+      # If the labels are defined in the service module itself (domain.cluster.{clustername}.services.{servicename} which is logically possible) the definition is not considered in Step 6.
+      # However, if we add a transformation (extensions.XXXTransformation) and an additional evaluation (evalMachines) the service modules are part of the configuration during the transformation.
+      # During this transformation the configuration of all machines can be read again und the labels can be collected and added to the resulting configuration.
+      # This way we can add additional configurations based on machine states that consider service modules as well.
 
       # Step 7:
       # Transformations to add packages for deployment scripts and other tools
       deploymentAnnotatedCluster = applyClusterTransformations nixosConfiguredCluster nixosConfiguredCluster.extensions.deploymentTransformations;
 
       # Step 8:
-      # Transfromations to generate cluster information
+      # Transformations to generate cluster information
       infoAnnotatedCluster = applyClusterTransformations deploymentAnnotatedCluster deploymentAnnotatedCluster.extensions.infoTransformations;
 
     in

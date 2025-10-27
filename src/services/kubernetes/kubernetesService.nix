@@ -35,6 +35,14 @@ in
 
   ###############################################
   imports = [
+    (import ./addons {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
     (import ./certificates.nix {
       inherit
         clusterInfo

@@ -11,9 +11,9 @@ let
 
   # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
   # This includes:
-  # - Hostnames: networking.hostname is set to the name of the machiene definition
-  # - DomainName: networkinig.domain is set to clusterName.domainSuffix
-  # - Hostplattform: pkgs.hostPlattform is set to the configured system in the machine configuration
+  # - HostNames: networking.hostname is set to the name of the machine definition
+  # - DomainName: networking.domain is set to clusterName.domainSuffix
+  # - HostPlatform: pkgs.hostPlatform is set to the configured system in the machine configuration
   # - UserDefinitions: users.users is set with information from cluster-users and machine-users
   clusterAnnotation =
     config:

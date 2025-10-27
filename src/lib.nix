@@ -223,6 +223,8 @@ let
         )
       );
 
+    clusterMachines = config: clusterName: config.domain.clusters."${clusterName}".machines;
+
     # Take a clusterConfig and return an essential representation that is serializable.
     # The essential representation is build by taking the annotation attributes of the clusterConfig nodes.
     clusterInfo =
@@ -258,7 +260,7 @@ let
 
   };
 
-  # change the attributes on a clusterConfig level, keep unmentiopned values
+  # change the attributes on a clusterConfig level, keep unmentioned values
   update = {
 
     # updateClustersFn = clusterName -> clusterConfig -> clusterConfig

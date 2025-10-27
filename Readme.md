@@ -137,7 +137,7 @@ Services are copied to all machines that match the filter of the services `selec
 
 1. The NixOsConfiguration for all machines in the cluster configuration is built for the first time
 2. The `annotations` attribute for machines (and other clusterConfig elements) is generated based on the cluster config and the machines NixOsConfigurations
-3. The selector filters are resolved and the entire service is copied to the machines at the resolved cluster config path
+3. The selector filters are resolved and the entire service is copied to the selected machines at the resolved cluster config path
 4. The roles are resolved to cluster elements
 5. The service closure in the `definition` attribute is called with the `annotations` attributes from the resolved selectors, roles and the current machine configuration (in the `this` argument)
 6. The NixOsConfigurations are build for a second time
