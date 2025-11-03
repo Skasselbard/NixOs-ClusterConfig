@@ -29,3 +29,8 @@
 
 ## Used Machine Annotations
 - kubernetes.nodeLabels -> these labels will be added to the node if this machines is registered by kubelet as node (by the addon manager).
+
+# High availability services
+- (Red Hat tutorial loadbalancing)[https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/load_balancer_administration/index]
+- HaProxy -> failover for software downtimes
+- keepalived -> failover for hardware downtimes

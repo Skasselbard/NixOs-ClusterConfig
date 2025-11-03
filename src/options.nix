@@ -148,14 +148,43 @@ let
 
   machineType = {
     options = {
-      annotations = mkOption {
-        description = "A set of annotations for the machine that can be used in service definitions.";
-        type = attrsOf raw;
-        default = { };
-        example = {
-          globalAnnotation = "myValue";
-          serviceName.importantInfo = {
-            InfoKey = "Please document this annotation in your cluster module documentation.";
+      annotations = {
+        clusterName = mkOption {
+          description = "The name of the cluster this machine belongs to. Automatically populated from the cluster definition.";
+          type = str;
+          example = "example.com";
+        };
+        machineName = mkOption {
+          description = "The name of the machine within the cluster. Automatically populated from the attribute name in the machines definition.";
+          type = str;
+          example = "node1";
+        };
+        ips = mkOption {
+          description = "A list of ip addresses assigned to the machine. Automatically populated with static ip addresses from the networking configuration.";
+          type = attrsOf raw;
+          default = { };
+        };
+        fqdn = mkOption {
+          description = "The fully qualified domain name of the machine. Automatically populated from the cluster configuration.";
+          type = str;
+          example = "node1.example.com";
+        };
+        # serviceAddresses = lists.forEach machineConfig.serviceAddresses (entry: entry.tag);
+        nixos = {
+          release = mkOption {
+            description = "The NixOS release of the machine. Automatically populated from the nixos configuration.";
+            type = str;
+            example = "23.05";
+          };
+          codeName = mkOption {
+            description = "The NixOS code name of the machine. Automatically populated from the nixos configuration.";
+            type = str;
+            example = "Warbler";
+          };
+          kernelVersion = mkOption {
+            description = "The kernel version of the machine. Automatically populated from the nixos configuration.";
+            type = str;
+            example = "6.12.51";
           };
         };
       };

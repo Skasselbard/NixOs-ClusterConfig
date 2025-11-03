@@ -376,6 +376,51 @@ let
       );
   };
 
+  # Defines a machine annotation.
+  # AnnotationPath is a '.' separated path or name of the annotation
+  # all other options are the same as in lib.mkOption
+  mkAnnotation =
+    {
+      annotationPath,
+      default ? null,
+      defaultText ? null,
+      example ? null,
+      description ? null,
+      relatedPackages ? null,
+      type ? null,
+      apply ? null,
+      internal ? null,
+      visible ? null,
+      readOnly ? null,
+    }:
+    let
+      annotatedMachineType = {
+        options = {
+          annotations = lib.attrsets.setAttrByPath (lib.splitString "." annotationPath) (
+            lib.mkOption (
+              lib.filterAttrs (n: v: v != null) {
+                inherit
+                  default
+                  defaultText
+                  example
+                  description
+                  relatedPackages
+                  type
+                  apply
+                  internal
+                  visible
+                  readOnly
+                  ;
+              }
+            )
+          );
+        };
+      };
+    in
+    {
+      domain = domainType { clusterType = clusterType { machineType = annotatedMachineType; }; };
+    };
+
   #############
   # Type stubs that can be extended
 
@@ -443,6 +488,7 @@ in
     get
     ip
     machineType
+    mkAnnotation
     overwrite
     update
     ;

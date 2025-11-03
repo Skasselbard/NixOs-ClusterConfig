@@ -158,7 +158,7 @@ let
       );
       machineAnnotation = update.machines clusterAnnotation (
         clusterName: machineName: machineConfig: {
-          annotations = {
+          annotations = lib.mergeAttrs machineConfig.annotations {
             inherit clusterName machineName;
             ips = get.ips machineConfig.nixosConfiguration;
             fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
@@ -168,8 +168,7 @@ let
               codeName = machineConfig.nixosConfiguration.config.system.nixos.codeName;
               kernelVersion = machineConfig.nixosConfiguration.config.boot.kernelPackages.kernel.version;
             };
-          }
-          // machineConfig.annotations; # merge user defined annotations
+          }; # merge user defined annotations
         }
       );
       serviceAnnotation = update.services machineAnnotation (
