@@ -9,7 +9,8 @@ let
 
   getEtcdList = roles: if roles ? etcd && roles.etcd != [ ] then roles.etcd else roles.controlPlane;
   getControlPlaneList = roles: roles.controlPlane;
-  getWorkerList = roles: if roles ? worker && roles.worker != [ ] then roles.worker else [ ];
+  getWorkerList = roles: roles.worker or [ ];
+  getRoleNodes = roles: role: roles."${role}" or [ ];
 
   getControlPlaneIps =
     roles: flatten (map (machine: parseRealIps machine.ips) (getControlPlaneList roles));
@@ -39,6 +40,8 @@ in
     getControlPlaneList
     getControlPlaneIps
     getControlPlaneFqdns
+
+    getRoleNodes
 
     getWorkerList
     ;

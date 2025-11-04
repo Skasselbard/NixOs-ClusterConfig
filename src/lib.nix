@@ -421,6 +421,42 @@ let
       domain = domainType { clusterType = clusterType { machineType = annotatedMachineType; }; };
     };
 
+  # like mkAnnotation but taking multiple definitions as list
+  mkAnnotations =
+    annotations:
+    let
+      # Create one attrset per annotation
+      annotationAttrs = map (
+        annotation:
+        lib.attrsets.setAttrByPath (lib.splitString "." annotation.annotationPath) (
+          lib.mkOption (
+            lib.filterAttrs (n: v: v != null) {
+              default = annotation.default or null;
+              defaultText = annotation.defaultText or null;
+              example = annotation.example or null;
+              description = annotation.description or null;
+              relatedPackages = annotation.relatedPackages or null;
+              type = annotation.type or null;
+              apply = annotation.apply or null;
+              internal = annotation.internal or null;
+              visible = annotation.visible or null;
+              readOnly = annotation.readOnly or null;
+            }
+          )
+        )
+      ) annotations;
+
+      # Merge all generated attrsets together
+      options.annotations = lib.foldl' lib.recursiveUpdate { } annotationAttrs;
+
+      annotatedMachineType = {
+        inherit options;
+      };
+    in
+    {
+      domain = domainType { clusterType = clusterType { machineType = annotatedMachineType; }; };
+    };
+
   #############
   # Type stubs that can be extended
 
@@ -489,6 +525,7 @@ in
     ip
     machineType
     mkAnnotation
+    mkAnnotations
     overwrite
     update
     ;
