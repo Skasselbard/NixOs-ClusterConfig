@@ -9,8 +9,16 @@ let
   add = clusterlib.add;
   filters = clusterlib.filters;
 
-  forEach = lib.lists.forEach;
-  concatStringsSep = lib.strings.concatStringsSep;
+  options = clusterlib.mkAnnotation {
+    annotationPath = "kubernetes.nodeLabels";
+    description = "A set of labels that will be added to the node when registered in the kubernetes cluster.";
+    type = lib.types.attrsOf lib.types.str;
+    default = { };
+    example = {
+      "environment" = "production";
+      "zone" = "us-west-1a";
+    };
+  };
 
   deploymentAnnotation =
     config:
@@ -164,7 +172,9 @@ let
 
     in
     kubernetesScripts;
+
 in
 {
+  options.domain = options.domain; # For some reason, setting options directly (inherit options;) triggers an infinite recursion
   config.extensions.deploymentTransformations = [ deploymentAnnotation ];
 }
