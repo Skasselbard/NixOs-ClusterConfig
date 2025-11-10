@@ -104,6 +104,9 @@
                     in
                     {
                       services.kubernetes.cluster = {
+                        # This will configure keepalived to setup a ha endpoint for the cluster
+                        # The keepalived master server will assume this address, but when it is unreachable, a backup server will fail over.
+                        virtualIps = [ "192.168.122.210" ];
 
                         # Used to self sign tls certificates for https communication
                         certificates.generation = {
@@ -279,15 +282,22 @@
 
                 vm0 = {
                   inherit system;
+
                   annotations = {
                     kubernetes.nodeLabels = {
                       "cluster.example.com/LOCALTestLabel" = "vm0";
                     };
+                    kubernetes.keepalived = {
+                      virtualIpInterface = "eth0";
+                      # priority = 236;
+                    };
                   };
+
                   deployment = {
                     targetHost = "192.168.122.200";
                     formatScript = "disko"; # format vms on recreation
                   };
+
                   nixosModules = [
                     machines.vm0
                     # since the vms use disko for mounting, we still need to include the NixOs module
@@ -297,15 +307,22 @@
 
                 vm1 = {
                   inherit system;
+
                   annotations = {
                     kubernetes.nodeLabels = {
                       "cluster.example.com/LOCALTestLabel" = "vm1";
                     };
+                    kubernetes.keepalived = {
+                      virtualIpInterface = "eth0";
+                      # priority = 234;
+                    };
                   };
+
                   deployment = {
                     targetHost = "192.168.122.201";
                     formatScript = "disko"; # format vms on recreation
                   };
+
                   nixosModules = [
                     machines.vm1
                     inputs.disko.nixosModules.default
@@ -314,10 +331,19 @@
 
                 vm2 = {
                   inherit system;
+
+                  annotations = {
+
+                    kubernetes.keepalived = {
+                      virtualIpInterface = "eth0";
+                    };
+                  };
+
                   deployment = {
                     targetHost = "192.168.122.202";
                     formatScript = "disko"; # format vms on recreation
                   };
+
                   nixosModules = [
                     machines.vm2
                     inputs.disko.nixosModules.default

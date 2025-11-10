@@ -376,52 +376,23 @@ let
       );
   };
 
-  # Defines a machine annotation.
+  # Defines a list machine annotations.
   # AnnotationPath is a '.' separated path or name of the annotation
   # all other options are the same as in lib.mkOption
-  mkAnnotation =
-    {
-      annotationPath,
-      default ? null,
-      defaultText ? null,
-      example ? null,
-      description ? null,
-      relatedPackages ? null,
-      type ? null,
-      apply ? null,
-      internal ? null,
-      visible ? null,
-      readOnly ? null,
-    }:
-    let
-      annotatedMachineType = {
-        options = {
-          annotations = lib.attrsets.setAttrByPath (lib.splitString "." annotationPath) (
-            lib.mkOption (
-              lib.filterAttrs (n: v: v != null) {
-                inherit
-                  default
-                  defaultText
-                  example
-                  description
-                  relatedPackages
-                  type
-                  apply
-                  internal
-                  visible
-                  readOnly
-                  ;
-              }
-            )
-          );
-        };
-      };
-    in
-    {
-      domain = domainType { clusterType = clusterType { machineType = annotatedMachineType; }; };
-    };
-
-  # like mkAnnotation but taking multiple definitions as list
+  # example:
+  # options = clusterlib.mkAnnotations [
+  #   {
+  #     annotationPath = "kubernetes.nodeLabels";
+  #     description = "A set of labels that will be added to the node when registered in the kubernetes cluster.";
+  #     type = lib.types.attrsOf lib.types.str;
+  #     default = { };
+  #   }
+  #   {
+  #     annotationPath = "kubernetes.keepalived.publicNatInterfaces";
+  #     type = lib.types.listOf lib.types.str;
+  #     default = [ ];
+  #   }
+  # ];
   mkAnnotations =
     annotations:
     let
@@ -429,20 +400,7 @@ let
       annotationAttrs = map (
         annotation:
         lib.attrsets.setAttrByPath (lib.splitString "." annotation.annotationPath) (
-          lib.mkOption (
-            lib.filterAttrs (n: v: v != null) {
-              default = annotation.default or null;
-              defaultText = annotation.defaultText or null;
-              example = annotation.example or null;
-              description = annotation.description or null;
-              relatedPackages = annotation.relatedPackages or null;
-              type = annotation.type or null;
-              apply = annotation.apply or null;
-              internal = annotation.internal or null;
-              visible = annotation.visible or null;
-              readOnly = annotation.readOnly or null;
-            }
-          )
+          lib.mkOption (removeAttrs annotation [ "annotationPath" ])
         )
       ) annotations;
 
@@ -524,7 +482,6 @@ in
     get
     ip
     machineType
-    mkAnnotation
     mkAnnotations
     overwrite
     update

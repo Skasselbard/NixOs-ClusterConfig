@@ -9,16 +9,52 @@ let
   add = clusterlib.add;
   filters = clusterlib.filters;
 
-  options = clusterlib.mkAnnotation {
-    annotationPath = "kubernetes.nodeLabels";
-    description = "A set of labels that will be added to the node when registered in the kubernetes cluster.";
-    type = lib.types.attrsOf lib.types.str;
-    default = { };
-    example = {
-      "environment" = "production";
-      "zone" = "us-west-1a";
-    };
-  };
+  options = clusterlib.mkAnnotations [
+    {
+      annotationPath = "kubernetes.nodeLabels";
+      description = "A set of labels that will be added to the node when registered in the kubernetes cluster.";
+      type = lib.types.attrsOf lib.types.str;
+      default = { };
+      example = {
+        "environment" = "production";
+        "zone" = "us-west-1a";
+      };
+    }
+    {
+      annotationPath = "kubernetes.keepalived.virtualIpInterface";
+      description = ''
+        The Interfaces that will be used for Virtual Address assignment.
+
+        If left empty for a machine with the keepalived role an error will be raised.
+      '';
+      type = lib.types.str;
+      example = "eth0";
+      default = "";
+    }
+    {
+      annotationPath = "kubernetes.keepalived.priority";
+      description = ''
+        The priority of the virtual router.
+
+        The router with the highest priority will be the master of the keepalived cluster and assume the virtual IP.
+        Routers with lesser priority will be used as backup.
+        The priorities for each machine should be different.
+        The highest priority is 255 ond the lowest is 0.
+
+        Machines without an annotated priority but with the keepalived role will be assigned with a free priority beginning by 255
+        and decreasing for the next machines in order of the role definition.
+      '';
+      type = lib.types.nullOr lib.types.int;
+      default = null;
+      example = 253;
+      apply =
+        value:
+        if value != null && (value < 0 || value > 255) then
+          throw "services.keepalived.priority must be between 0 and 255 (got ${toString value})"
+        else
+          value;
+    }
+  ];
 
   deploymentAnnotation =
     config:

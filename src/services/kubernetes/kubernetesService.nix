@@ -31,6 +31,20 @@ in
       default = "kubernetes." + clusterInfo.fqdn;
     };
 
+    virtualIps = mkOption {
+      description = ''
+        A list of IP addresses the cluster should be available on.
+
+        You can add a netmask suffix to the ip.
+      '';
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [
+        "10.0.0.1"
+        "192.168.200.20/24"
+      ];
+    };
+
   };
 
   ###############################################
@@ -91,6 +105,14 @@ in
         this
         ;
     })
+    (import ./keepalived.nix {
+      inherit
+        clusterInfo
+        selectors
+        roles
+        this
+        ;
+    })
     (import ./kubelet/kubelet.nix {
       inherit
         clusterInfo
@@ -111,9 +133,6 @@ in
     in
 
     {
-      # TODO: Validation
-      # check if controlPlane role is empty
-
       environment.systemPackages = with pkgs; [
         kubernetes
         certstrap
