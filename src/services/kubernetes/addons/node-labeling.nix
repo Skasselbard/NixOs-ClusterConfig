@@ -97,7 +97,14 @@ in
                       "components.cluster.nixos.org/scheduler" = if nodeIsControlPlane then "true" else "false";
                       "components.cluster.nixos.org/controller-manager" = if nodeIsControlPlane then "true" else "false";
                       "components.cluster.nixos.org/api-server" = if nodeIsControlPlane then "true" else "false";
-                      "components.cluster.nixos.org/haproxy" = "true";
+                      # "components.cluster.nixos.org/haproxy" = "true";
+                      # "components.cluster.nixos.org/keepalived" = "true";
+
+
+                      # TODO:
+                      # keepalived cluster address
+                      # keepalived priority
+                      # keepalived interface
 
                       # Give the kubernetes addon manager the ability to manage this resource
                       "addonmanager.kubernetes.io/mode" = "Reconcile";

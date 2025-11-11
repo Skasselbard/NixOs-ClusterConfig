@@ -1,4 +1,5 @@
 {
+  clusterFqdn,
   control-plane-config,
   controlPlaneMachines,
   workerMachines,
@@ -84,10 +85,15 @@ let
           kubernetesGroup = "system:masters";
           passPhrase = "";
         };
-        apiserver = {
+        apiserver = lib.debug.traceSeqN 4 clusterFqdn {
           name = "apiserver";
-          domains = [ "localhost" ] ++ control-plane-fqdn-list;
-          ips = [ "127.0.0.1" ] ++ control-plane-ip-list;
+          domains = [
+            "localhost"
+            "kubernetes"
+            "kubernetes.${clusterFqdn}"
+          ]
+          ++ control-plane-fqdn-list;
+          ips = [ "127.0.0.1" ] ++ control-plane-ip-list ++ cfg.cluster.virtualIps;
           passPhrase = "";
         };
       }

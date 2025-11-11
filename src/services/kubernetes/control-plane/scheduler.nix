@@ -32,7 +32,7 @@ in
       certFile = cfg.certificates.schedulerCertFile.targetPath;
       keyFile = cfg.certificates.schedulerKeyFile.targetPath;
       # TODO: use kubernetes fqdn as server
-      server = mkUrl apiServerPort (builtins.head (kubeLib.getControlPlaneFqdns roles));
+      server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
     };
 
   };

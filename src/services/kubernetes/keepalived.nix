@@ -13,6 +13,9 @@
 let
   kubeLib = import ./kubelib.nix { inherit lib; };
 
+  flatten = lib.lists.flatten;
+  forEach = lib.lists.forEach;
+
   cfg = config.services.kubernetes.cluster;
 
   keepalivedNodeList = kubeLib.getControlPlaneList roles;
@@ -84,6 +87,11 @@ let
   interface = assignKeepalivedPriorities."${this.machineName}".virtualIpInterface;
   virtualIps = map (ip: { addr = ip; }) cfg.virtualIps;
 
+  hostsEntryList = flatten (
+    forEach cfg.virtualIps (ip: "${ip} kubernetes.${clusterInfo.fqdn} kubernetes k8s")
+  );
+  hostsEntries = (builtins.concatStringsSep "\n" hostsEntryList);
+
 in
 {
 
@@ -114,5 +122,8 @@ in
   boot.kernel.sysctl."net.ipv4.ip_nonlocal_bind" = lib.mkDefault true;
   boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault true;
 
-  # networking.firewall.allowedTCPPorts = [ 443 ];
+  # Adds the virtual Ips to the hosts file with the hostnames: 'kubernetes.${clusterInfo.fqdn}', 'kubernetes' and 'k8s'
+  # Does only work with the first ip from the virtual ip list
+  networking.extraHosts =
+    if config.services.keepalived.enable then hostsEntries else lib.mkDefault "";
 }

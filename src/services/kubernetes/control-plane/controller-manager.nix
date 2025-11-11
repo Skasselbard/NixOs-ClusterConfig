@@ -31,7 +31,7 @@ in
       caFile = cfg.certificates.caCertFile.targetPath;
       certFile = cfg.certificates.controllerManagerCertFile.targetPath;
       keyFile = cfg.certificates.controllerManagerKeyFile.targetPath;
-      server = mkUrl apiServerPort (builtins.head (kubeLib.getControlPlaneFqdns roles));
+      server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
     };
 
     serviceAccountKeyFile = cfg.certificates.saKeyFile.targetPath;

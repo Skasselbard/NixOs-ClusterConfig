@@ -65,6 +65,7 @@ let
         let
           # get the attrset of the current cluster
           cluster = config.domain.clusters.${clusterName};
+          clusterFqdn = cluster.fqdn;
           # get all machines selected by the kubernetes service definition
           kubernetesMachines =
             filters.resolveDefinitions cluster.services.kubernetes.selectors clusterName
@@ -101,6 +102,7 @@ let
               controlPlaneMachines
               workerMachines
               etcdMachines
+              clusterFqdn
               ;
             control-plane-config = firstMachine.nixosConfiguration.config;
           };
@@ -169,7 +171,7 @@ let
               if clusterConfig.services ? kubernetes then
                 if controlPlaneMachines != [ ] then
                   let
-                    apiServer = firstMachine.annotations.fqdn;
+                    apiServer = "kubernetes.${cluster.fqdn}";
                   in
                   (pkgs.writeShellScriptBin "createKubeConfigs" ''
                     mkdir -p certs

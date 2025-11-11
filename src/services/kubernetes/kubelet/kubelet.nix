@@ -21,7 +21,7 @@ let
 
   #############################
   # Helper Functions
-  mkUrls = kubeLib.mkUrls;
+  mkUrl = kubeLib.mkUrl;
 
   # If the node is a controlplane node but not a worker node, mark it as unschedulable
   unschedulable =
@@ -43,7 +43,7 @@ in
         caFile = cfg.certificates.caCertFile.targetPath;
         certFile = cfg.certificates.kubeletCertFile.targetPath;
         keyFile = cfg.certificates.kubeletKeyFile.targetPath;
-        server = builtins.head (mkUrls apiServerPort (map (node: node.fqdn) controlPlaneNodeList));
+        server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
       };
     };
 
