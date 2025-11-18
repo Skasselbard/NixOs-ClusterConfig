@@ -8,6 +8,7 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 
@@ -24,11 +25,16 @@ let
           ;
       }
       {
-        inherit config lib pkgs;
+        inherit
+          config
+          lib
+          pkgs
+          kubeLib
+          ;
       }
   );
 in
-{
+lib.mkIf mappedClusterConfig.enable {
 
   networking.firewall.allowedTCPPorts = [ config.services.kubernetes.apiserver.securePort ];
 

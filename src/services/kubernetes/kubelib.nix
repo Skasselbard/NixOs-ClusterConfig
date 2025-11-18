@@ -1,4 +1,9 @@
-{ lib }:
+{
+  pkgs,
+  lib,
+  nixhelm,
+  nix-kube-generators,
+}:
 let
   remove = lib.lists.remove;
   flatten = lib.lists.flatten;
@@ -27,22 +32,59 @@ let
     in
     remove "dhcp" ipList;
 
+  helm =
+    let
+      chartDownloads = nixhelm.charts { inherit pkgs; };
+      kubeGeneratorsLib = nix-kube-generators.lib { inherit pkgs; };
+    in
+    {
+      charts =
+        {
+          namespace ? null,
+          values ? { },
+          includeCRDs ? true,
+          kubeVersion ? "v${pkgs.kubernetes.version}",
+          apiVersions ? [ ],
+          extraHelmOpts ? [ ],
+        }:
+        lib.mapAttrs (
+          repo: repoCharts:
+          lib.mapAttrs (
+            chartName: _:
+            kubeGeneratorsLib.fromHelm {
+              inherit
+                namespace
+                values
+                includeCRDs
+                kubeVersion
+                apiVersions
+                ;
+              extraOpts = extraHelmOpts;
+              name = chartName;
+              chart = chartDownloads."${repo}"."${chartName}";
+            }
+          ) repoCharts
+        ) chartDownloads;
+    };
+
 in
 {
   inherit
     mkUrl
     mkUrls
 
-    getEtcdList
-    getEtcdIps
-    getEtcdFqdns
-
     getControlPlaneList
     getControlPlaneIps
     getControlPlaneFqdns
 
+    getEtcdList
+    getEtcdIps
+    getEtcdFqdns
+
     getRoleNodes
 
     getWorkerList
+
+    helm
     ;
 }

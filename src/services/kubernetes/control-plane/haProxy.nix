@@ -8,22 +8,23 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 
 let
-  kubeLib = import ./kubelib.nix { inherit lib; };
 
   cfg = config.services.kubernetes.cluster;
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;
   etcdNodeList = kubeLib.getEtcdList roles;
+
+  enable = (builtins.any (node: node.machineName == this.machineName) controlPlaneNodeList);
 
   apiServerPortBackend = config.services.kubernetes.apiserver.securePort;
   apiServerPortFrontend = 6443;
 
   etcdClientPortBackend = 2378;
   etcdClientPortFrontend = 2379;
-
 
   firewallPorts =
     (
@@ -44,7 +45,7 @@ let
     );
 
 in
-{
+lib.mkIf enable {
   # Open firewall conditionally for etcd and api-server ports
   networking.firewall.allowedTCPPorts = firewallPorts;
 

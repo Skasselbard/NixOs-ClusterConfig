@@ -8,11 +8,11 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 
 let
-  kubeLib = import ../kubelib.nix { inherit lib; };
 
   cfg = config.services.kubernetes.cluster;
 
@@ -68,10 +68,30 @@ in
                 nodeIsControlPlane = builtins.any (n: n.machineName == node.machineName) controlPlaneNodeList;
                 nodeIsEtcd = builtins.any (n: n.machineName == node.machineName) etcdNodeList;
                 nodeIsWorker = builtins.any (n: n.machineName == node.machineName) workerNodeList;
+                unschedulable = !nodeIsWorker;
               in
               {
                 apiVersion = "v1";
                 kind = "Node";
+                spec = {
+                  inherit unschedulable;
+                  taints =
+                    if unschedulable then
+                      [
+                        {
+                          effect = "NoSchedule";
+                          key = "unschedulable";
+                          value = if unschedulable then "true" else "false";
+                        }
+                        {
+                          effect = "NoSchedule";
+                          key = "node.kubernetes.io/unschedulable";
+                          value = "";
+                        }
+                      ]
+                    else
+                      [ ];
+                };
                 metadata = {
                   name = node.fqdn;
                   labels =
@@ -99,7 +119,6 @@ in
                       "components.cluster.nixos.org/api-server" = if nodeIsControlPlane then "true" else "false";
                       # "components.cluster.nixos.org/haproxy" = "true";
                       # "components.cluster.nixos.org/keepalived" = "true";
-
 
                       # TODO:
                       # keepalived cluster address

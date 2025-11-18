@@ -8,12 +8,11 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 
 let
-  kubeLib = import ../kubelib.nix { inherit lib; };
-
   clientRequestPort = 2378; # haProxy handles client requests on 2379
 
   clientRequestAdvertisementPort = 2379;

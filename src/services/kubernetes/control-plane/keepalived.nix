@@ -8,11 +8,10 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 let
-  kubeLib = import ./kubelib.nix { inherit lib; };
-
   flatten = lib.lists.flatten;
   forEach = lib.lists.forEach;
 
@@ -83,6 +82,8 @@ let
     in
     assign keepalivedNodeList freePriorities descending;
 
+  enable = (builtins.any (node: node.machineName == this.machineName) keepalivedNodeList);
+
   priority = assignKeepalivedPriorities."${this.machineName}".priority;
   interface = assignKeepalivedPriorities."${this.machineName}".virtualIpInterface;
   virtualIps = map (ip: { addr = ip; }) cfg.virtualIps;
@@ -96,7 +97,7 @@ in
 {
 
   services.keepalived = {
-    enable = config.services.kubernetes.apiserver.enable;
+    inherit enable;
     openFirewall = true;
 
     vrrpInstances.kubernetes = {
@@ -119,11 +120,10 @@ in
     };
   };
 
-  boot.kernel.sysctl."net.ipv4.ip_nonlocal_bind" = lib.mkDefault true;
-  boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault true;
+  boot.kernel.sysctl."net.ipv4.ip_nonlocal_bind" = lib.mkIf enable (lib.mkDefault true);
+  boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkIf enable (lib.mkDefault true);
 
   # Adds the virtual Ips to the hosts file with the hostnames: 'kubernetes.${clusterInfo.fqdn}', 'kubernetes' and 'k8s'
-  # Does only work with the first ip from the virtual ip list
-  networking.extraHosts =
-    if config.services.keepalived.enable then hostsEntries else lib.mkDefault "";
+  # Only uses the first ip from the virtual ip list due to hostsfile constraints
+  networking.extraHosts = hostsEntries;
 }

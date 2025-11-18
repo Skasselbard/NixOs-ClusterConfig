@@ -8,12 +8,11 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 
 let
-  kubeLib = import ../kubelib.nix { inherit lib; };
-
   cfg = config.services.kubernetes.cluster;
   apiServerPort = 6443;
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;
@@ -34,6 +33,8 @@ in
   config = {
     swapDevices = lib.mkForce [ ]; # disable swap
 
+    networking.firewall.allowedTCPPorts = [ config.services.kubernetes.kubelet.port ];
+
     services.kubernetes.kubelet = {
       enable = true;
       unschedulable = unschedulable;
@@ -45,9 +46,10 @@ in
         keyFile = cfg.certificates.kubeletKeyFile.targetPath;
         server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
       };
+      clientCaFile = cfg.certificates.caCertFile.targetPath;
     };
 
-    #   clusterDNS
+    # clusterDNS
     # # can
     # registerWithTaints
     # # may

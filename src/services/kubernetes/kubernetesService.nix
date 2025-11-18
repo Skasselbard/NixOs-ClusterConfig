@@ -8,6 +8,10 @@
   config,
   lib,
   pkgs,
+
+  # flake inputs from the cluster module
+  nixhelm,
+  nix-kube-generators,
   ...
 }:
 
@@ -97,7 +101,7 @@ in
         this
         ;
     })
-    (import ./haProxy.nix {
+    (import ./control-plane/haProxy.nix {
       inherit
         clusterInfo
         selectors
@@ -105,7 +109,7 @@ in
         this
         ;
     })
-    (import ./keepalived.nix {
+    (import ./control-plane/keepalived.nix {
       inherit
         clusterInfo
         selectors
@@ -126,16 +130,24 @@ in
   config =
 
     let
-      kubeLib = import ./kubelib.nix { inherit lib; };
-
       cfg = config.services.kubernetes;
-
     in
 
     {
+      _module.args = {
+        kubeLib = import ./kubelib.nix {
+          inherit
+            pkgs
+            lib
+            nix-kube-generators
+            nixhelm
+            ;
+        };
+      };
       environment.systemPackages = with pkgs; [
         kubernetes
         certstrap
+        cri-tools
         openssl
       ];
 

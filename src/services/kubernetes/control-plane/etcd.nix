@@ -8,6 +8,7 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 let
@@ -23,7 +24,12 @@ let
           ;
       }
       {
-        inherit config lib pkgs;
+        inherit
+          config
+          lib
+          pkgs
+          kubeLib
+          ;
       }
   );
 

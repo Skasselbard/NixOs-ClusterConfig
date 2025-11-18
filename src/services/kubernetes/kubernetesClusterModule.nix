@@ -2,12 +2,25 @@
   pkgs,
   clusterlib,
   lib,
+
+  # flake inputs
+  nixhelm,
+  nix-kube-generators,
   ...
 }:
 let
 
   add = clusterlib.add;
   filters = clusterlib.filters;
+
+  kubeLib = import ./kubelib.nix {
+    inherit
+      pkgs
+      lib
+      nix-kube-generators
+      nixhelm
+      ;
+  };
 
   options = clusterlib.mkAnnotations [
     {
@@ -56,6 +69,19 @@ let
     }
   ];
 
+  addFlakeInputs =
+    config:
+    add.nixosModule config (
+      _: _: _: {
+        _module.args = {
+          inherit # flake inputs needed for the kubeLib of the kubernetesService
+            nixhelm
+            nix-kube-generators
+            ;
+        };
+      }
+    );
+
   deploymentAnnotation =
     config:
     let
@@ -97,12 +123,14 @@ let
 
           certData-mapping = import ./control-plane/cert-data-mapper.nix {
             inherit
-              pkgs
-              lib
-              controlPlaneMachines
-              workerMachines
-              etcdMachines
               clusterFqdn
+              controlPlaneMachines
+              etcdMachines
+              kubeLib
+              lib
+              pkgs
+              workerMachines
+
               ;
             control-plane-config = firstMachine.nixosConfiguration.config;
           };
@@ -214,5 +242,6 @@ let
 in
 {
   options.domain = options.domain; # For some reason, setting options directly (inherit options;) triggers an infinite recursion
+  config.extensions.clusterTransformations = [ addFlakeInputs ];
   config.extensions.deploymentTransformations = [ deploymentAnnotation ];
 }

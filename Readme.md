@@ -158,7 +158,7 @@ In this step the clusterConfig itself is evaluated for the first and only time.
 - All Modules are resolved and included
 - All Options are checked
 - This step fails if a configuration is missing or has the wrong type
-- The following steps rewrite the cluster config, however, non of the rewriting will be evaluated again.
+- The following steps rewrite the cluster config, however, non of the rewriting will be evaluated again on the cluster level. Only the individual machine configs (normal nixOs configurations) will be evaluated in succeeding steps.
 
 ### 2. Cluster Transformation
 

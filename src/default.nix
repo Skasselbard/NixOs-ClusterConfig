@@ -1,9 +1,4 @@
-{
-  nixpkgs,
-  nixos-generators,
-  colmena,
-  flake-utils,
-}:
+{ flakeInputs }:
 
 # Notes:
 
@@ -21,7 +16,7 @@
 
 let # imports
 
-  pkgs = import nixpkgs {
+  pkgs = import flakeInputs.nixpkgs {
     # the exact value of 'system' should be unimportant since we only use lib
     # TODO: is the above statement still true?
     system = "x86_64-linux";
@@ -29,10 +24,12 @@ let # imports
 
   lib = pkgs.lib;
 
-  clusterlib = import ./lib.nix {
-    inherit nixpkgs flake-utils;
-    lib = pkgs.lib;
-  };
+  clusterlib =
+    with flakeInputs;
+    import ./lib.nix {
+      inherit nixpkgs flake-utils;
+      lib = pkgs.lib;
+    };
 
   filters = import ./filters.nix { lib = pkgs.lib; };
   add = clusterlib.add;
@@ -122,19 +119,16 @@ let
           config = {
             # make flake inputs available for submodules
             _module.args = {
-              colmena = lib.mkDefault colmena;
               clusterlib = clusterlib // {
                 inherit buildCluster filters;
               };
               inherit
                 pkgs
                 lib
-                nixpkgs
-                flake-utils
-                nixos-generators
                 filters
                 ;
-            };
+            }
+            // flakeInputs; # make all flake inputs available
             # set the domain attribute for evaluation
             domain = clusterConfig.domain;
           };

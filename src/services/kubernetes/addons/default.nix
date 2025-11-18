@@ -8,11 +8,11 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 
 let
-  kubeLib = import ../kubelib.nix { inherit lib; };
 
   cfg = config.services.kubernetes.cluster;
   apiServerPort = 6443;
@@ -33,6 +33,9 @@ let
 in
 {
   imports = [
+    ./cni
+    ./cni/cilium.nix
+
     (import ./node-labeling.nix
       {
         inherit
@@ -47,6 +50,7 @@ in
           config
           lib
           pkgs
+          kubeLib
           ;
       }
     )

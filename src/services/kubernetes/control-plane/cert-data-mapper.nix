@@ -5,12 +5,11 @@
   workerMachines,
   etcdMachines,
   pkgs,
+  kubeLib,
   lib,
   ...
 }:
 let
-  kubeLib = import ../kubelib.nix { inherit lib; };
-
   # get the config from the picked machines
   cfg = control-plane-config.services.kubernetes;
 
@@ -27,6 +26,7 @@ let
   etcd-fqdn-list = kubeLib.getEtcdFqdns { etcd = map (node: node.annotations) etcdMachines; };
 
   # CertData to configure: https://kubernetes.io/docs/setup/best-practices/certificates/
+  # https://kubernetes.io/docs/reference/setup-tools/kubeadm/implementation-details/#generate-the-necessary-certificates
   common-cert-data = {
     common = {
       org = cfg.cluster.certificates.generation.organization;
@@ -80,9 +80,14 @@ let
         passPhrase = "";
       };
       roles = {
-        admin = {
-          name = "admin";
+        super-admin = {
+          name = "kubernetes-super-admin";
           kubernetesGroup = "system:masters";
+          passPhrase = "";
+        };
+        admin = {
+          name = "kubernetes-admin";
+          kubernetesGroup = "kubeadm:cluster-admins";
           passPhrase = "";
         };
         apiserver = lib.debug.traceSeqN 4 clusterFqdn {
@@ -113,7 +118,8 @@ let
           {
             name = "kubelet-client-${machine.annotations.machineName}";
             value = {
-              name = "kubelet-client-${machine.annotations.machineName}";
+              name = "kube-apiserver-kubelet-client-${machine.annotations.machineName}";
+              kubernetesGroup = "system:masters";
               domains = [ ];
               ips = [ ];
               passPhrase = "";

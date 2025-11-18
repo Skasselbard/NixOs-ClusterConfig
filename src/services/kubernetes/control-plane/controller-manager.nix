@@ -8,13 +8,15 @@
   config,
   lib,
   pkgs,
+  kubeLib,
   ...
 }:
 let
-  kubeLib = import ../kubelib.nix { inherit lib; };
-
   cfg = config.services.kubernetes.cluster;
   apiServerPort = 6443;
+
+  controlPlaneNodeList = kubeLib.getControlPlaneList roles;
+  enable = (builtins.any (node: node.machineName == this.machineName) controlPlaneNodeList);
 
   #############################
   # Helper Functions
@@ -23,10 +25,11 @@ let
   mkUrl = kubeLib.mkUrl;
 
 in
-{
+lib.mkIf enable {
 
   services.kubernetes.controllerManager = {
     enable = true;
+    securePort = 10257;
     kubeconfig = {
       caFile = cfg.certificates.caCertFile.targetPath;
       certFile = cfg.certificates.controllerManagerCertFile.targetPath;
@@ -34,6 +37,7 @@ in
       server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
     };
 
+    rootCaFile = cfg.certificates.caCertFile.targetPath;
     serviceAccountKeyFile = cfg.certificates.saKeyFile.targetPath;
   };
 

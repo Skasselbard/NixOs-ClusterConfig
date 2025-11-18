@@ -31,6 +31,17 @@
     };
 
     flake-utils.url = "github:numtide/flake-utils";
+
+    # kubernetes
+    nix-kube-generators = {
+      url = "github:farcaller/nix-kube-generators";
+    };
+
+    nixhelm = {
+      url = "github:nix-community/nixhelm";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
   };
 
   outputs =
@@ -39,6 +50,8 @@
       nixpkgs,
       nixos-anywhere,
       nixos-generators,
+      nixhelm,
+      nix-kube-generators,
       home-manager,
       colmena,
       flake-utils,
@@ -54,12 +67,7 @@
 
       lib =
         (import "${self}/src" {
-          inherit
-            nixos-generators
-            nixpkgs
-            colmena
-            flake-utils
-            ;
+          flakeInputs = inputs;
         })
         // (import "${self}/src/lib.nix" { inherit lib nixpkgs flake-utils; });
 
@@ -87,9 +95,6 @@
         # since this commit https://github.com/nix-community/home-manager/commit/26e72d85e6fbda36bf2266f1447215501ec376fd
         home-manager = {
           imports = [ "${self}/src/modules/homeManager.nix" ];
-          _module.args = {
-            inherit home-manager;
-          };
         };
 
         # Makes a deployment script available (currently) for each machine
@@ -99,9 +104,6 @@
         # The currently running system will be overwritten.
         nixos-anywhere = {
           imports = [ "${self}/src/modules/nixosAnywhere.nix" ];
-          _module.args = {
-            inherit nixos-anywhere;
-          };
         };
 
         # Makes a colmena hive definition available under 'clusterConfig.colmena'.
@@ -109,9 +111,6 @@
         # 'nix run .#colmena [colmena-sub-cmd] -- [colmenaOptions]'
         colmena = {
           imports = [ "${self}/src/modules/colmena.nix" ];
-          _module.args = {
-            inherit colmena;
-          };
         };
 
         # Module to add scripts for vault initialization to the flake packages

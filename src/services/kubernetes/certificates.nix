@@ -159,6 +159,9 @@ in
     kubeletCertFile = certOptions "kubeletCertFile" "kubelet.crt";
     kubeletKeyFile = certOptions "kubeletKeyFile" "kubelet.key";
 
+    proxyCertFile = certOptions "proxyCertFile" "proxy.crt";
+    proxyKeyFile = certOptions "proxyKeyFile" "proxy.key";
+
     schedulerCertFile = certOptions "schedulerCertFile" "scheduler.crt";
     schedulerKeyFile = certOptions "schedulerKeyFile" "scheduler.key";
 
@@ -245,6 +248,14 @@ in
             permissions.publicRead
           )
           (lnk certs.kubeletKeyFile.targetPath certs.kubeletKeyFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.privateUser
+          )
+          (lnk certs.proxyCertFile.targetPath certs.proxyCertFile.sourcePath user.kubernetes
+            group.kubernetes
+            permissions.publicRead
+          )
+          (lnk certs.proxyKeyFile.targetPath certs.proxyKeyFile.sourcePath user.kubernetes
             group.kubernetes
             permissions.privateUser
           )
