@@ -1,17 +1,5 @@
 # NixOs-ClusterConfig
 
-TODO:
-- example
-  - minimal config
-  - embedding in a flake
-  - cmds to deploy
-- user handling
-- machine attribute sets
-- assumptions
-  - Hostnames are unique
-  - static ips are used
-- scripts to display concise cluster information
-- feature-list?
 
 ## What is it
 
@@ -23,21 +11,35 @@ TODO:
 - Extendable with modules to add configuration features or deployment packages
 - Scope: home cloud
 
+## Main features
+
+- Machine configuration for all cluster machines can be defined in "cluster services" without the need to edit every single machine
+  - cluster services can use cluster information to make than machine dependent (e.g. make the same service definition behave differently for master and worker machines)
+  - cluster services are copied as nixos modules to all selected machines to extend their configuration
+
+- cluster level scripts for deployment and other tasks without parameters
+  - cluster modules can define scripts that utilize cluster information
+  - using the cluster configuration, scripts can be generated with all variables included so you don't have to look up the information that is already defined somewhere else
+
+- extendable with NixOs style modules
+  - create own cluster modules for additional functionality like deployment scripts or cluster config inspection
+  - create own cluster services to deploy your own workloads
+
 ## Goals
 
-1. Create installation media for an initial machine setup
+1. Create installation media for the initial machine setup
 2. Deploy updates and change configuration remotely once the machines are initialized
 3. Keep the human interaction minimal in the process
 4. Do as much configuration declarative as possible
-5. Provide a minimal configuration for a K3s cluster on NixOS (as a ClusterConfig module)
+5. Provide a minimal configuration for a kubernetes cluster on NixOS (as a ClusterConfig module)
 
 ## Additional Features in ClusterConfig Modules or Tooling
 
 - partitioning with [disko](https://github.com/nix-community/disko)
 - static dns by generating ``hosts`` file entries for hosts with static ip addresses
-- (WIP) k3s kubernetes module (containerized)
-  - initialized with k3s manifest files
-  - Maybe: with configurable argocd (but probably only in an example manifest)
+- kubernetes module
+  - running the control plane as systemd units
+  - cilium as cni plugin (others can be contributed)
 - fixable versions with flakes
 - Maybe coming: Tooling to analyze the ClusterConfig (e.g. print host ips configuration or the configured services)
 
@@ -50,7 +52,7 @@ Others reflect personal taste.
 The following assumptions may be of interest:
 
 - You running a linux system (with nix installed) for deployment.
-- flakes are used is a central source of configuration
+- flakes are used as a central source of configuration
 - Hosts are accessible by ssh
 - The data on the installation medium is disposable and can be overwritten
 
@@ -60,7 +62,7 @@ The following assumptions may be of interest:
 
 - machines are pooled in a cluster
 - all clusters are pooled in a root domain
-- each machine in the hierarchy can be identified with a domain name  e.g.
+- each machine in the hierarchy can be identified with a domain name e.g.
   - short forms:
     - "host2"
     - "service1"
@@ -71,18 +73,19 @@ The following assumptions may be of interest:
 
 ### Filters
 
-- Filters are functions of the form `clusterName -> clusterConfig -> [clusterPath]`; they take a clusterName and a machineName and resolve them to a list of attribute paths describing clusterConfig elements.
+- Filters are functions of the form `clusterName -> clusterConfig -> [clusterPath]`; they take a clusterName and a machineName and resolve them to a list of attribute paths describing clusterConfig elements (until now, only machines can be filtered).
 - During clusterConfig evaluation this function is called and `resolved` to the list of elements
 - Filters can have more arguments to compute the cluster paths but the last two elements always have to be the cluster name and the clusterConfig, e.g. the hostname filter is a function that takes an additional hostname argument and returns a list with the single element `domain.clusters.${clusterName}.machines.${hostname}`
 
 ### Cluster Service
 
 - Machines configurations can be extended with the NixOs modules returned by the service closures
-- Services can target multiple hosts or effects multiple configurations
-- Machine that match the `filter` defined by the `selector` of a service will be extended by the service configuration.
+- Services can target multiple hosts and affect multiple configurations
+- Machines that match the `filter` defined by the `selector` of a service will be extended by the service configuration.
 ---
 - Services can have multiple `roles` e.g. primary and secondary hosts
   - roles are a set of named filters
+  - the resulting machine configuration can be dependent on the roles a machine is configured with
 
 #### Service Definition
 
