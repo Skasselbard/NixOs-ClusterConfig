@@ -7,7 +7,9 @@
 - Cluster Access from the internet
   - you should be able to extend the NixOS config for that purpose though
 - Certificate management
-  - you need to provide them on the machine but how they get there is up to you
+  - optional scripts to generate certificates are part of the cluster module
+  - you need to provide certificates on each machine but how they get there is up to you
+  - in the examples the ``secret-service`` cluster module is used, however, this is a proof of concept implementation; use it at your own risk
 - Updates (for now)
   - you decide when the cluster is ready for an update
   - you have to rotate certificates for your self
@@ -16,6 +18,7 @@
 
 ## Design Decisions
 - Kubernetes services like etcd, kubelet, etc. are running directly on the machine and are not containers by themselves
+- to achieve high availability, keepalived and haProxy are configured by default
 
 ## Default Values
 
@@ -26,11 +29,20 @@
 - create etcd certificates
   - certificates are security relevant, use the script at your own risk
   - run with ``nix run .#cluster.<clusterName>.kubernetes.createEtcdCertificates``
+- create a Certificate Authority for kubernetes
+  - ``nix run .#cluster.example.kubernetes.createK8sCA``
+- create certificates for all configured kubernetes roles
+  - ``.#cluster.example.kubernetes.createK8sCerts``
+- create a service account for kubernetes
+  - ``nix run .#cluster.example.kubernetes.createServiceAccount``
+- create kube configs for administration
+  - ``.#cluster.example.kubernetes.createKubeConfigs``
+- TODO: script to generate all of the above at once
 
 ## Service Roles
 - controlPlane: nodes running kubeservices (api-server, scheduler, controller manager, haProxy, keepalived) and etcd (if etcd role is not assigned).
 - etcd: nodes there etcd is running. If empty, etcd will be deployed on all control plane nodes
-- worker: nodes that can run workloads
+- worker: nodes that can run workloads; can be combined with control-plane role
 
 ## Configuration Options
 Documentation of the general relevant parameters to configure this cluster service
