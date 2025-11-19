@@ -59,7 +59,12 @@
 
         modules = [
           clusterConfigFlake.clusterConfigModules.default
+          # The secret-service module is used to deploy secrets for this example
+          # It gets the job done but in a production cluster you might want to use another solution or at least validate the security implications
           clusterConfigFlake.clusterConfigModules.secret-service
+          # Add the kubernetes module
+          # The module adds the certificate generation and makes flake dependencies available in the service config
+          # It also defines annotations for keepalived virtualIps and kubernetes node labels
           clusterConfigFlake.clusterConfigModules.kubernetes
         ];
 
@@ -82,27 +87,40 @@
                   definition = clusterConfigFlake.clusterServices.staticDns;
                 };
 
+                # Secret service to make secrets and certificates for the kubernetes service users available on the machines
                 secrets = {
                   selectors = [ filters.clusterMachines ];
                   definition = clusterConfigFlake.clusterServices.secret-service;
                 };
 
-                kubernetes = rec {
+                # Kubernetes service; look closely, thats why you are here :D
+                kubernetes = {
 
+                  # In this example we define one dedicated control plane node (vm0), one mixed control plane + worker node (vm1) and one dedicated worker node (vm2)
                   roles = {
+                    # these nodes run the control plane components and etcd
+                    # you can define an etcd role separately if you want to run etcd on dedicated nodes.
+                    # If no keepalived priority is defined in the machine annotations, the first node in the list will be the master for the virtual ip and the others will be backups in descending order.
                     controlPlane = [
                       (filters.hostname "vm0")
                       (filters.hostname "vm1")
                     ];
+                    # These nodes run the workloads
                     worker = [
                       (filters.hostname "vm1")
                       (filters.hostname "vm2")
                     ];
                   };
 
+                  # nodes to which the service is copied to
                   selectors = [ filters.clusterMachines ];
                   definition = clusterConfigFlake.clusterServices.kubernetes;
 
+                  # You can add extra configuration to the kubernetes service module here
+                  # In theory you could e.g. overwrite and disable high-availability services (keepalived and ha proxy) here if you don't ned them, however, this is not tested
+                  # If you keep the high-availability services, make sure to adjust the virtualIps below
+                  # The other configuration here is required to make the certificates work and to deploy them with the secret-service.
+                  # If you bring and deploy your own certificates, you can skip that part.
                   extraConfig =
                     { config, lib, ... }:
                     let
@@ -116,7 +134,7 @@
                         # The keepalived master server will assume this address, but when it is unreachable, a backup server will fail over.
                         virtualIps = [ "192.168.122.210" ];
 
-                        # Used to self sign tls certificates for https communication
+                        # Used to configure self sign tls certificates for https communication
                         certificates.generation = {
                           organizationUnit = "Demonstrations";
                           organization = "ExampleOrg";
@@ -127,7 +145,7 @@
 
                       };
 
-                      # configuring the secrets to deploy them with the secret-service cluster service
+                      # configuring the secrets to deploy the certificates with the secret-service cluster service
                       users.users = with config.services.kubernetes.cluster.certificates; {
                         etcd = lib.mkIf isEtcdMember {
                           secrets.file = {
@@ -291,13 +309,23 @@
                 vm0 = {
                   inherit system;
 
+                  # The kubernetes cluster module defines som machine annotations to setup keepalived and kubernetes node labels
+                  # Some of them are required to configure keepalived 
                   annotations = {
+                    kubernetes.keepalived = {
+                      # Required to configure the interface for the virtual ip.
+                      virtualIpInterface = "eth0";
+                      # You can define the priority here, the higher the value, the higher the priority.
+                      # Max value is 255.
+                      # The machine with the highest priority will be the master for the virtual ip.
+                      # If no priority is defined here, priorities will be assigned in order of the role definition beginning with 255; priorities that are already assigned for other nodes will be skipped.
+                      # priority = 236;
+                    };
+                    # You can define labels for kubernetes nodes here.
+                    # These labels will be added to the kubernetes node definition.
+                    # You can list them with ``kubectl get nodes --show-labels``
                     kubernetes.nodeLabels = {
                       "cluster.example.com/LOCALTestLabel" = "vm0";
-                    };
-                    kubernetes.keepalived = {
-                      virtualIpInterface = "eth0";
-                      # priority = 236;
                     };
                   };
 
