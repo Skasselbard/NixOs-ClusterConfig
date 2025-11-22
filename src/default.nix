@@ -114,11 +114,12 @@ let
         ./transformations.nix
         ./services.nix
         ./options.nix
+        ./extensionOptions.nix
         ./info.nix
         {
           config = {
-            # make flake inputs available for submodules
             _module.args = {
+              # make clusterlib available
               clusterlib = clusterlib // {
                 inherit buildCluster filters;
               };
@@ -126,9 +127,9 @@ let
                 pkgs
                 lib
                 filters
+                flakeInputs # make all flake inputs available
                 ;
-            }
-            // flakeInputs; # make all flake inputs available
+            };
             # set the domain attribute for evaluation
             domain = clusterConfig.domain;
           };
@@ -209,7 +210,7 @@ let
 
       # Step 2:
       # Transform the cluster configuration
-      clusterAnnotatedCluster = applyClusterTransformations evaluatedCluster evaluatedCluster.extensions.clusterTransformations;
+      clusterAnnotatedCluster = applyClusterTransformations evaluatedCluster evaluatedCluster.extensions.transformations.clusterTransformations;
 
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
@@ -226,7 +227,7 @@ let
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)
-      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluster evalAnnotatedCluster.extensions.moduleTransformations;
+      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluster evalAnnotatedCluster.extensions.transformations.moduleTransformations;
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
@@ -245,11 +246,11 @@ let
 
       # Step 7:
       # Transformations to add packages for deployment scripts and other tools
-      deploymentAnnotatedCluster = applyClusterTransformations nixosConfiguredCluster nixosConfiguredCluster.extensions.deploymentTransformations;
+      deploymentAnnotatedCluster = applyClusterTransformations nixosConfiguredCluster nixosConfiguredCluster.extensions.transformations.deploymentTransformations;
 
       # Step 8:
       # Transformations to generate cluster information
-      infoAnnotatedCluster = applyClusterTransformations deploymentAnnotatedCluster deploymentAnnotatedCluster.extensions.infoTransformations;
+      infoAnnotatedCluster = applyClusterTransformations deploymentAnnotatedCluster deploymentAnnotatedCluster.extensions.transformations.infoTransformations;
 
     in
     infoAnnotatedCluster;

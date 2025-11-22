@@ -184,29 +184,41 @@ let
 
     # build the resulting nixos modules for a service definition
     service =
-      config: clusterName: serviceDefinition: machineConfig:
+      config: clusterName: serviceName: serviceDefinition: machineConfig:
       let
-        selectors = (filters.resolveAnnotations serviceDefinition.selectors clusterName config);
+        serviceConfig = {
+          selectors = (filters.resolveAnnotations serviceDefinition.selectors clusterName config);
 
-        roles = (
-          forEachAttrIn serviceDefinition.roles (
-            roleName: role: (filters.resolveAnnotations role clusterName config)
-          )
-        );
+          roles = (
+            forEachAttrIn serviceDefinition.roles (
+              roleName: role: (filters.resolveAnnotations role clusterName config)
+            )
+          );
 
-        clusterInfo = (get.clusterInfo config).domain.clusters."${clusterName}";
+          clusterInfo = (get.clusterInfo config).domain.clusters."${clusterName}";
+
+          this = machineConfig.annotations;
+        };
 
       in
       # build the nixOs module defined by the service
       [
         serviceDefinition.extraConfig
 
-        # call the service definition with clusterInfo
-        (serviceDefinition.definition {
-          inherit selectors roles clusterInfo;
-          this = machineConfig.annotations;
-        })
+        # # call the service definition with clusterInfo
+        # (
+        #   with serviceConfig;
+        #   serviceDefinition.definition {
+        #     inherit selectors roles clusterInfo;
+        #     this = machineConfig.annotations;
+        #   }
+        # )
 
+        # add the service module
+        serviceDefinition.definition
+
+        # add service configuration to the config
+        { config.cluster.services."${serviceName}" = serviceConfig; }
       ];
   };
 
@@ -446,7 +458,7 @@ let
     {
       options = {
         users = mkOption { type = attrsOf (submodule userType); };
-        services = mkOption { type = attrsOf (submodule clusterServiceType); };
+        # services = mkOption { type = attrsOf (submodule clusterServiceType); };
         machines = mkOption { type = attrsOf (submodule machineType); };
       };
     };

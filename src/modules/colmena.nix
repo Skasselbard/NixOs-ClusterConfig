@@ -2,7 +2,7 @@
   lib,
   clusterlib,
   nixpkgs,
-  colmena,
+  flakeInputs,
   ...
 }:
 let
@@ -10,6 +10,8 @@ let
   get = clusterlib.get;
 
   attrsets = lib.attrsets;
+
+  colmena = flakeInputs.colmena;
 
   # Colmena options are already defined and used in the clusterConfig deployment options
   # Hopwever, to add our own deployment options to the colmena option preset, while still be able
@@ -60,5 +62,5 @@ in
   imports = [
     ../deployment.nix # explicitly load colmena options from deployment definition
   ];
-  config.extensions.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
 }

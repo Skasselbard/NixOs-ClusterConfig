@@ -2,7 +2,7 @@
   pkgs,
   lib,
   clusterlib,
-  flake-utils,
+  flakeInputs,
   ...
 }:
 
@@ -11,6 +11,8 @@ let
 
   get = clusterlib.get;
   add = clusterlib.add;
+
+  flake-utils = flakeInputs.flake-utils;
 
   eachSystem = flake-utils.lib.eachSystem;
   allSystems = flake-utils.lib.allSystems;
@@ -83,11 +85,11 @@ let
 
 in
 {
-  config.extensions.deploymentTransformations = [
+  config.extensions.transformations.deploymentTransformations = [
     appsAnnotation
     connectionAnnotation
   ];
-  config.extensions.infoTransformations = [
+  config.extensions.transformations.infoTransformations = [
     clusterInfoAnnotation
     packageAnnotation
   ];

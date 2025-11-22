@@ -121,5 +121,5 @@ let
     vaultScripts;
 in
 {
-  config.extensions.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
 }

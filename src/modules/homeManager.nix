@@ -1,7 +1,7 @@
 {
   lib,
-  home-manager,
   clusterlib,
+  flakeInputs,
   ...
 }:
 let
@@ -15,6 +15,8 @@ let
 
   listOf = lib.types.listOf;
   raw = lib.types.raw;
+
+  home-manager = flakeInputs.home-manager;
 
   # redefine types to nest submodules at the right place
   domainType = clusterlib.domainType { inherit clusterType; };
@@ -99,5 +101,5 @@ let
 in
 {
   options.domain = domainType;
-  config.extensions.clusterTransformations = [ homeManagerAnnotation ];
+  config.extensions.transformations.clusterTransformations = [ homeManagerAnnotation ];
 }

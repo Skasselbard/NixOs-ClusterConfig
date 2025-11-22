@@ -2,7 +2,6 @@
   pkgs,
   lib,
   clusterlib,
-  nixpkgs,
   ...
 }:
 let
@@ -211,7 +210,9 @@ let
 in
 {
   config.extensions = {
-    deploymentTransformations = [ deploymentAnnotation ];
+    transformations.deploymentTransformations = [ deploymentAnnotation ];
+    clusterServices.secrets = {
+      defaultModule = import ./secretService.nix;
+    };
   };
-
 }

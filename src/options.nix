@@ -1,4 +1,9 @@
-{ lib, ... }:
+{
+  config,
+  lib,
+  clusterlib,
+  ...
+}:
 
 let
 
@@ -13,72 +18,14 @@ let
   strMatching = lib.types.strMatching;
   submodule = lib.types.submodule;
 
-  extensionType = {
+  attrNames = lib.attrNames;
+  attrValues = lib.attrValues;
+  elem = builtins.elem;
+  all = builtins.all;
 
-    clusterTransformations = mkOption {
-      description = ''
-        A list of functions that takes a clusterConfig and returns a clusterConfig.
-
-        These functions get called after the first cluster evaluation.
-        In this step, information declared in the cluster options can be transformed and used for annotations.
-        The machine NixOsModules are unevaluated at this point.
-
-        For example, in this step, the default clusterConfig workflow takes the names of all defined machines
-        and sets the ``networking.hostname`` option for each machine.
-      '';
-      type = listOf raw;
-      default = [ ];
-    };
-
-    moduleTransformations = mkOption {
-      description = ''
-        A list of functions that takes a clusterConfig and returns a clusterConfig.
-
-        These functions get called after the NixOsConfiguration for each machine was evaluated for the first time
-        and the networking annotations (ips and fqdns) where set.
-        In this step, cluster and machine information can be used to modify the cluster config.
-        After this step, the NixOsModules for each machine will be evaluated once again.
-
-        For example, in this step, the default clusterConfig workflow takes the service and user configuration
-        from the cluster and adds them to the nixOsModules of each machine.
-      '';
-      type = listOf raw;
-      default = [ ];
-    };
-
-    deploymentTransformations = mkOption {
-      description = ''
-        A list of functions that takes a clusterConfig and returns a clusterConfig.
-
-        These functions get called after the NixOsConfiguration evaluation.
-        In this step, the cluster configuration can be annotated with additional scripts,
-        based on the NixOsConfiguration from each machine.
-
-        For example, in this step, the default clusterConfig workflow takes all machine configurations
-        and adds deployment attributes, like a nixosConfigurations attribute that can be used in a flakes,
-        to the configuration.
-      '';
-      type = listOf raw;
-      default = [ ];
-    };
-
-    infoTransformations = mkOption {
-      description = ''
-        A list of functions that takes a clusterConfig and returns a clusterConfig.
-
-        These functions get called after as a final evaluation.
-        In this step, the generated flake can be extended with information attributes.
-        These attributes should not alter the cluster configuration itself but only
-        extract information.
-
-        For example, in this step, the default clusterConfig workflow takes generates serializable
-        cluster information that can be printed out.
-      '';
-      type = listOf raw;
-      default = [ ];
-    };
-
-  };
+  forEach = lib.lists.forEach;
+  forEachAttrIn = clusterlib.forEachAttrIn;
+  listToAttrs = builtins.listToAttrs;
 
   domainType = {
     suffix = domainDefinitionType;
@@ -96,51 +43,55 @@ let
         type = attrsOf (submodule userType);
         default = { };
       };
-      services = mkOption {
-        description = "A list of services deployed on the cluster nodes."; # TODO: more details
-        type = attrsOf (submodule clusterServiceType);
-        default = { };
-      };
+      services = forEachAttrIn config.extensions.clusterServices (
+
+        serviceName: serviceDefinition: {
+          selectors = mkOption {
+            description = "A list of filters that resolve nixos machines"; # TODO: more details
+            type = listOf filterType;
+          };
+
+          roles = listToAttrs (
+            forEach serviceDefinition.roles (roleName: {
+              name = roleName;
+              value = mkOption {
+                description = "TODO:";
+                type = listOf filterType;
+                default = [ ];
+              };
+            })
+          );
+
+          definition = mkOption {
+            description = ''
+              Service definition
+
+              Has to be closure in the form 
+              { selectors, roles, this }:{
+                # configuration
+              }
+
+              TODO:
+            '';
+            type = raw;
+            default = serviceDefinition.defaultModule;
+          };
+
+          extraConfig = mkOption {
+            description = ''
+              Service extra configuration
+
+              Additional Configuration in the form of a normal NixOs module.
+            '';
+            type = raw;
+            default = { };
+          };
+        }
+      );
+
       machines = mkOption {
         description = "A list of NixOS machines that will generate a NixOs system config.";
         type = attrsOf (submodule machineType);
-        default = { };
-      };
-    };
-  };
-
-  clusterServiceType = {
-    options = {
-      selectors = mkOption {
-        description = "A list of filters that resolve nixos machines"; # TODO: more details
-        type = listOf filterType;
-      };
-      roles = mkOption {
-        description = "TODO:";
-        type = roleType;
-        default = { };
-      };
-      definition = mkOption {
-        description = ''
-          Service definition
-
-          Has to be closure in the form 
-          { selectors, roles, this }:{
-            # configuration
-          }
-
-
-          TODO:
-        '';
-        type = raw;
-      };
-      extraConfig = mkOption {
-        description = ''
-          Service extra configuration
-
-          Additional Configuration in the form of a normal NixOs module.
-        '';
-        type = raw;
         default = { };
       };
     };
@@ -309,7 +260,6 @@ let
   };
 
   virtualizationType = { };
-  roleType = attrsOf (listOf filterType);
 
   filterType = raw; # TODO:custom function type? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
 
@@ -320,7 +270,6 @@ let
 in
 {
   options = {
-    extensions = extensionType;
     domain = domainType;
   };
 }

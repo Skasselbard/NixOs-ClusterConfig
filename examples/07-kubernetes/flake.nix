@@ -66,6 +66,9 @@
           # The module adds the certificate generation and makes flake dependencies available in the service config
           # It also defines annotations for keepalived virtualIps and kubernetes node labels
           clusterConfigFlake.clusterConfigModules.kubernetes
+
+          # TODO: add to flake exports
+          ../../src/services/dns/clusterModule.nix
         ];
 
         domain = {
@@ -84,13 +87,11 @@
                 dns = {
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
-                  definition = clusterConfigFlake.clusterServices.staticDns;
                 };
 
                 # Secret service to make secrets and certificates for the kubernetes service users available on the machines
                 secrets = {
                   selectors = [ filters.clusterMachines ];
-                  definition = clusterConfigFlake.clusterServices.secret-service;
                 };
 
                 # Kubernetes service; look closely, thats why you are here :D
@@ -114,7 +115,6 @@
 
                   # nodes to which the service is copied to
                   selectors = [ filters.clusterMachines ];
-                  definition = clusterConfigFlake.clusterServices.kubernetes;
 
                   # You can add extra configuration to the kubernetes service module here
                   # In theory you could e.g. overwrite and disable high-availability services (keepalived and ha proxy) here if you don't ned them, however, this is not tested
@@ -310,7 +310,7 @@
                   inherit system;
 
                   # The kubernetes cluster module defines som machine annotations to setup keepalived and kubernetes node labels
-                  # Some of them are required to configure keepalived 
+                  # Some of them are required to configure keepalived
                   annotations = {
                     kubernetes.keepalived = {
                       # Required to configure the interface for the virtual ip.

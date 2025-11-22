@@ -35,6 +35,11 @@ let
         }
 
         {
+          # add options for the config that is set by the cluster config
+          imports = [ ./nixosOptions.nix ];
+        }
+
+        {
           # machine config
           networking.hostName = machineName;
           networking.domain = clusterName + "." + config.domain.suffix;
@@ -62,7 +67,7 @@ in
 {
 
   config.extensions = {
-    clusterTransformations = [ clusterAnnotation ];
+    transformations.clusterTransformations = [ clusterAnnotation ];
   };
 
 }

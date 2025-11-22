@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   config,
   lib,
   pkgs,
@@ -23,7 +17,9 @@ let
 
   mkOption = lib.mkOption;
 
-  # Expect a hosts role 
+  roles = config.cluster.services.dns.roles;
+
+  # Expect a hosts role
   hosts = roles.hosts;
 
   # get a list of ips excluding dhcp configurations

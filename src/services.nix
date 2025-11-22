@@ -54,7 +54,8 @@ let
       clusterName: machineName: machineConfig:
       let
         serviceModules = forEachAttrIn machineConfig.services (
-          serviceName: serviceDefinition: eval.service config clusterName serviceDefinition machineConfig
+          serviceName: serviceDefinition:
+          eval.service config clusterName serviceName serviceDefinition machineConfig
         );
       in
       lists.flatten (attrsets.attrValues serviceModules)
@@ -121,7 +122,7 @@ let
 in
 {
 
-  config.extensions = {
+  config.extensions.transformations = {
     clusterTransformations = [ clusterServiceToMachineServices ];
     moduleTransformations = [ machineServiceToNixOsConfiguration ];
     deploymentTransformations = [ serviceScriptsAnnotation ];

@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   lib,
   config,
   pkgs,

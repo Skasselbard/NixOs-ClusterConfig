@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   config,
   lib,
   pkgs,
@@ -20,6 +14,10 @@ let
   str = lib.types.str;
   mkOption = lib.mkOption;
 
+  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
+  selectors = config.cluster.services.kubernetes.selectors;
+  roles = config.cluster.services.kubernetes.roles;
+  this = config.cluster.services.kubernetes.this;
 in
 
 {
@@ -53,78 +51,16 @@ in
 
   ###############################################
   imports = [
-    (import ./addons {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./certificates.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./control-plane/etcd.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./control-plane/api-server.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./control-plane/controller-manager.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./control-plane/scheduler.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./control-plane/haProxy.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./control-plane/keepalived.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
-    (import ./kubelet/kubelet.nix {
-      inherit
-        clusterInfo
-        selectors
-        roles
-        this
-        ;
-    })
+    ./addons
+    ./certificates.nix
+    ./control-plane/etcd.nix
+    ./control-plane/api-server.nix
+    ./control-plane/controller-manager.nix
+    ./control-plane/scheduler.nix
+    ./control-plane/haProxy.nix
+    ./control-plane/keepalived.nix
+    ./kubelet/kubelet.nix
+    # ./kubeProxy.nix
   ];
 
   config =

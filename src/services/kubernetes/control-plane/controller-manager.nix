@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   config,
   lib,
   pkgs,
@@ -13,6 +7,12 @@
 }:
 let
   cfg = config.services.kubernetes.cluster;
+
+  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
+  selectors = config.cluster.services.kubernetes.selectors;
+  roles = config.cluster.services.kubernetes.roles;
+  this = config.cluster.services.kubernetes.this;
+
   apiServerPort = 6443;
 
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;

@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   config,
   lib,
   pkgs,
@@ -14,24 +8,21 @@
 
 let
   cfg = config.services.kubernetes.cluster;
+
+  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
+  selectors = config.cluster.services.kubernetes.selectors;
+  roles = config.cluster.services.kubernetes.roles;
+  this = config.cluster.services.kubernetes.this;
+
   mappedClusterConfig = (
-    import ./api-server-mapper.nix
-      {
-        inherit
-          clusterInfo
-          selectors
-          roles
-          this
-          ;
-      }
-      {
-        inherit
-          config
-          lib
-          pkgs
-          kubeLib
-          ;
-      }
+    import ./api-server-mapper.nix {
+      inherit
+        config
+        lib
+        pkgs
+        kubeLib
+        ;
+    }
   );
 in
 lib.mkIf mappedClusterConfig.enable {

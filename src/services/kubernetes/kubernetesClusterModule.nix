@@ -2,16 +2,16 @@
   pkgs,
   clusterlib,
   lib,
-
-  # flake inputs
-  nixhelm,
-  nix-kube-generators,
+  flakeInputs,
   ...
 }:
 let
 
   add = clusterlib.add;
   filters = clusterlib.filters;
+
+  nixhelm = flakeInputs.nixhelm;
+  nix-kube-generators = flakeInputs.nix-kube-generators;
 
   kubeLib = import ./kubelib.nix {
     inherit
@@ -242,6 +242,14 @@ let
 in
 {
   options.domain = options.domain; # For some reason, setting options directly (inherit options;) triggers an infinite recursion
-  config.extensions.clusterTransformations = [ addFlakeInputs ];
-  config.extensions.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.transformations.clusterTransformations = [ addFlakeInputs ];
+  config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.clusterServices.kubernetes = {
+    defaultModule = import ./kubernetesService.nix;
+    roles = [
+      "controlPlane"
+      "worker"
+      "etcd"
+    ];
+  };
 }

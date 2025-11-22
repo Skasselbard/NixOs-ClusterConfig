@@ -3,8 +3,7 @@
   lib,
   clusterlib,
   nixpkgs,
-  colmena,
-  nixos-generators,
+  flakeInputs,
   ...
 }:
 let
@@ -14,6 +13,9 @@ let
   forEachAttrIn = clusterlib.forEachAttrIn;
   get = clusterlib.get;
   add = clusterlib.add;
+
+  colmena = flakeInputs.colmena;
+  nixos-generators = flakeInputs.nixos-generators;
 
 in
 
@@ -236,7 +238,7 @@ in
 {
   options.domain = domainType;
   config.extensions = {
-    deploymentTransformations = [ deploymentAnnotation ];
+    transformations.deploymentTransformations = [ deploymentAnnotation ];
   };
 
 }

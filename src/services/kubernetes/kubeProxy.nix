@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   config,
   lib,
   pkgs,
@@ -16,6 +10,11 @@ let
   cfg = config.services.kubernetes.cluster;
   apiServerPort = 6443;
   workerNodeList = kubeLib.getWorkerList roles;
+
+  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
+  selectors = config.cluster.services.kubernetes.selectors;
+  roles = config.cluster.services.kubernetes.roles;
+  this = config.cluster.services.kubernetes.this;
 
   #############################
   # Helper Functions

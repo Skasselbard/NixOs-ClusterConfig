@@ -2,7 +2,7 @@
   pkgs,
   lib,
   clusterlib,
-  nixos-anywhere,
+  flakeInputs,
   ...
 }:
 
@@ -15,6 +15,8 @@ let # imports
   either = lib.types.either;
   package = lib.types.package;
   enum = lib.types.enum;
+
+  nixos-anywhere = flakeInputs.nixos-anywhere;
 
   # redefine types to nest submodules at the right place
   domainType = clusterlib.domainType { inherit clusterType; };
@@ -84,5 +86,5 @@ in
 {
 
   options.domain = domainType;
-  config.extensions.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
 }

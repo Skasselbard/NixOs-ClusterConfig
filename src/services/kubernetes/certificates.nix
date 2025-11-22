@@ -21,13 +21,6 @@
 # /etc/kubernetes/pki/etcd/healthcheck-client.crt
 # /etc/kubernetes/pki/sa.key
 # /etc/kubernetes/pki/sa.pub
-{
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-
 { config, lib, ... }:
 
 with lib;
@@ -251,12 +244,10 @@ in
             group.kubernetes
             permissions.privateUser
           )
-          (lnk certs.proxyCertFile.targetPath certs.proxyCertFile.sourcePath user.kubernetes
-            group.kubernetes
+          (lnk certs.proxyCertFile.targetPath certs.proxyCertFile.sourcePath user.kubernetes group.kubernetes
             permissions.publicRead
           )
-          (lnk certs.proxyKeyFile.targetPath certs.proxyKeyFile.sourcePath user.kubernetes
-            group.kubernetes
+          (lnk certs.proxyKeyFile.targetPath certs.proxyKeyFile.sourcePath user.kubernetes group.kubernetes
             permissions.privateUser
           )
 

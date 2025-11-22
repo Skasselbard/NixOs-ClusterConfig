@@ -1,10 +1,4 @@
 {
-  clusterInfo,
-  selectors,
-  roles,
-  this,
-}:
-{
   config,
   lib,
   pkgs,
@@ -14,6 +8,11 @@
 let
   flatten = lib.lists.flatten;
   forEach = lib.lists.forEach;
+
+  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
+  selectors = config.cluster.services.kubernetes.selectors;
+  roles = config.cluster.services.kubernetes.roles;
+  this = config.cluster.services.kubernetes.this;
 
   cfg = config.services.kubernetes.cluster;
 
