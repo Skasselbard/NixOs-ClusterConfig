@@ -1,8 +1,6 @@
 {
   config,
   lib,
-  pkgs,
-  clusterlib,
   ...
 }:
 let
@@ -10,17 +8,14 @@ let
   flatten = lib.lists.flatten;
   remove = lib.lists.remove;
   forEach = lib.lists.forEach;
-  forEachAttrIn = clusterlib.forEachAttrIn;
 
-  str = lib.types.str;
-  attrsOf = lib.types.attrsOf;
+  # get the service config
+  cfg = config.clusterConfig.clusters.this.services.dns;
 
-  mkOption = lib.mkOption;
-
-  roles = config.cluster.services.dns.roles;
-
-  # Expect a hosts role
-  hosts = roles.hosts;
+  # Get the hosts role from our service
+  # Information about all machines that are assigned to this role in our cluster can be found here
+  # TODO: hosts from other clusters could be added as well
+  hosts = cfg.roles.hosts;
 
   # get a list of ips excluding dhcp configurations
   parseRealIps =
@@ -30,28 +25,16 @@ let
     in
     remove "dhcp" ipList;
 
-  # transform the hosts into hostfile entries
+  # transform the hosts into host-file entries
   entryList = flatten (
-    forEach hosts (host: forEach (parseRealIps host.ips) (ip: "${ip} ${host.machineName} ${host.fqdn}"))
-    ++ builtins.attrValues (
-      forEachAttrIn config.services.staticDns.customEntries (hostName: ip: "${ip} ${hostName}")
-    )
+    forEach hosts (host: forEach (parseRealIps host.ips) (ip: "${ip} ${host.name} ${host.fqdn}"))
+    # ++ builtins.attrValues (forEachAttrIn cfg.customEntries (hostName: ip: "${ip} ${hostName}"))
   );
 
-  # merge the entrylist into a line separated string
+  # merge the entry list into a line separated string
   entries = (builtins.concatStringsSep "\n" entryList);
 
 in
 {
-
-  options.services.staticDns.customEntries = mkOption {
-    description = "A list of additional entries that should be added to the ``/etc/hosts`` file.";
-    type = attrsOf str;
-    default = { };
-    example = {
-      "example.com" = "127.0.0.1";
-    };
-  };
-
   config.networking.extraHosts = entries;
 }

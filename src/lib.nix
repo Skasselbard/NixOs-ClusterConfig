@@ -182,43 +182,87 @@ let
 
   eval = {
 
+    # Building a representation of the cluster config.
+    # This will be past to each nixos machine configuration, so that they can use the information for configuration, e.g. in cluster services.
+    clusterConfig = config: {
+      suffix = config.domain.suffix;
+      clusters = forEachAttrIn config.domain.clusters (
+        clusterName: clusterDefinition:
+
+        rec {
+
+          fqdn = "${clusterName}.${config.domain.suffix}";
+
+          # users TODO: add users?
+
+          services = forEachAttrIn clusterDefinition.services (
+            serviceName: serviceDefinition:
+
+            attrsets.recursiveUpdate
+              {
+                roles = (
+                  forEachAttrIn serviceDefinition.roles (
+                    roleName: role:
+                    lists.forEach (filters.resolveMachineName role clusterName config) (
+                      machineName: machines."${machineName}"
+                    )
+                  )
+                );
+                selectors = lists.forEach (
+                  # comment to force linebreak in formatter
+                  filters.resolveMachineName serviceDefinition.selectors clusterName config
+                ) (machineName: machines."${machineName}");
+              }
+
+              (
+                removeAttrs serviceDefinition [
+                  "selectors"
+                  "roles"
+                  "definition"
+                  "extraConfig"
+                ]
+              )
+
+          );
+
+          machines = forEachAttrIn clusterDefinition.machines (
+            machineName: machineDefinition:
+
+            attrsets.recursiveUpdate
+              {
+                name = machineName;
+                ips = get.ips machineDefinition.nixosConfiguration;
+                fqdn = machineDefinition.nixosConfiguration.config.networking.fqdn;
+                serviceAddresses = lists.forEach machineDefinition.serviceAddresses (entry: entry.tag);
+                services = lib.attrNames machineDefinition.services;
+                config = machineDefinition.nixosConfiguration.config;
+              }
+              (
+                builtins.removeAttrs machineDefinition [
+                  "nixosConfiguration"
+                  "nixosModules"
+                  "services"
+                  "users"
+                ]
+              )
+
+          );
+
+        }
+      );
+    };
+
     # build the resulting nixos modules for a service definition
     service =
       config: clusterName: serviceName: serviceDefinition: machineConfig:
-      let
-        serviceConfig = {
-          selectors = (filters.resolveAnnotations serviceDefinition.selectors clusterName config);
-
-          roles = (
-            forEachAttrIn serviceDefinition.roles (
-              roleName: role: (filters.resolveAnnotations role clusterName config)
-            )
-          );
-
-          clusterInfo = (get.clusterInfo config).domain.clusters."${clusterName}";
-
-          this = machineConfig.annotations;
-        };
-
-      in
       # build the nixOs module defined by the service
       [
-        serviceDefinition.extraConfig
 
-        # # call the service definition with clusterInfo
-        # (
-        #   with serviceConfig;
-        #   serviceDefinition.definition {
-        #     inherit selectors roles clusterInfo;
-        #     this = machineConfig.annotations;
-        #   }
-        # )
+        serviceDefinition.extraConfig
 
         # add the service module
         serviceDefinition.definition
 
-        # add service configuration to the config
-        { config.cluster.services."${serviceName}" = serviceConfig; }
       ];
   };
 
@@ -269,6 +313,54 @@ let
         # All leaves of the structure must be serializable; in particular: cannot be functions / lambdas
         clusterInfo.domain = userInfo.domain;
       };
+
+    interface = {
+      ips =
+        interfaceDefinition:
+        let
+          v4Addresses = lists.forEach interfaceDefinition.ipv4.addresses (
+            addressDefinition: addressDefinition.address
+          );
+          v6Addresses = lists.forEach interfaceDefinition.ipv6.addresses (
+            addressDefinition: addressDefinition.address
+          );
+        in
+        lists.flatten [
+          v4Addresses
+          v6Addresses
+        ]
+        ++ (
+          if interfaceDefinition ? useDHCP && interfaceDefinition.useDHCP == true then [ "dhcp" ] else [ ]
+        );
+
+      definitions =
+        machineConfig:
+        lists.forEach (get.interface.names machineConfig) (interfaceName: {
+          "${interfaceName}" =
+            builtins.removeAttrs (builtins.getAttr interfaceName machineConfig.config.networking.interfaces)
+              [ "subnetMask" ];
+        });
+
+      names = machineConfig: attrsets.attrNames machineConfig.config.networking.interfaces;
+    };
+
+    ips =
+      machineConfig:
+      let
+        interfaces = attrsets.mergeAttrsList (
+          lists.forEach (get.interface.definitions machineConfig) (
+            interface:
+            let
+              interfaceName = (lists.head (attrsets.attrNames interface));
+              interfaceValue = (lists.head (attrsets.attrValues interface));
+            in
+            {
+              "${interfaceName}" = get.interface.ips interfaceValue;
+            }
+          )
+        );
+      in
+      interfaces;
 
   };
 
@@ -478,7 +570,7 @@ let
       options = {
         users = mkOption { type = attrsOf (submodule userType); };
 
-        virtualization = mkOption { type = attrsOf (submodule virtualizationType); };
+        # virtualization = mkOption { type = attrsOf (submodule virtualizationType); };
 
       };
     };

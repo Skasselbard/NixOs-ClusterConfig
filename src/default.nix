@@ -45,58 +45,6 @@ in
 
 let
 
-  get = {
-
-    interface = {
-      ips =
-        interfaceDefinition:
-        let
-          v4Addresses = lists.forEach interfaceDefinition.ipv4.addresses (
-            addressDefinition: addressDefinition.address
-          );
-          v6Addresses = lists.forEach interfaceDefinition.ipv6.addresses (
-            addressDefinition: addressDefinition.address
-          );
-        in
-        lists.flatten [
-          v4Addresses
-          v6Addresses
-        ]
-        ++ (
-          if interfaceDefinition ? useDHCP && interfaceDefinition.useDHCP == true then [ "dhcp" ] else [ ]
-        );
-
-      definitions =
-        machineConfig:
-        lists.forEach (get.interface.names machineConfig) (interfaceName: {
-          "${interfaceName}" =
-            builtins.removeAttrs (builtins.getAttr interfaceName machineConfig.config.networking.interfaces)
-              [ "subnetMask" ];
-        });
-
-      names = machineConfig: attrsets.attrNames machineConfig.config.networking.interfaces;
-    };
-
-    ips =
-      machineConfig:
-      let
-        interfaces = attrsets.mergeAttrsList (
-          lists.forEach (get.interface.definitions machineConfig) (
-            interface:
-            let
-              interfaceName = (head (attrsets.attrNames interface));
-              interfaceValue = (head (attrsets.attrValues interface));
-            in
-            {
-              "${interfaceName}" = get.interface.ips interfaceValue;
-            }
-          )
-        );
-      in
-      interfaces;
-
-  };
-
   # Use the NixOs module system to evaluate the clusterConfig
   #
   # - Add a list of clusterConfigModules from 'clusterConfig.modules' to the module list
@@ -142,49 +90,6 @@ let
   # wich holds an evaluated system configuration based on the modules defined for the machine.
   evalMachines = config: add.nixosConfigurations config;
 
-  annotate =
-    config:
-    let
-      clusterAnnotation = update.clusters config (
-        clusterName: clusterConfig: {
-          name = clusterName;
-          fqdn = clusterName + "." + config.domain.suffix;
-        }
-      );
-      machineAnnotation = update.machines clusterAnnotation (
-        clusterName: machineName: machineConfig: {
-          annotations = lib.mergeAttrs machineConfig.annotations {
-            inherit clusterName machineName;
-            ips = get.ips machineConfig.nixosConfiguration;
-            fqdn = machineConfig.nixosConfiguration.config.networking.fqdn;
-            serviceAddresses = lists.forEach machineConfig.serviceAddresses (entry: entry.tag);
-            nixos = {
-              release = machineConfig.nixosConfiguration.config.system.nixos.release;
-              codeName = machineConfig.nixosConfiguration.config.system.nixos.codeName;
-              kernelVersion = machineConfig.nixosConfiguration.config.boot.kernelPackages.kernel.version;
-            };
-          }; # merge user defined annotations
-        }
-      );
-      serviceAnnotation = update.services machineAnnotation (
-        clusterName: serviceName: serviceConfig: {
-          annotations.selectors = lists.forEach (filters.resolveAnnotations serviceConfig.selectors
-            clusterName
-            machineAnnotation
-          ) (annotation: annotation.machineName);
-          annotations.roles = (
-            forEachAttrIn serviceConfig.roles (
-              roleName: role:
-              (lists.forEach (filters.resolveAnnotations role clusterName machineAnnotation) (
-                annotation: annotation.machineName
-              ))
-            )
-          );
-        }
-      );
-    in
-    serviceAnnotation;
-
   # Applies a list of transformations to a clusterConfig.
   # The transformations need to be functions that take a clusterConfig and return a (modified) clusterConfig
   applyClusterTransformations =
@@ -218,16 +123,17 @@ let
       machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
 
       # Step 4:
+      # DEPRECATED!
       # Annotate the cluster with data from the configurations
       # This includes:
       # - the used IP addresses
       # - the FQDN
       # - resolved filters
-      evalAnnotatedCluster = annotate machineEvaluatedCluster;
+      # evalAnnotatedCluster = annotate machineEvaluatedCluster;
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)
-      serviceAnnotatedCluster = applyClusterTransformations evalAnnotatedCluster evalAnnotatedCluster.extensions.transformations.moduleTransformations;
+      serviceAnnotatedCluster = applyClusterTransformations machineEvaluatedCluster machineEvaluatedCluster.extensions.transformations.moduleTransformations;
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets

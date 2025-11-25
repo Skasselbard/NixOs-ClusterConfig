@@ -23,8 +23,8 @@ in
       machineName: (pathTemplate clusterName machineName)
     );
 
-  # resolves a filter function to the attribute it points to and returns its annotations 
-  resolveAnnotations =
+  # resolves a filter function to the attribute it points to and returns its annotations
+  resolve =
     filter: clusterName: config:
     lists.flatten (
       lists.forEach (filtersToPaths filter clusterName config) (
@@ -37,11 +37,28 @@ in
             } config
           );
         in
-        resolvedElement.annotations
+        resolvedElement
       )
     );
 
-  # resolves a filter function to the attribute it points to and returns the complete definition 
+  # Resolves a filter function to a machine name
+  # throws an error if the path does not match a machine path
+  resolveMachineName =
+    filter: clusterName: clusterConfig:
+    lists.flatten (
+      lists.forEach (filtersToPaths filter clusterName clusterConfig) (
+        path:
+        let
+          reversedPathSegments = lists.reverseList (strings.splitString "." path);
+        in
+        if lists.head (lists.tail reversedPathSegments) != "machines" then
+          throw "Error: tried to resolve a machine from a filter that does not filter (only) machines"
+        else
+          lists.head reversedPathSegments
+      )
+    );
+
+  # resolves a filter function to the attribute it points to and returns the complete definition
   resolveDefinitions =
     filter: clusterName: config:
     lists.flatten (

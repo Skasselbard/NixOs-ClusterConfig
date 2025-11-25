@@ -10,11 +10,65 @@ let
   optionType = lib.types.optionType;
   port = lib.types.port;
   raw = lib.types.raw;
+  anything = lib.types.anything;
   str = lib.types.str;
   strMatching = lib.types.strMatching;
   submodule = lib.types.submodule;
 
+  scriptType = raw;
+
   extensionType = {
+
+    cluster = {
+
+      options = mkOption {
+        description = ''
+          A set of options that are added to the cluster-config options.
+          These can be used in cluster config scripts and are added to the cluster annotations
+        '';
+        default = { };
+
+        type = attrsOf anything;
+      };
+
+      scripts = mkOption {
+        description = ''
+          A set of scripts that will be made available to the cluster scripts.
+          TODO: closure of type {args}: str.
+          args = TODO:;
+        '';
+        type = attrsOf scriptType;
+        default = { };
+      };
+
+    };
+
+    clusterMachine = {
+
+      options = mkOption {
+        description = ''
+          A set of options that are added to the cluster-config-machine-options.
+          These can be used in cluster config scripts and are added to the machine annotations
+        '';
+        default = { };
+
+        type = attrsOf anything;
+      };
+
+      scripts = mkOption {
+        description = ''
+          A set of scripts that will be made available to the cluster scripts.
+          TODO: closure of type {args}: str.
+          args = TODO:;
+        '';
+        type = attrsOf scriptType;
+        default = { };
+      };
+
+      # TODO: package
+
+    };
+
     clusterServices = mkOption {
       description = ''
         A set of cluster services that should be enabled in the cluster.
@@ -23,6 +77,14 @@ let
       '';
       type = attrsOf (submodule {
         options = {
+
+          defaultModule = mkOption {
+            description = ''
+              The root NixOs module of the service.
+            '';
+            type = raw;
+          };
+
           roles = mkOption {
             description = ''
               A set of role names a machine can be assigned to.
@@ -31,30 +93,25 @@ let
             type = listOf str;
             default = [ ];
           };
-          defaultModule = mkOption {
+
+          options = mkOption {
             description = ''
-              The root NixOs module of the service.
+              A set of options that can be used e.g. to give service scripts additional information.
             '';
-            type = raw;
+            default = { };
+            type = attrsOf anything;
           };
-          # serviceOptions = mkOption {
-          #   description = ''
-          #     A set of options that can be used e.g. to give service scripts additional information.
-          #   '';
-          #   type = optionType;
-          #   default = { };
-          # };
+
           scripts = mkOption {
             description = ''
-              A set of scripts that will be made available to the deployment scripts.
+              A set of scripts that will be made available to the cluster scripts.
               TODO: closure of type {args}: str.
-              args = {
-                clusterName -> name of the cluster the script is added to
-                };
+              args = TODO:;
             '';
-            type = attrsOf raw;
+            type = attrsOf scriptType;
             default = { };
           };
+
         };
       });
       default = { };

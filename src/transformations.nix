@@ -3,11 +3,12 @@ let # imports
 
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
+  eval = clusterlib.eval;
+  get = clusterlib.get;
 
+  attrsets = lib.attrsets;
+  lists = lib.lists;
   mkDefault = lib.mkDefault;
-
-in
-let
 
   # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
   # This includes:
@@ -15,7 +16,7 @@ let
   # - DomainName: networking.domain is set to clusterName.domainSuffix
   # - HostPlatform: pkgs.hostPlatform is set to the configured system in the machine configuration
   # - UserDefinitions: users.users is set with information from cluster-users and machine-users
-  clusterAnnotation =
+  clusterTransformation =
     config:
 
     add.nixosModule config (
@@ -63,11 +64,36 @@ let
       ]
     );
 
+  moduleTransformation =
+    config:
+
+    add.nixosModule config (
+      clusterName: machineName: machineConfig:
+      let
+        clusterConfigBase = eval.clusterConfig config;
+        # clusterConfigBase =
+        #   lib.debug.traceSeqN 3 clusterConfigBase0.clusters.example
+        #     clusterConfigBase0;
+
+      in
+      [
+        {
+          # Add cluster information including "this" pointer for the current cluster and machine.
+          clusterConfig = attrsets.recursiveUpdate clusterConfigBase {
+            clusters.this = attrsets.recursiveUpdate clusterConfigBase.clusters."${clusterName}" {
+              machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
+            };
+          };
+        }
+      ]
+    );
+
 in
 {
 
-  config.extensions = {
-    transformations.clusterTransformations = [ clusterAnnotation ];
+  config.extensions.transformations = {
+    clusterTransformations = [ clusterTransformation ];
+    moduleTransformations = [ moduleTransformation ];
   };
 
 }

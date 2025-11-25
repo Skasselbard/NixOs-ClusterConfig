@@ -12,10 +12,10 @@ let
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;
   workerNodeList = kubeLib.getWorkerList roles;
 
-  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
-  selectors = config.cluster.services.kubernetes.selectors;
-  roles = config.cluster.services.kubernetes.roles;
-  this = config.cluster.services.kubernetes.this;
+  cluster = config.clusterConfig.clusters.this;
+  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
+  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
+  this = config.clusterConfig.clusters.this.machines.this;
 
   #############################
   # Helper Functions
@@ -23,8 +23,8 @@ let
 
   # If the node is a controlplane node but not a worker node, mark it as unschedulable
   unschedulable =
-    (builtins.any (node: node.machineName == this.machineName) controlPlaneNodeList)
-    && !(builtins.any (node: node.machineName == this.machineName) workerNodeList);
+    (builtins.any (node: node.name == this.name) controlPlaneNodeList)
+    && !(builtins.any (node: node.name == this.name) workerNodeList);
 
 in
 {
@@ -43,7 +43,7 @@ in
         caFile = cfg.certificates.caCertFile.targetPath;
         certFile = cfg.certificates.kubeletCertFile.targetPath;
         keyFile = cfg.certificates.kubeletKeyFile.targetPath;
-        server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
+        server = mkUrl apiServerPort "kubernetes.${cluster.fqdn}";
       };
       clientCaFile = cfg.certificates.caCertFile.targetPath;
     };

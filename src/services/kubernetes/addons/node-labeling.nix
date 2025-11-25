@@ -10,10 +10,10 @@ let
 
   cfg = config.services.kubernetes.cluster;
 
-  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
-  selectors = config.cluster.services.kubernetes.selectors;
-  roles = config.cluster.services.kubernetes.roles;
-  this = config.cluster.services.kubernetes.this;
+  cluster = config.clusterConfig.clusters.this;
+  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
+  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
+  this = config.clusterConfig.clusters.this.machines.this;
 
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;
   etcdNodeList = kubeLib.getEtcdList roles;
@@ -22,7 +22,7 @@ let
 
   nodeLabels = lib.listToAttrs (
     map (node: {
-      name = node.machineName;
+      name = node.name;
       value = node.kubernetes.nodeLabels or { };
     }) allNodes
   );
@@ -64,10 +64,14 @@ in
             lib.map (
               node:
               let
-                nodeIsControlPlane = builtins.any (n: n.machineName == node.machineName) controlPlaneNodeList;
-                nodeIsEtcd = builtins.any (n: n.machineName == node.machineName) etcdNodeList;
-                nodeIsWorker = builtins.any (n: n.machineName == node.machineName) workerNodeList;
+                nodeIsControlPlane = builtins.any (n: n.name == node.name) controlPlaneNodeList;
+                nodeIsEtcd = builtins.any (n: n.name == node.name) etcdNodeList;
+                nodeIsWorker = builtins.any (n: n.name == node.name) workerNodeList;
                 unschedulable = !nodeIsWorker;
+
+                release = node.config.system.nixos.release;
+                codeName = node.config.system.nixos.codeName;
+                kernelVersion = node.config.boot.kernelPackages.kernel.version;
               in
               {
                 apiVersion = "v1";
@@ -95,7 +99,7 @@ in
                   name = node.fqdn;
                   labels =
                     # User defined node labels
-                    config.services.kubernetes.nodeLabels."${node.machineName}"
+                    config.services.kubernetes.nodeLabels."${node.name}"
                     //
                       # Official Kubernetes role label
                       (lib.optionalAttrs nodeIsControlPlane {
@@ -106,10 +110,10 @@ in
                     })
                     // {
                       # Declarative NixOS-specific labels (fall back to available attrs)
-                      "cluster.nixos.org/hostname" = node.machineName;
-                      "cluster.nixos.org/release" = node.nixos.release;
-                      "cluster.nixos.org/codename" = node.nixos.codeName;
-                      "cluster.nixos.org/kernel" = node.nixos.kernelVersion;
+                      "cluster.nixos.org/hostname" = node.name;
+                      "cluster.nixos.org/release" = release;
+                      "cluster.nixos.org/codename" = codeName;
+                      "cluster.nixos.org/kernel" = kernelVersion;
 
                       # Document the configured components
                       "components.cluster.nixos.org/etcd-member" = if nodeIsEtcd then "true" else "false";

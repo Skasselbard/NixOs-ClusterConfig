@@ -7,20 +7,16 @@
 }:
 
 let
-  cfg = config.services.kubernetes.cluster;
+  cluster = config.clusterConfig.clusters.this;
 
   ciliumChart =
     (kubeLib.helm.charts {
       namespace = "cni";
       extraHelmOpts = [ "--labels 'addonmanager.kubernetes.io/mode=Reconcile'" ];
       values = {
-        k8sServiceHost = cfg.clusterName;
+        k8sServiceHost = "kubernetes.${cluster.fqdn}";
         k8sServicePort = 6443;
         kubeProxyReplacement = true;
-        # tls.ca.cert = builtins.readFile cfg.certificates.caCertFile.targetPath;
-        # hostFirewall = {
-        #   enabled = true;
-        # };
       };
     }).cilium.cilium;
 

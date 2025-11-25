@@ -9,10 +9,10 @@ let
   flatten = lib.lists.flatten;
   forEach = lib.lists.forEach;
 
-  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
-  selectors = config.cluster.services.kubernetes.selectors;
-  roles = config.cluster.services.kubernetes.roles;
-  this = config.cluster.services.kubernetes.this;
+  cluster = config.clusterConfig.clusters.this;
+  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
+  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
+  this = config.clusterConfig.clusters.this.machines.this;
 
   cfg = config.services.kubernetes.cluster;
 
@@ -23,7 +23,7 @@ let
     map (
       node:
       let
-        interfaceError = throw "Missing 'kubernetes.keepalived.virtualIpInterface' annotation for node ${node.machineName}";
+        interfaceError = throw "Missing 'kubernetes.keepalived.virtualIpInterface' annotation for node ${node.name}";
         cfg = node.kubernetes.keepalived;
         interface =
           if lib.hasAttr "virtualIpInterface" cfg then
@@ -35,7 +35,7 @@ let
             interfaceError;
       in
       {
-        name = node.machineName;
+        name = node.name;
         value = {
           priority = if cfg ? priority then cfg.priority else null;
           virtualIpInterface = interface;
@@ -49,7 +49,7 @@ let
   assignKeepalivedPriorities =
     let
       usedPriorities = lib.filter (p: p != null) (
-        map (n: keepalivedAnnotations.${n.machineName}.priority or null) keepalivedNodeList
+        map (n: keepalivedAnnotations.${n.name}.priority or null) keepalivedNodeList
       );
 
       # Generate descending range of 255..0
@@ -66,7 +66,7 @@ let
           let
             node = builtins.head nodes;
             rest = builtins.tail nodes;
-            nodeName = node.machineName;
+            nodeName = node.name;
             current = keepalivedAnnotations.${nodeName}.priority or null;
             # use existing or first free priority
             newPriority = if current != null then current else builtins.head remaining;
@@ -81,14 +81,14 @@ let
     in
     assign keepalivedNodeList freePriorities descending;
 
-  enable = (builtins.any (node: node.machineName == this.machineName) keepalivedNodeList);
+  enable = (builtins.any (node: node.name == this.name) keepalivedNodeList);
 
-  priority = assignKeepalivedPriorities."${this.machineName}".priority;
-  interface = assignKeepalivedPriorities."${this.machineName}".virtualIpInterface;
+  priority = assignKeepalivedPriorities."${this.name}".priority;
+  interface = assignKeepalivedPriorities."${this.name}".virtualIpInterface;
   virtualIps = map (ip: { addr = ip; }) cfg.virtualIps;
 
   hostsEntryList = flatten (
-    forEach cfg.virtualIps (ip: "${ip} kubernetes.${clusterInfo.fqdn} kubernetes k8s")
+    forEach cfg.virtualIps (ip: "${ip} kubernetes.${cluster.fqdn} kubernetes k8s")
   );
   hostsEntries = (builtins.concatStringsSep "\n" hostsEntryList);
 
@@ -113,7 +113,7 @@ in
       extraConfig = ''
         authentication {
               auth_type PASS
-              auth_pass ${clusterInfo.fqdn}
+              auth_pass ${cluster.fqdn}
         }
       '';
     };

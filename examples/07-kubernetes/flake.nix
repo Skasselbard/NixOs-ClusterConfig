@@ -309,24 +309,22 @@
                 vm0 = {
                   inherit system;
 
-                  # The kubernetes cluster module defines som machine annotations to setup keepalived and kubernetes node labels
+                  # The kubernetes cluster module defines some machine options to setup keepalived and kubernetes node labels
                   # Some of them are required to configure keepalived
-                  annotations = {
-                    kubernetes.keepalived = {
-                      # Required to configure the interface for the virtual ip.
-                      virtualIpInterface = "eth0";
-                      # You can define the priority here, the higher the value, the higher the priority.
-                      # Max value is 255.
-                      # The machine with the highest priority will be the master for the virtual ip.
-                      # If no priority is defined here, priorities will be assigned in order of the role definition beginning with 255; priorities that are already assigned for other nodes will be skipped.
-                      # priority = 236;
-                    };
-                    # You can define labels for kubernetes nodes here.
-                    # These labels will be added to the kubernetes node definition.
-                    # You can list them with ``kubectl get nodes --show-labels``
-                    kubernetes.nodeLabels = {
-                      "cluster.example.com/LOCALTestLabel" = "vm0";
-                    };
+                  kubernetes.keepalived = {
+                    # Required to configure the interface for the virtual ip.
+                    virtualIpInterface = "eth0";
+                    # You can define the priority here, the higher the value, the higher the priority.
+                    # Max value is 255.
+                    # The machine with the highest priority will be the master for the virtual ip.
+                    # If no priority is defined here, priorities will be assigned in order of the role definition beginning with 255; priorities that are already assigned for other nodes will be skipped.
+                    # priority = 236;
+                  };
+                  # You can define labels for kubernetes nodes here.
+                  # These labels will be added to the kubernetes node definition.
+                  # You can list them with ``kubectl get nodes --show-labels``
+                  kubernetes.nodeLabels = {
+                    "cluster.example.com/LOCALTestLabel" = "vm0";
                   };
 
                   deployment = {
@@ -344,14 +342,12 @@
                 vm1 = {
                   inherit system;
 
-                  annotations = {
-                    kubernetes.nodeLabels = {
-                      "cluster.example.com/LOCALTestLabel" = "vm1";
-                    };
-                    kubernetes.keepalived = {
-                      virtualIpInterface = "eth0";
-                      # priority = 234;
-                    };
+                  kubernetes.nodeLabels = {
+                    "cluster.example.com/LOCALTestLabel" = "vm1";
+                  };
+                  kubernetes.keepalived = {
+                    virtualIpInterface = "eth0";
+                    # priority = 234;
                   };
 
                   deployment = {
@@ -368,11 +364,8 @@
                 vm2 = {
                   inherit system;
 
-                  annotations = {
-
-                    kubernetes.keepalived = {
-                      virtualIpInterface = "eth0";
-                    };
+                  kubernetes.keepalived = {
+                    virtualIpInterface = "eth0";
                   };
 
                   deployment = {

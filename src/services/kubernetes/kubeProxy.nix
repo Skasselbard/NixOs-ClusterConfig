@@ -11,16 +11,16 @@ let
   apiServerPort = 6443;
   workerNodeList = kubeLib.getWorkerList roles;
 
-  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
-  selectors = config.cluster.services.kubernetes.selectors;
-  roles = config.cluster.services.kubernetes.roles;
-  this = config.cluster.services.kubernetes.this;
+  cluster = config.clusterConfig.clusters.this;
+  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
+  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
+  this = config.clusterConfig.clusters.this.machines.this;
 
   #############################
   # Helper Functions
   mkUrl = kubeLib.mkUrl;
 
-  isWorkerNode = builtins.any (node: node.machineName == this.machineName) workerNodeList;
+  isWorkerNode = builtins.any (node: node.machineName == this.name) workerNodeList;
   runsCilium = config.services.kubernetes.addons ? cilium;
 in
 {
@@ -31,7 +31,7 @@ in
       caFile = cfg.certificates.caCertFile.targetPath;
       certFile = cfg.certificates.proxyCertFile.targetPath;
       keyFile = cfg.certificates.proxyKeyFile.targetPath;
-      server = mkUrl apiServerPort "kubernetes.${clusterInfo.fqdn}";
+      server = mkUrl apiServerPort "kubernetes.${cluster.fqdn}";
     };
   };
 }

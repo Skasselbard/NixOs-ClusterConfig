@@ -18,11 +18,6 @@ let
   strMatching = lib.types.strMatching;
   submodule = lib.types.submodule;
 
-  attrNames = lib.attrNames;
-  attrValues = lib.attrValues;
-  elem = builtins.elem;
-  all = builtins.all;
-
   forEach = lib.lists.forEach;
   forEachAttrIn = clusterlib.forEachAttrIn;
   listToAttrs = builtins.listToAttrs;
@@ -44,8 +39,10 @@ let
         default = { };
       };
       services = forEachAttrIn config.extensions.clusterServices (
+        serviceName: serviceDefinition:
 
-        serviceName: serviceDefinition: {
+        serviceDefinition.options
+        // {
           selectors = mkOption {
             description = "A list of filters that resolve nixos machines"; # TODO: more details
             type = listOf filterType;
@@ -81,7 +78,7 @@ let
             description = ''
               Service extra configuration
 
-              Additional Configuration in the form of a normal NixOs module.
+              Additional Configuration in the form of a NixOs module.
             '';
             type = raw;
             default = { };
@@ -97,111 +94,102 @@ let
     };
   };
 
-  machineType = {
-    options = {
-      annotations = {
-        clusterName = mkOption {
-          description = "The name of the cluster this machine belongs to. Automatically populated from the cluster definition.";
-          type = str;
-          example = "example.com";
-        };
-        machineName = mkOption {
-          description = "The name of the machine within the cluster. Automatically populated from the attribute name in the machines definition.";
-          type = str;
-          example = "node1";
-        };
-        ips = mkOption {
-          description = "A list of ip addresses assigned to the machine. Automatically populated with static ip addresses from the networking configuration.";
-          type = attrsOf raw;
-          default = { };
-        };
-        fqdn = mkOption {
-          description = "The fully qualified domain name of the machine. Automatically populated from the cluster configuration.";
-          type = str;
-          example = "node1.example.com";
-        };
-        # serviceAddresses = lists.forEach machineConfig.serviceAddresses (entry: entry.tag);
-        nixos = {
-          release = mkOption {
-            description = "The NixOS release of the machine. Automatically populated from the nixos configuration.";
-            type = str;
-            example = "23.05";
-          };
-          codeName = mkOption {
-            description = "The NixOS code name of the machine. Automatically populated from the nixos configuration.";
-            type = str;
-            example = "Warbler";
-          };
-          kernelVersion = mkOption {
-            description = "The kernel version of the machine. Automatically populated from the nixos configuration.";
-            type = str;
-            example = "6.12.51";
-          };
-        };
-      };
+  machineType.options = config.extensions.clusterMachine.options // {
+    # TODO: move old annotations to nixosOptions?
+    # name = mkOption {
+    #   description = "The name of the machine within the cluster. Automatically populated from the attribute name in the machines definition.";
+    #   type = str;
+    #   example = "node1";
+    # };
+    # ips = mkOption {
+    #   description = "A list of ip addresses assigned to the machine. Automatically populated with static ip addresses from the networking configuration.";
+    #   type = attrsOf raw;
+    #   default = { };
+    # };
+    # fqdn = mkOption {
+    #   description = "The fully qualified domain name of the machine. Automatically populated from the cluster configuration.";
+    #   type = str;
+    #   example = "node1.example.com";
+    # };
+    # nixos = {
+    #   release = mkOption {
+    #     description = "The NixOS release of the machine. Automatically populated from the nixos configuration.";
+    #     type = str;
+    #     example = "23.05";
+    #   };
+    #   codeName = mkOption {
+    #     description = "The NixOS code name of the machine. Automatically populated from the nixos configuration.";
+    #     type = str;
+    #     example = "Warbler";
+    #   };
+    #   kernelVersion = mkOption {
+    #     description = "The kernel version of the machine. Automatically populated from the nixos configuration.";
+    #     type = str;
+    #     example = "6.12.51";
+    #   };
+    # };
 
-      system = mkOption {
-        description = lib."The type of system for this machine";
-        example = "x86_64-linux";
-        type = str;
-      };
+    system = mkOption {
+      description = lib."The type of system for this machine";
+      example = "x86_64-linux";
+      type = str;
+    };
 
-      users = mkOption {
-        description = "A list of users deployed on the machine node in addition to the cluster users.";
-        type = attrsOf (submodule userType);
-        default = { };
-        example = ''
+    users = mkOption {
+      description = "A list of users deployed on the machine node in addition to the cluster users.";
+      type = attrsOf (submodule userType);
+      default = { };
+      example = ''
+        {
+          bob = systemConfig {
+            isNormalUser = true;
+            extraGroups = [ "wheel" ];
+          };
+        }'';
+    };
+
+    serviceAddresses = mkOption {
+      description = "A list of attributes with service addresses (ip + port) for a service role and an additional config that is added to the nixosModules of the machine";
+      type = listOf (submodule serviceAddressType);
+      default = [ ];
+      example = ''
+        [
+          clusterlib.ip.staticIpV4OpenUdp
           {
-            bob = systemConfig {
-              isNormalUser = true;
-              extraGroups = [ "wheel" ];
-            };
-          }'';
-      };
-
-      serviceAddresses = mkOption {
-        description = "A list of attributes with service addresses (ip + port) for a service role and an additional config that is added to the nixosModules of the machine";
-        type = listOf (submodule serviceAddressType);
-        default = [ ];
-        example = ''
-          [
-            clusterlib.ip.staticIpV4OpenUdp
-            {
-              ip = "192.168.1.10";
-              role = "vault-api";
-              interface = "eth0";
-            }
-          ]'';
-
-      };
-
-      nixosModules = mkOption {
-        description = lib."machine specific config";
-        type = listOf raw;
-        default = [ ];
-        example = {
-          boot.loader.systemd-boot.enable = true;
-        };
-      };
-
-      virtualization = mkOption {
-        description = "A list of virtualizaion drivers that will generate a NixOs config that handles virtualization.";
-        type = attrsOf (submodule virtualizationType);
-        default = { };
-      };
-
-      # TODO: how would a generic virtualization interface look like
-      # e.g. config -> [ (name = [ ip ]) ]
-
-      # virtDriver = {
-      #   functions = {
-      #     getSelectors = {}:{};
-      #     builcConfig = {}:{};
-      #   };
-      #   config = {  };
-      # };
+            ip = "192.168.1.10";
+            role = "vault-api";
+            interface = "eth0";
+          }
+        ]'';
 
     };
+
+    nixosModules = mkOption {
+      description = lib."machine specific config";
+      type = listOf raw;
+      default = [ ];
+      example = {
+        boot.loader.systemd-boot.enable = true;
+      };
+    };
+
+    # virtualization = mkOption {
+    #   description = "A list of virtualizaion drivers that will generate a NixOs config that handles virtualization.";
+    #   type = attrsOf (submodule virtualizationType);
+    #   default = { };
+    # };
+
+    # TODO: how would a generic virtualization interface look like
+    # e.g. config -> [ (name = [ ip ]) ]
+
+    # virtDriver = {
+    #   functions = {
+    #     getSelectors = {}:{};
+    #     builcConfig = {}:{};
+    #   };
+    #   config = {  };
+    # };
+
   };
 
   serviceAddressType.options = {

@@ -7,10 +7,10 @@
 }:
 
 let
-  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
-  selectors = config.cluster.services.kubernetes.selectors;
-  roles = config.cluster.services.kubernetes.roles;
-  this = config.cluster.services.kubernetes.this;
+  cluster = config.clusterConfig.clusters.this;
+  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
+  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
+  this = config.clusterConfig.clusters.this.machines.this;
 
   clientRequestPort = 2378; # haProxy handles client requests on 2379
 
@@ -28,15 +28,15 @@ let
 in
 
 {
-  enable = builtins.any (node: node.machineName == this.machineName) etcdList;
+  enable = builtins.any (node: node.name == this.name) etcdList;
 
   firewallPorts =
-    if (builtins.any (node: node.machineName == this.machineName) etcdList) then
+    if (builtins.any (node: node.name == this.name) etcdList) then
       [ peerCommunicationPort ]
     else
       [ ];
 
-  nodeName = this.machineName;
+  nodeName = this.name;
 
   listening = {
     peers = mkUrls peerCommunicationPort [ "0.0.0.0" ];
@@ -47,13 +47,13 @@ in
   initialAdvertisePeerUrl = mkUrl peerCommunicationPort this.fqdn;
 
   allNodes = map (node: {
-    name = node.machineName;
+    name = node.name;
     hostnames = [ node.fqdn ];
     initialAdvertisePeerUrl = mkUrl peerCommunicationPort node.fqdn;
   }) etcdList;
 
   initialCluster = map (
-    node: "${node.machineName}=${mkUrl peerCommunicationPort node.fqdn}"
+    node: "${node.name}=${mkUrl peerCommunicationPort node.fqdn}"
   ) etcdList;
 
 }

@@ -14,10 +14,9 @@ let
   str = lib.types.str;
   mkOption = lib.mkOption;
 
-  clusterInfo = config.cluster.services.kubernetes.clusterInfo;
-  selectors = config.cluster.services.kubernetes.selectors;
-  roles = config.cluster.services.kubernetes.roles;
-  this = config.cluster.services.kubernetes.this;
+  clusterInfo = config.clusterConfig.clusters.this;
+  selectors = config.clusterConfig.clusters.this.kubernetes.selectors;
+  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
 in
 
 {
