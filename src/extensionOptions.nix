@@ -7,12 +7,9 @@ let
   attrsOf = lib.types.attrsOf;
   listOf = lib.types.listOf;
   nullOr = lib.types.nullOr;
-  optionType = lib.types.optionType;
-  port = lib.types.port;
   raw = lib.types.raw;
   anything = lib.types.anything;
   str = lib.types.str;
-  strMatching = lib.types.strMatching;
   submodule = lib.types.submodule;
 
   scriptType = raw;
@@ -55,7 +52,7 @@ let
         type = attrsOf anything;
       };
 
-      scripts = mkOption {
+      packages = mkOption {
         description = ''
           A set of scripts that will be made available to the cluster scripts.
           TODO: closure of type {args}: str.
@@ -65,7 +62,7 @@ let
         default = { };
       };
 
-      # TODO: package
+      # TODO: apps, modules
 
     };
 

@@ -8,23 +8,16 @@
 let
   attrs = lib.types.attrs;
   attrsOf = lib.types.attrsOf;
-  bool = lib.types.bool;
-  package = lib.types.package;
   rawType = lib.types.raw;
   str = lib.types.str;
   submodule = lib.types.submodule;
 
   mkOption = lib.mkOption;
-  mkIf = lib.mkIf;
 
   attrNames = lib.attrNames;
-  attrValues = lib.attrValues;
   filterAttrs = lib.filterAttrs;
-  mapAttrs = lib.mapAttrs;
 
-  concatMapStringsSep = lib.concatMapStringsSep;
   mapAttrsToList = lib.mapAttrsToList;
-  escapeShellArg = lib.escapeShellArg;
   concatStringsSep = lib.concatStringsSep;
   concatMap = lib.concatMap;
 

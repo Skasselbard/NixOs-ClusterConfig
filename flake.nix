@@ -3,7 +3,7 @@
 
   inputs = {
 
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     disko = {
       url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -16,12 +16,12 @@
     };
 
     nixos-generators = {
-      url = "github:nix-community/nixos-generators";
+      url = "github:nix-community/nixos-generators/1.8.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     home-manager = {
-      url = "github:nix-community/home-manager/release-23.11";
+      url = "github:nix-community/home-manager/release-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -70,13 +70,6 @@
           flakeInputs = inputs;
         })
         // (import "${self}/src/lib.nix" { inherit lib nixpkgs flake-utils; });
-
-      clusterServices = {
-        staticDns = import "${self}/src/services/dns/staticDns.nix";
-        vault = import "${self}/src/services/vault/vaultService.nix";
-        kubernetes = import "${self}/src/services/kubernetes/kubernetesService.nix";
-        secret-service = import "${self}/src/services/secret-service/secretService.nix";
-      };
 
       clusterConfigModules = {
 

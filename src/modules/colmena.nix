@@ -33,7 +33,7 @@ let
   # Build the deployment scripts and functions including
   # - colmena hive definition for remote deployment
   # - colmena app import to run colmena from the flake with 'nix run .#colmena [colmena-sub-cmd] -- [colmenaOptions]'
-  deploymentAnnotation =
+  deploymentTransformation =
     config:
     let
       machines = get.machines config;
@@ -62,5 +62,5 @@ in
   imports = [
     ../deployment.nix # explicitly load colmena options from deployment definition
   ];
-  config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.transformations.deploymentTransformations = [ deploymentTransformation ];
 }

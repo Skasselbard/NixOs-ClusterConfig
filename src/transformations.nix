@@ -4,11 +4,22 @@ let # imports
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
   eval = clusterlib.eval;
-  get = clusterlib.get;
 
   attrsets = lib.attrsets;
-  lists = lib.lists;
   mkDefault = lib.mkDefault;
+
+  # helperFunctions
+  # Add cluster information including "this" pointer for the current cluster and machine.
+  clusterConfigThisResolved =
+    config: clusterName: machineName:
+    let
+      clusterConfigBase = eval.clusterConfig config;
+    in
+    attrsets.recursiveUpdate clusterConfigBase {
+      clusters.this = attrsets.recursiveUpdate clusterConfigBase.clusters."${clusterName}" {
+        machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
+      };
+    };
 
   # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
   # This includes:
@@ -68,24 +79,32 @@ let # imports
     config:
 
     add.nixosModule config (
-      clusterName: machineName: machineConfig:
-      let
-        clusterConfigBase = eval.clusterConfig config;
-        # clusterConfigBase =
-        #   lib.debug.traceSeqN 3 clusterConfigBase0.clusters.example
-        #     clusterConfigBase0;
-
-      in
-      [
+      clusterName: machineName: machineConfig: [
         {
-          # Add cluster information including "this" pointer for the current cluster and machine.
-          clusterConfig = attrsets.recursiveUpdate clusterConfigBase {
-            clusters.this = attrsets.recursiveUpdate clusterConfigBase.clusters."${clusterName}" {
-              machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
-            };
-          };
+          clusterConfig = clusterConfigThisResolved config clusterName machineName;
         }
       ]
+    );
+
+  deploymentTransformation =
+    config:
+
+    attrsets.recursiveUpdate config (
+
+      # Add a package for each machine to the flake output
+      add.machinePackages config (
+        clusterName: machineName:
+
+        # For each script a package is added
+        forEachAttrIn config.extensions.clusterMachine.packages (
+          scriptName: scriptClosure:
+
+          # call the script closure with the evaluated cluster config representation
+          scriptClosure {
+            clusterConfig = (clusterConfigThisResolved config clusterName machineName);
+          }
+        )
+      )
     );
 
 in
@@ -94,6 +113,7 @@ in
   config.extensions.transformations = {
     clusterTransformations = [ clusterTransformation ];
     moduleTransformations = [ moduleTransformation ];
+    deploymentTransformations = [ deploymentTransformation ];
   };
 
 }

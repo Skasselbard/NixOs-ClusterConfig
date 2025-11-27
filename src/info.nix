@@ -10,7 +10,6 @@ let
   attrsets = lib.attrsets;
 
   get = clusterlib.get;
-  add = clusterlib.add;
 
   flake-utils = flakeInputs.flake-utils;
 
@@ -39,58 +38,63 @@ let
 
     attrsets.recursiveUpdate config {
 
-      # add the tooling scripts to the apps
-      apps =
-        # The apps are generated for all system  configurations (by using flake utils)
-        (eachSystem allSystems (system: {
-          apps.clusterConfig = {
-            type = "app";
-            program =
-              (pkgs.writeShellScriptBin "clusterConfig" ''
+      # TODO: rework of the cluster config app
+      #   # add the tooling scripts to the apps
+      #   apps =
+      #     # The apps are generated for all system  configurations (by using flake utils)
+      #     (eachSystem allSystems (system: {
+      #       apps.clusterConfig = {
+      #         type = "app";
+      #         program =
+      #           (pkgs.writeShellScriptBin "clusterConfig" ''
 
-                # add the package information to the environment for use in auto completion
-                export packageInfo=$(${pkgs.nushell}/bin/nu ${./tooling}/clusterInfo.nu packages)
+      #             # add the package information to the environment for use in auto completion
+      #             export packageInfo=$(${pkgs.nushell}/bin/nu ${./tooling}/clusterInfo.nu packages)
 
-                # run a nu environment with imported tooling scripts to make the functions available as commands
-                ${pkgs.nushell}/bin/nu -e "
-                  source ${./tooling}/clusterInfo.nu;
-                  source ${./tooling}/clusterConfig.nu
-                  "
+      #             # run a nu environment with imported tooling scripts to make the functions available as commands
+      #             ${pkgs.nushell}/bin/nu -e "
+      #               source ${./tooling}/clusterInfo.nu;
+      #               source ${./tooling}/clusterConfig.nu
+      #               "
 
-              '').outPath
-              + "/bin/clusterConfig";
-          };
-        })).apps;
+      #           '').outPath
+      #           + "/bin/clusterConfig";
+      #       };
+      #     })).apps;
 
     };
 
   packageAnnotation =
     config: config // { packageInfo = (removeDerivations config.packages."x86_64-linux"); };
 
-  connectionAnnotation =
-    config:
-    add.machinePackages config (
-      machineName: machineConfig: config: {
+in
+{
+  config.extensions = {
+
+    # transformations.deploymentTransformations = [
+    #   appsAnnotation
+    # ];
+
+    transformations.infoTransformations = [
+      clusterInfoAnnotation
+      packageAnnotation
+    ];
+
+    clusterMachine = {
+      packages = {
 
         connect =
+          { clusterConfig }:
           let
-            cfg = machineConfig.deployment;
+            this = clusterConfig.clusters.this.machines.this;
+            machineName = this.name;
+            cfg = this.deployment;
             host = cfg.targetHost;
             user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
           in
-          pkgs.writeScriptBin "connectTo-${machineName}" "${pkgs.openssh}/bin/ssh ${user}${host} \${@:1}";
+          pkgs.writeShellScriptBin "connectTo-${machineName}" "${pkgs.openssh}/bin/ssh ${user}${host} \${@:1}";
 
-      }
-    );
-
-in
-{
-  config.extensions.transformations.deploymentTransformations = [
-    appsAnnotation
-    connectionAnnotation
-  ];
-  config.extensions.transformations.infoTransformations = [
-    clusterInfoAnnotation
-    packageAnnotation
-  ];
+      };
+    };
+  };
 }
