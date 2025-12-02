@@ -7,19 +7,14 @@
 }:
 
 let
-  cfg = config.services.kubernetes.cluster;
   apiServerPort = 6443;
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;
   workerNodeList = kubeLib.getWorkerList roles;
 
   cluster = config.clusterConfig.clusters.this;
-  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
-  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
-  this = config.clusterConfig.clusters.this.machines.this;
-
-  #############################
-  # Helper Functions
-  mkUrl = kubeLib.mkUrl;
+  roles = cluster.services.kubernetes.roles;
+  this = cluster.machines.this;
+  certificates = cluster.services.kubernetes.certificates;
 
   # If the node is a controlplane node but not a worker node, mark it as unschedulable
   unschedulable =
@@ -40,18 +35,14 @@ in
       hostname = this.fqdn;
       # clusterDomain
       kubeconfig = {
-        caFile = cfg.certificates.caCertFile.targetPath;
-        certFile = cfg.certificates.kubeletCertFile.targetPath;
-        keyFile = cfg.certificates.kubeletKeyFile.targetPath;
-        server = mkUrl apiServerPort "kubernetes.${cluster.fqdn}";
+        caFile = certificates.caCertFile.targetPath;
+        certFile = certificates.kubeletCertFile.targetPath;
+        keyFile = certificates.kubeletKeyFile.targetPath;
+        server = kubeLib.mkUrl apiServerPort "kubernetes.${cluster.fqdn}";
       };
-      clientCaFile = cfg.certificates.caCertFile.targetPath;
+      clientCaFile = certificates.caCertFile.targetPath;
     };
 
-    # clusterDNS
-    # # can
-    # registerWithTaints
-    # # may
     # systemReserved { cpu: "200m", memory: "256Mi" } Reserve resources for system processes
     # logging.format "json"
   };

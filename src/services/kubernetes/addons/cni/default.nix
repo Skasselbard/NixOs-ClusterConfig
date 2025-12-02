@@ -10,20 +10,6 @@ in
 
 {
 
-  options.services.kubernetes.cluster = {
-
-    cniPlugin = mkOption {
-      description = ''
-        The CNI plugin to use for networking in the cluster.
-
-        Supported options are "cilium".
-      '';
-      type = enum [ "cilium" ];
-      default = "cilium";
-    };
-
-  };
-
   config = {
     # Allow privileged workloads (required for all CNIs including Cilium)
     services.kubernetes.apiserver.allowPrivileged = true;

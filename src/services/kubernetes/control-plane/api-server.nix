@@ -7,12 +7,9 @@
 }:
 
 let
-  cfg = config.services.kubernetes.cluster;
 
   cluster = config.clusterConfig.clusters.this;
-  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
-  roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
-  this = config.clusterConfig.clusters.this.machines.this;
+  certificates = cluster.services.kubernetes.certificates;
 
   mappedClusterConfig = (
     import ./api-server-mapper.nix {
@@ -24,6 +21,7 @@ let
         ;
     }
   );
+
 in
 lib.mkIf mappedClusterConfig.enable {
 
@@ -37,21 +35,21 @@ lib.mkIf mappedClusterConfig.enable {
 
     etcd = {
       servers = mappedClusterConfig.etcd.servers;
-      caFile = cfg.certificates.etcd.caCertFile.targetPath;
-      certFile = cfg.certificates.apiServer.etcdClientCertFile.targetPath;
-      keyFile = cfg.certificates.apiServer.etcdClientKeyFile.targetPath;
+      caFile = certificates.etcd.caCertFile.targetPath;
+      certFile = certificates.apiServer.etcdClientCertFile.targetPath;
+      keyFile = certificates.apiServer.etcdClientKeyFile.targetPath;
     };
 
-    clientCaFile = cfg.certificates.caCertFile.targetPath;
+    clientCaFile = certificates.caCertFile.targetPath;
 
-    kubeletClientCertFile = cfg.certificates.apiServer.kubeletClientCertFile.targetPath;
-    kubeletClientKeyFile = cfg.certificates.apiServer.kubeletClientKeyFile.targetPath;
+    kubeletClientCertFile = certificates.apiServer.kubeletClientCertFile.targetPath;
+    kubeletClientKeyFile = certificates.apiServer.kubeletClientKeyFile.targetPath;
 
-    serviceAccountKeyFile = cfg.certificates.saPubFile.targetPath;
-    serviceAccountSigningKeyFile = cfg.certificates.saKeyFile.targetPath;
+    serviceAccountKeyFile = certificates.saPubFile.targetPath;
+    serviceAccountSigningKeyFile = certificates.saKeyFile.targetPath;
 
-    tlsCertFile = cfg.certificates.apiServer.certFile.targetPath;
-    tlsKeyFile = cfg.certificates.apiServer.keyFile.targetPath;
+    tlsCertFile = certificates.apiServer.certFile.targetPath;
+    tlsKeyFile = certificates.apiServer.keyFile.targetPath;
 
   };
 }

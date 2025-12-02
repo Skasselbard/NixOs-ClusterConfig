@@ -7,8 +7,6 @@
 }:
 
 let
-  cluster = config.clusterConfig.clusters.this;
-  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
   roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
   this = config.clusterConfig.clusters.this.machines.this;
 
@@ -31,10 +29,7 @@ in
   enable = builtins.any (node: node.name == this.name) etcdList;
 
   firewallPorts =
-    if (builtins.any (node: node.name == this.name) etcdList) then
-      [ peerCommunicationPort ]
-    else
-      [ ];
+    if (builtins.any (node: node.name == this.name) etcdList) then [ peerCommunicationPort ] else [ ];
 
   nodeName = this.name;
 
@@ -52,8 +47,6 @@ in
     initialAdvertisePeerUrl = mkUrl peerCommunicationPort node.fqdn;
   }) etcdList;
 
-  initialCluster = map (
-    node: "${node.name}=${mkUrl peerCommunicationPort node.fqdn}"
-  ) etcdList;
+  initialCluster = map (node: "${node.name}=${mkUrl peerCommunicationPort node.fqdn}") etcdList;
 
 }

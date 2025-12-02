@@ -27,8 +27,9 @@ let
       metadata.labels."addonmanager.kubernetes.io/mode" = "Reconcile";
     };
   }) ciliumChart;
+
 in
-lib.mkIf (config.services.kubernetes.cluster.cniPlugin == "cilium") {
+lib.mkIf (cluster.services.kubernetes.cniPlugin == "cilium") {
 
   environment.systemPackages = [
     pkgs.cilium-cli

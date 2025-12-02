@@ -26,9 +26,6 @@
 with lib;
 
 let
-  # static values
-  defaultSourcePrefix = "/var/lib/kubernetes/pki/";
-  defaultTargetPrefix = "/etc/kubernetes/pki/";
 
   user = {
     root = config.users.users.root.name;
@@ -47,21 +44,9 @@ let
     publicRead = "0644";
   };
 
-  certs = config.services.kubernetes.cluster.certificates;
-
-  # Helper to build the options each cert uses
-  certOptions = name: default: {
-    sourcePath = mkOption {
-      type = types.str;
-      default = defaultSourcePrefix + default;
-      description = "Path to the ${name} file from where the file will be linked. Defaults to ${defaultSourcePrefix + default}";
-    };
-    targetPath = mkOption {
-      type = types.str;
-      default = defaultTargetPrefix + default;
-      description = "Path to the ${name} file. Defaults to ${defaultTargetPrefix + default}";
-    };
-  };
+  targets = config.clusterConfig.clusters.this.services.kubernetes.certificates;
+  sources = config.clusterConfig.clusters.this.machines.this.kubernetes.certificates;
+  certs = attrsets.recursiveUpdate targets sources;
 
   # build a tmpfile.rules link entry
   lnk =
@@ -70,98 +55,6 @@ let
 
 in
 {
-  options.services.kubernetes.cluster.certificates = {
-    generation = {
-
-      organization = mkOption {
-        type = types.str;
-        description = "";
-      };
-
-      organizationUnit = mkOption {
-        type = types.str;
-        description = "";
-      };
-
-      country = mkOption {
-        type = types.str;
-        description = "";
-      };
-
-      province = mkOption {
-        type = types.str;
-        description = "";
-      };
-
-      locality = mkOption {
-        type = types.str;
-        description = "";
-      };
-
-      # domain = mkOption {
-      #   type = types.str;
-      #   default = clusterInfo.fqdn;
-      #   description = "";
-      # };
-
-      # issuer = mkOption {
-      #   type = types.str;
-      #   default =
-      #     config.services.kubernetes.cluster.certificates.generation.organizationUnit
-      #     + "/"
-      #     + config.services.kubernetes.cluster.certificates.generation.organization;
-      #   description = "";
-      # };
-
-    };
-
-    caCertFile = certOptions "caCertFile" "ca.crt";
-    caKeyFile = certOptions "caKeyFile" "ca.key";
-
-    etcd = {
-      caCertFile = certOptions "etcdCaCertFile" "etcd/ca.crt";
-      caKeyFile = certOptions "etcdCaKeyFile" "etcd/ca.key";
-
-      serverCertFile = certOptions "etcdServerCertFile" "etcd/server.crt";
-      serverKeyFile = certOptions "etcdServerKeyFile" "etcd/server.key";
-
-      peerCertFile = certOptions "etcdPeerCertFile" "etcd/peer.crt";
-      peerKeyFile = certOptions "etcdPeerKeyFile" "etcd/peer.key";
-
-      etcdHealthcheckClientCertFile = certOptions "etcdHealthcheckClientCertFile" "etcd/healthcheck-client.crt";
-      etcdHealthcheckClientKeyFile = certOptions "etcdHealthcheckClientKeyFile" "etcd/healthcheck-client.key";
-    };
-
-    apiServer = {
-      certFile = certOptions "apiserverCertFile" "apiserver.crt";
-      keyFile = certOptions "apiserverKeyFile" "apiserver.key";
-
-      kubeletClientCertFile = certOptions "apiserverKubeletClientCertFile" "apiserver-kubelet-client.crt";
-      kubeletClientKeyFile = certOptions "apiserverKubeletClientKeyFile" "apiserver-kubelet-client.key";
-
-      etcdClientCertFile = certOptions "apiserverEtcdClientCertFile" "apiserver-etcd-client.crt";
-      etcdClientKeyFile = certOptions "apiserverEtcdClientKeyFile" "apiserver-etcd-client.key";
-    };
-
-    addonManagerCertFile = certOptions "addonManagerCertFile" "addon-manager.crt";
-    addonManagerKeyFile = certOptions "addonManagerKeyFile" "addon-manager.key";
-
-    controllerManagerCertFile = certOptions "controllerManagerCertFile" "controller-manager.crt";
-    controllerManagerKeyFile = certOptions "controllerManagerKeyFile" "controller-manager.key";
-
-    kubeletCertFile = certOptions "kubeletCertFile" "kubelet.crt";
-    kubeletKeyFile = certOptions "kubeletKeyFile" "kubelet.key";
-
-    proxyCertFile = certOptions "proxyCertFile" "proxy.crt";
-    proxyKeyFile = certOptions "proxyKeyFile" "proxy.key";
-
-    schedulerCertFile = certOptions "schedulerCertFile" "scheduler.crt";
-    schedulerKeyFile = certOptions "schedulerKeyFile" "scheduler.key";
-
-    saKeyFile = certOptions "saKeyFile" "sa.key";
-    saPubFile = certOptions "saPubFile" "sa.pub";
-
-  };
 
   config.systemd.tmpfiles.rules =
     (
@@ -285,14 +178,14 @@ in
           (lnk certs.etcd.peerKeyFile.targetPath certs.etcd.peerKeyFile.sourcePath user.etcd group.etcd
             permissions.privateUser
           )
-          (lnk certs.etcd.etcdHealthcheckClientCertFile.targetPath
-            certs.etcd.etcdHealthcheckClientCertFile.sourcePath
+          (lnk certs.etcd.healthcheckClientCertFile.targetPath
+            certs.etcd.healthcheckClientCertFile.sourcePath
             user.etcd
             group.etcd
             permissions.publicRead
           )
-          (lnk certs.etcd.etcdHealthcheckClientKeyFile.targetPath
-            certs.etcd.etcdHealthcheckClientKeyFile.sourcePath
+          (lnk certs.etcd.healthcheckClientKeyFile.targetPath
+            certs.etcd.healthcheckClientKeyFile.sourcePath
             user.etcd
             group.etcd
             permissions.privateUser

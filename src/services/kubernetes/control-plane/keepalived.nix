@@ -10,11 +10,9 @@ let
   forEach = lib.lists.forEach;
 
   cluster = config.clusterConfig.clusters.this;
-  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
   roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
   this = config.clusterConfig.clusters.this.machines.this;
-
-  cfg = config.services.kubernetes.cluster;
+  virtualIps = cluster.services.kubernetes.virtualIps;
 
   keepalivedNodeList = kubeLib.getControlPlaneList roles;
 
@@ -85,10 +83,10 @@ let
 
   priority = assignKeepalivedPriorities."${this.name}".priority;
   interface = assignKeepalivedPriorities."${this.name}".virtualIpInterface;
-  virtualIps = map (ip: { addr = ip; }) cfg.virtualIps;
+  virtualIpsMapped = map (ip: { addr = ip; }) virtualIps;
 
   hostsEntryList = flatten (
-    forEach cfg.virtualIps (ip: "${ip} kubernetes.${cluster.fqdn} kubernetes k8s")
+    forEach virtualIps (ip: "${ip} kubernetes.${cluster.fqdn} kubernetes k8s")
   );
   hostsEntries = (builtins.concatStringsSep "\n" hostsEntryList);
 
@@ -103,9 +101,9 @@ in
       inherit
         interface
         priority
-        virtualIps
         ;
 
+      virtualIps = virtualIpsMapped;
       virtualRouterId = priority;
       trackInterfaces = [ interface ];
 

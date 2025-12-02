@@ -8,10 +8,6 @@
 
 let
 
-  cfg = config.services.kubernetes.cluster;
-
-  cluster = config.clusterConfig.clusters.this;
-  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
   roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
   this = config.clusterConfig.clusters.this.machines.this;
 

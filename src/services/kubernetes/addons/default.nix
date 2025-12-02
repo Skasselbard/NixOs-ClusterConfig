@@ -1,6 +1,5 @@
 {
   config,
-  lib,
   pkgs,
   kubeLib,
   ...
@@ -8,25 +7,19 @@
 
 let
 
-  cfg = config.services.kubernetes.cluster;
-
   cluster = config.clusterConfig.clusters.this;
-  selectors = config.clusterConfig.clusters.this.services.kubernetes.selectors;
   roles = config.clusterConfig.clusters.this.services.kubernetes.roles;
   this = config.clusterConfig.clusters.this.machines.this;
+  certificates = cluster.services.kubernetes.certificates;
 
   apiServerPort = 6443;
   controlPlaneNodeList = kubeLib.getControlPlaneList roles;
 
-  #############################
-  # Helper Functions
-  mkUrls = kubeLib.mkUrls;
-
   addonManager.kubeconfig = {
-    caFile = cfg.certificates.caCertFile.targetPath;
-    certFile = cfg.certificates.addonManagerCertFile.targetPath;
-    keyFile = cfg.certificates.addonManagerKeyFile.targetPath;
-    server = builtins.head (mkUrls apiServerPort (map (node: node.fqdn) controlPlaneNodeList));
+    caFile = certificates.caCertFile.targetPath;
+    certFile = certificates.addonManagerCertFile.targetPath;
+    keyFile = certificates.addonManagerKeyFile.targetPath;
+    server = builtins.head (kubeLib.mkUrls apiServerPort (map (node: node.fqdn) controlPlaneNodeList));
   };
 
   kubeconfig = config.services.kubernetes.lib.mkKubeConfig "kubelet" addonManager.kubeconfig;

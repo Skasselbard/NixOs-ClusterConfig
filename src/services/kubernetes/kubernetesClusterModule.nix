@@ -36,6 +36,8 @@ let
       }
     );
 
+  certOptions = (import ./certificates/clusterOptions.nix) { inherit lib; };
+
   deploymentAnnotation =
     config:
     let
@@ -46,10 +48,7 @@ let
           # get the attrset of the current cluster
           cluster = config.domain.clusters.${clusterName};
           clusterFqdn = cluster.fqdn;
-          # get all machines selected by the kubernetes service definition
-          kubernetesMachines =
-            filters.resolveDefinitions cluster.services.kubernetes.selectors clusterName
-              config;
+
           # get all ControlPLane nodes
           controlPlaneMachines =
             if builtins.hasAttr "controlPlane" cluster.services.kubernetes.roles then
@@ -94,60 +93,6 @@ let
         in
         {
           kubernetes = {
-
-            createEtcdCertificates =
-              if clusterConfig.services ? kubernetes then
-                if etcdMachines != [ ] then
-                  (pkgs.writeShellScriptBin "createEtcdCertificates" ''
-                    mkdir -p certs
-                    cd certs
-                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                    ${pkgs.bash}/bin/bash ${./scripts/create-etcd-certs.sh} ${certData-json-file}
-                  '')
-                else
-                  pkgs.writeShellScriptBin "createEtcdCertificates" "echo \"no etcd machine is configured for this cluster\""
-              else
-                pkgs.writeShellScriptBin "createEtcdCertificates" "echo \"kubernetes is not configured for this cluster\"";
-
-            createK8sCA =
-              if clusterConfig.services ? kubernetes then
-                if controlPlaneMachines != [ ] then
-                  (pkgs.writeShellScriptBin "createK8sCA" ''
-                    mkdir -p certs
-                    cd certs
-                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                    ${pkgs.bash}/bin/bash ${./scripts/create-k8s-ca.sh} ${certData-json-file}
-                  '')
-                else
-                  pkgs.writeShellScriptBin "createK8sCA" "echo \"no control-plane machine is configured for this cluster\""
-              else
-                pkgs.writeShellScriptBin "createK8sCA" "echo \"kubernetes is not configured for this cluster\"";
-
-            createK8sCerts =
-              let
-                roles = builtins.attrNames certData.k8s.roles;
-              in
-              if clusterConfig.services ? kubernetes then
-                if controlPlaneMachines != [ ] then
-                  (pkgs.writeShellScriptBin "createK8sCert" ''
-                    set -euo pipefail
-                    mkdir -p certs
-                    cd certs
-                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-
-                      for role in ${builtins.concatStringsSep " " roles}; do
-                        if jq -e ".k8s.roles.\"$role\"" ${certData-json-file}  >/dev/null; then
-                          echo "[INFO] Generating kube-config for role: $role"
-                          ${pkgs.bash}/bin/bash ${./scripts/create-k8s-cert.sh} "$role" ${certData-json-file} 
-                        else
-                          echo "[INFO] Skipping role: $role (not in config)"
-                        fi
-                      done
-                  '')
-                else
-                  pkgs.writeShellScriptBin "createK8sCert" "echo \"no control-plane machine is configured for this cluster\""
-              else
-                pkgs.writeShellScriptBin "createK8sCert" "echo \"kubernetes is not configured for this cluster\"";
 
             createKubeConfigs =
               if clusterConfig.services ? kubernetes then
@@ -196,17 +141,55 @@ let
 in
 {
   config.extensions.transformations.clusterTransformations = [ addFlakeInputs ];
-  config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
+  # config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
   config.extensions.clusterServices.kubernetes = {
+
     defaultModule = import ./kubernetesService.nix;
+
     roles = [
       "controlPlane"
       "worker"
       "etcd"
     ];
+
+    options = {
+
+      certificates = certOptions.serviceOptions;
+
+      cniPlugin = mkOption {
+        description = ''
+          The CNI plugin to use for networking in the cluster.
+
+          Supported options are "cilium".
+        '';
+        type = lib.types.enum [ "cilium" ];
+        default = "cilium";
+      };
+
+      virtualIps = mkOption {
+        description = ''
+          A list of IP addresses the cluster should be available on.
+
+          You can add a netmask suffix to the ip.
+        '';
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [
+          "10.0.0.1"
+          "192.168.200.20/24"
+        ];
+      };
+
+    };
+
+    late.config.accounts =
+      { clusterConfig }: (import ./accounts/defaultAccounts.nix { inherit lib clusterConfig kubeLib; });
+
   };
 
   config.extensions.clusterMachine.options.kubernetes = {
+
+    certificates = certOptions.machineOptions;
 
     nodeLabels = mkOption {
       description = "A set of labels that will be added to the node when registered in the kubernetes cluster.";
