@@ -20,7 +20,13 @@
 
   };
 
-  outputs = inputs@{ self, nixpkgs, clusterConfigFlake, ... }:
+  outputs =
+    inputs@{
+      self,
+      nixpkgs,
+      clusterConfigFlake,
+      ...
+    }:
 
     let # Definitions and imports
 
@@ -33,11 +39,11 @@
       filters = clusterConfigFlake.lib.filters;
 
       # Configuration from other Layers, e.g.: NixOs machine configurations
-      configurations =
-        (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
+      configurations = (import ../00-exampleConfigs) { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
-    in let
+    in
+    let
 
       clusterConfig = clusterConfigFlake.lib.buildCluster {
 
@@ -93,8 +99,10 @@
 
                 vm1 = {
                   inherit system;
-                  nixosModules =
-                    [ machines.vm1 inputs.disko.nixosModules.default ];
+                  nixosModules = [
+                    machines.vm1
+                    inputs.disko.nixosModules.default
+                  ];
 
                   deployment = {
                     targetHost = "192.168.122.201";
@@ -111,8 +119,10 @@
 
                 vm2 = {
                   inherit system;
-                  nixosModules =
-                    [ machines.vm2 inputs.disko.nixosModules.default ];
+                  nixosModules = [
+                    machines.vm2
+                    inputs.disko.nixosModules.default
+                  ];
 
                   deployment = {
                     targetHost = "192.168.122.202";
@@ -122,7 +132,7 @@
                     # However, the intention behind this config is formatting.
                     #
                     # For this example we extract the script build with the disko configuration manually.
-                    # This can come in handy if you want to use part of your disko configuiration 
+                    # This can come in handy if you want to use part of your disko configuiration
                     # for formatting (e.g. the OS) but another part should not be touched (like data drives).
                     # You can then define multiple disko configurations
                     # (e.g. one for ephemeral OS and one for the persistent data)
@@ -132,25 +142,25 @@
                     #
                     # But we keep the example simple and only use the disko config from the vm
                     # and add some echos around.
-                    formatScript = let
-                      # get the machine configuration
-                      cfg = self.nixosConfigurations.vm2.config;
+                    formatScript =
+                      let
+                        # get the machine configuration
+                        cfg = self.nixosConfigurations.vm2.config;
 
-                      customStartMessage = ''
-                        echo "This could be  the result of your preformat command"'';
+                        customStartMessage = ''echo "This could be  the result of your preformat command"'';
 
-                      # the disko config from the machine
-                      diskoScript = cfg.disko.devices._disko;
+                        # the disko config from the machine
+                        diskoScript = cfg.disko.devices._disko;
 
-                      customEndMessage = ''
-                        echo "This could be  the result of your postformat command"'';
+                        customEndMessage = ''echo "This could be  the result of your postformat command"'';
 
-                      # Build an executable script and use it for formatting
-                    in pkgs.writeScript "formatScript" ''
-                      ${customStartMessage}
-                      ${diskoScript}
-                      ${customEndMessage}
-                    '';
+                        # Build an executable script and use it for formatting
+                      in
+                      pkgs.writeScript "formatScript" ''
+                        ${customStartMessage}
+                        ${diskoScript}
+                        ${customEndMessage}
+                      '';
                   };
 
                 };
@@ -164,5 +174,6 @@
       };
 
       # DO NOT FORGET!
-    in clusterConfig; # use the generated cluster config as the flake content
+    in
+    clusterConfig; # use the generated cluster config as the flake content
 }

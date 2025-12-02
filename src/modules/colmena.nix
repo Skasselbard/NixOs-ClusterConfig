@@ -1,7 +1,6 @@
 {
   lib,
   clusterlib,
-  nixpkgs,
   flakeInputs,
   ...
 }:
@@ -42,19 +41,18 @@ let
 
       apps = colmena.apps;
 
-      colmena =
-        {
-          meta.nixpkgs = import nixpkgs {
-            system = "x86_64-linux"; # TODO: is this used for all machines?
-            overlays = [ ];
-          };
+      colmena = {
+        meta.nixpkgs = import flakeInputs.nixpkgs {
+          system = "x86_64-linux"; # TODO: is this used for all machines?
+          overlays = [ ];
+        };
+      }
+      // forEachAttrIn machines (
+        machineName: machineConfig: {
+          deployment = colmenaConfigFrom machineConfig.deployment;
+          imports = machineConfig.nixosModules;
         }
-        // forEachAttrIn machines (
-          machineName: machineConfig: {
-            deployment = colmenaConfigFrom machineConfig.deployment;
-            imports = machineConfig.nixosModules;
-          }
-        );
+      );
 
     };
 in

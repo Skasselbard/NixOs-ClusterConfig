@@ -41,7 +41,7 @@
       # To separate cluster configurations from other configurations (e.g. machines)
       # it is advisable to keep the configurations separate and import it in a variable.
       # This keeps the cluster config much more readable.
-      configurations = (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
+      configurations = (import ../00-exampleConfigs) { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
     in

@@ -46,7 +46,7 @@
       filters = clusterConfigFlake.lib.filters;
 
       # Configuration from other Layers, e.g.: NixOs machine configurations
-      configurations = (import "${self}/../00-exampleConfigs/") { inherit pkgs; };
+      configurations = (import ../00-exampleConfigs) { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
       homeModules = configurations.homeModules;

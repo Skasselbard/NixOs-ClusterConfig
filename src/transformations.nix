@@ -4,13 +4,14 @@ let # imports
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
   eval = clusterlib.eval;
+  update = clusterlib.update;
 
   attrsets = lib.attrsets;
   mkDefault = lib.mkDefault;
 
   # helperFunctions
   # Add cluster information including "this" pointer for the current cluster and machine.
-  clusterConfigThisResolved =
+  clusterConfigMachineResolved =
     config: clusterName: machineName:
     let
       clusterConfigBase = eval.clusterConfig config;
@@ -20,6 +21,44 @@ let # imports
         machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
       };
     };
+
+  clusterConfigClusterResolved =
+    config: clusterName:
+    let
+      clusterConfigBase = eval.clusterConfig config;
+    in
+    attrsets.recursiveUpdate clusterConfigBase {
+      clusters.this = clusterConfigBase.clusters."${clusterName}";
+    };
+
+  # Detect if a value looks like a function expecting clusterConfig.
+  # A valid function must accept an attrset and must reference "clusterConfig"
+  # inside the parameter set definition.
+  isClusterConfigFn =
+    fn:
+    builtins.isFunction fn
+    && (builtins.elem "clusterConfig" (builtins.attrNames (builtins.functionArgs fn)));
+
+  # Recursively traverse arbitrary attrsets.
+  # - If attrset → recurse
+  # - If is function expecting clusterConfig → call it
+  # - Else → warn and drop
+  callLeafFunctions =
+    { clusterConfig, node }:
+    if builtins.isAttrs node then
+      # Recurse through all attributes of the attrset
+      builtins.mapAttrs (
+        _: child:
+        callLeafFunctions {
+          inherit clusterConfig;
+          node = child;
+        }
+      ) node
+    else if isClusterConfigFn node then
+      # Call the function with the clusterConfig argument
+      node { inherit clusterConfig; }
+    else
+      throw "ERROR: Value '${toString node}' is not a function expecting { clusterConfig, ... }.";
 
   # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
   # This includes:
@@ -48,7 +87,7 @@ let # imports
 
         {
           # add options for the config that is set by the cluster config
-          imports = [ ./nixosOptions.nix ];
+          imports = [ ((import ./nixosOptions.nix) { inherit config clusterlib; }) ];
         }
 
         {
@@ -81,12 +120,83 @@ let # imports
     add.nixosModule config (
       clusterName: machineName: machineConfig: [
         {
-          clusterConfig = clusterConfigThisResolved config clusterName machineName;
+          clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
         }
       ]
     );
 
-  deploymentTransformation =
+  clusterPackageTransformation =
+    config:
+
+    attrsets.recursiveUpdate config (
+
+      # Add a package for each machine to the flake output
+      add.clusterPackage config (
+        clusterName:
+
+        # For each script a package is added
+        forEachAttrIn config.extensions.cluster.packages (
+          scriptName: scriptClosure:
+
+          # call the script closure with the evaluated cluster config representation
+          callLeafFunctions {
+            node = scriptClosure;
+            clusterConfig = (clusterConfigClusterResolved config clusterName);
+          }
+        )
+      )
+    );
+
+  lateConfigTransformation =
+    config:
+
+    lib.foldl (acc: elem: attrsets.recursiveUpdate acc elem) config [
+
+      (update.clusters config (
+        clusterName: clusterConfig:
+
+        forEachAttrIn config.extensions.cluster.late.config (
+          configName: configClosure:
+
+          # call the closure with the evaluated cluster config representation
+          callLeafFunctions {
+            node = configClosure;
+            clusterConfig = (clusterConfigClusterResolved config clusterName);
+          }
+        )
+      ))
+
+      (update.services config (
+        clusterName: serviceName: serviceConfig:
+
+        forEachAttrIn config.extensions.clusterServices."${serviceName}".late.config (
+          configName: configClosure:
+
+          # call the closure with the evaluated cluster config representation
+          callLeafFunctions {
+            node = configClosure;
+            clusterConfig = (clusterConfigClusterResolved config clusterName);
+          }
+        )
+      ))
+
+      (update.machines config (
+        clusterName: machineName: machineConfig:
+
+        forEachAttrIn config.extensions.clusterMachine.late.config (
+          configName: configClosure:
+
+          # call the closure with the evaluated cluster config representation
+          callLeafFunctions {
+            node = configClosure;
+            clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
+          }
+        )
+      ))
+
+    ];
+
+  machinePackageTransformation =
     config:
 
     attrsets.recursiveUpdate config (
@@ -100,9 +210,11 @@ let # imports
           scriptName: scriptClosure:
 
           # call the script closure with the evaluated cluster config representation
-          scriptClosure {
-            clusterConfig = (clusterConfigThisResolved config clusterName machineName);
+          callLeafFunctions {
+            node = scriptClosure;
+            clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
           }
+
         )
       )
     );
@@ -111,9 +223,18 @@ in
 {
 
   config.extensions.transformations = {
+
     clusterTransformations = [ clusterTransformation ];
+
     moduleTransformations = [ moduleTransformation ];
-    deploymentTransformations = [ deploymentTransformation ];
+
+    deploymentTransformations = [
+      # order is important
+      lateConfigTransformation
+      clusterPackageTransformation
+      machinePackageTransformation
+    ];
+
   };
 
 }

@@ -47,15 +47,17 @@ let
       }
     );
 
-  # Takes all services defined on a __machine__ level, calls its service closure in 'serviceName.definition' with all arguments, and adds the resulting NixOs modules to the machines nixosModules (used to build the machine).
+  # Takes all services defined on a __machine__ level, and adds the associated NixOs modules to the machines nixosModules (used to build the machine).
   machineServiceToNixOsConfiguration =
     config:
     add.nixosModule config (
-      clusterName: machineName: machineConfig:
+      _clusterName: _machineName: machineConfig:
       let
         serviceModules = forEachAttrIn machineConfig.services (
-          serviceName: serviceDefinition:
-          eval.service config clusterName serviceName serviceDefinition machineConfig
+          _serviceName: serviceDefinition: [
+            serviceDefinition.definition
+            serviceDefinition.extraConfig
+          ]
         );
       in
       lists.flatten (attrsets.attrValues serviceModules)

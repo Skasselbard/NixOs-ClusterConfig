@@ -32,7 +32,7 @@ let
   };
 
   clusterType = {
-    options = {
+    options = config.extensions.cluster.options // {
       users = mkOption {
         description = "A list of users deployed on the cluster nodes.";
         type = attrsOf (submodule userType);
@@ -95,39 +95,6 @@ let
   };
 
   machineType.options = config.extensions.clusterMachine.options // {
-    # TODO: move old annotations to nixosOptions?
-    # name = mkOption {
-    #   description = "The name of the machine within the cluster. Automatically populated from the attribute name in the machines definition.";
-    #   type = str;
-    #   example = "node1";
-    # };
-    # ips = mkOption {
-    #   description = "A list of ip addresses assigned to the machine. Automatically populated with static ip addresses from the networking configuration.";
-    #   type = attrsOf raw;
-    #   default = { };
-    # };
-    # fqdn = mkOption {
-    #   description = "The fully qualified domain name of the machine. Automatically populated from the cluster configuration.";
-    #   type = str;
-    #   example = "node1.example.com";
-    # };
-    # nixos = {
-    #   release = mkOption {
-    #     description = "The NixOS release of the machine. Automatically populated from the nixos configuration.";
-    #     type = str;
-    #     example = "23.05";
-    #   };
-    #   codeName = mkOption {
-    #     description = "The NixOS code name of the machine. Automatically populated from the nixos configuration.";
-    #     type = str;
-    #     example = "Warbler";
-    #   };
-    #   kernelVersion = mkOption {
-    #     description = "The kernel version of the machine. Automatically populated from the nixos configuration.";
-    #     type = str;
-    #     example = "6.12.51";
-    #   };
-    # };
 
     system = mkOption {
       description = lib."The type of system for this machine";
@@ -168,9 +135,9 @@ let
       description = lib."machine specific config";
       type = listOf raw;
       default = [ ];
-      example = {
+      example = [{
         boot.loader.systemd-boot.enable = true;
-      };
+      }];
     };
 
     # virtualization = mkOption {

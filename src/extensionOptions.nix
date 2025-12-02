@@ -28,11 +28,25 @@ let
         type = attrsOf anything;
       };
 
-      scripts = mkOption {
+      late.config = mkOption {
         description = ''
-          A set of scripts that will be made available to the cluster scripts.
-          TODO: closure of type {args}: str.
-          args = TODO:;
+          A set of cluster options that will be set after the machine configurations were fully evaluated.
+          For example to use in scripts that need information from the final machine configurations.
+          The options have to be defined in the extension options.
+          Closure of type {clusterConfig}: value.
+          For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
+        '';
+        type = attrsOf scriptType;
+        default = { };
+      };
+
+      packages = mkOption {
+        description = ''
+          A set of packages (e.g. executable scripts) that will be made available to the flake packages.
+          Build the package with: ``nix build .#<clusterName>.<packageName>``
+          Run the package with: ``nix run .#<clusterName>.<packageName>``
+          Closure of type {clusterConfig}: <derivation>.
+          For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
         '';
         type = attrsOf scriptType;
         default = { };
@@ -52,11 +66,25 @@ let
         type = attrsOf anything;
       };
 
+      late.config = mkOption {
+        description = ''
+          A set of cluster machine options that will be set after the machine configurations were fully evaluated.
+          For example to use in scripts that need information from the final machine configurations.
+          The options have to be defined in the extension options.
+          Closure of type {clusterConfig}: value.
+          For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
+        '';
+        type = attrsOf scriptType;
+        default = { };
+      };
+
       packages = mkOption {
         description = ''
-          A set of scripts that will be made available to the cluster scripts.
-          TODO: closure of type {args}: str.
-          args = TODO:;
+          A set of packages (e.g. executable scripts) that will be made available to the flake packages.
+          Build the package with: ``nix build .#<clusterName>.<machineName>.<packageName>``
+          Run the package with: ``nix run .#<clusterName>.<machineName>.<packageName>``
+          Closure of type {clusterConfig}: <derivation>.
+          For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
         '';
         type = attrsOf scriptType;
         default = { };
@@ -99,11 +127,25 @@ let
             type = attrsOf anything;
           };
 
-          scripts = mkOption {
+          late.config = mkOption {
             description = ''
-              A set of scripts that will be made available to the cluster scripts.
-              TODO: closure of type {args}: str.
-              args = TODO:;
+              A set of cluster service options that will be set after the machine configurations were fully evaluated.
+              For example to use in scripts that need information from the final machine configurations.
+              The options have to be defined in the extension options.
+              Closure of type {clusterConfig}: value.
+              For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
+            '';
+            type = attrsOf scriptType;
+            default = { };
+          };
+
+          packages = mkOption {
+            description = ''
+              A set of packages (e.g. executable scripts) that will be made available to the flake packages.
+              Build the package with: ``nix build .#<clusterName>.<serviceName>.<packageName>``
+              Run the package with: ``nix run .#<clusterName>.<serviceName>.<packageName>``
+              Closure of type {clusterConfig}: <derivation>.
+              For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
             '';
             type = attrsOf scriptType;
             default = { };

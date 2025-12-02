@@ -134,7 +134,7 @@ let
               clusterName: clusterDefinition:
 
               forEachAttrIn clusterDefinition.machines (
-                machineName: machineDefinition: updatePackageFn clusterName machineName
+                machineName: _machineDefinition: updatePackageFn clusterName machineName
               )
 
             );
@@ -169,7 +169,7 @@ let
 
     # Add a package that can be build with `nix build #clusterName.attrName` or run with `nix run #clusterName.attrName`
     #
-    # updatePackageFn =  clusterName -> clusterConfig -> {attrName = derivation;}
+    # updatePackageFn =  clusterName -> {attrName = derivation;}
     # clusterConfig in this case means the config for the specific cluster (under domain.clusters.clusterName).
     clusterPackage =
       config: updatePackageFn:
@@ -177,8 +177,8 @@ let
         packages =
           # The deployment options are generated for all system  configurations (by using flake utils)
           (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-            packages.cluster = forEachAttrIn (config.domain.clusters) (
-              clusterName: clusterConfig: updatePackageFn clusterName clusterConfig
+            packages = forEachAttrIn config.domain.clusters (
+              clusterName: _clusterDefinition: updatePackageFn clusterName
             );
           })).packages;
       };
@@ -236,7 +236,7 @@ let
             attrsets.recursiveUpdate
               {
                 name = machineName;
-                ips = get.ips machineDefinition.nixosConfiguration;
+                ips = get.ips machineDefinition.nixosConfiguration.config;
                 fqdn = machineDefinition.nixosConfiguration.config.networking.fqdn;
                 serviceAddresses = lists.forEach machineDefinition.serviceAddresses (entry: entry.tag);
                 services = lib.attrNames machineDefinition.services;
@@ -254,21 +254,14 @@ let
           );
 
         }
+        // (removeAttrs clusterDefinition [
+          "machines"
+          "services"
+          "users"
+        ])
       );
     };
 
-    # build the resulting nixos modules for a service definition
-    service =
-      config: clusterName: serviceName: serviceDefinition: machineConfig:
-      # build the nixOs module defined by the service
-      [
-
-        serviceDefinition.extraConfig
-
-        # add the service module
-        serviceDefinition.definition
-
-      ];
   };
 
   get = {
@@ -339,21 +332,21 @@ let
         );
 
       definitions =
-        machineConfig:
-        lists.forEach (get.interface.names machineConfig) (interfaceName: {
+        config:
+        lists.forEach (get.interface.names config) (interfaceName: {
           "${interfaceName}" =
-            builtins.removeAttrs (builtins.getAttr interfaceName machineConfig.config.networking.interfaces)
+            builtins.removeAttrs (builtins.getAttr interfaceName config.networking.interfaces)
               [ "subnetMask" ];
         });
 
-      names = machineConfig: attrsets.attrNames machineConfig.config.networking.interfaces;
+      names = config: attrsets.attrNames config.networking.interfaces;
     };
 
     ips =
-      machineConfig:
+      config:
       let
         interfaces = attrsets.mergeAttrsList (
-          lists.forEach (get.interface.definitions machineConfig) (
+          lists.forEach (get.interface.definitions config) (
             interface:
             let
               interfaceName = (lists.head (attrsets.attrNames interface));
