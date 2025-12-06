@@ -169,4 +169,5 @@ example/generated/*
 *.csr
 *.crl
 examples/07-kubernetes/certs/*
-examples/07-kubernetes/kubeconfigs/*
+examples/07-kubernetes/kubeConfigs/*
+examples/07-kubernetes/serviceAccount/*

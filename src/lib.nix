@@ -143,28 +143,25 @@ let
       };
 
     # Add a package that can be build with `nix build #machines.machineName.services.attrName` or run with `nix run #machines.machineName.services.attrName`
-    # updatePackageFn =  machineName -> machineConfig -> serviceName -> serviceConfig -> clusterconfig -> {attrName = derivation;}
+    # updatePackageFn =  clusterName -> {attrName = derivation;}
     servicePackages =
-      config: updatePackageFn:
+      config: serviceName: updatePackageFn:
       attrsets.recursiveUpdate config {
 
         packages =
           # The deployment options are generated for all system  configurations (by using flake utils)
           (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
 
-            packages.machines = forEachAttrIn (get.machines config) (
-              machineName: machineConfig: {
+            packages = forEachAttrIn config.domain.clusters (
+              clusterName: clusterDefinition:
 
-                services = forEachAttrIn (machineConfig.services) (
-                  serviceName: serviceConfig:
-                  updatePackageFn machineName machineConfig serviceName serviceConfig config
-                );
-
+              {
+                "${serviceName}" = (updatePackageFn clusterName);
               }
-            );
-          }
 
-          )).packages;
+            );
+
+          })).packages;
       };
 
     # Add a package that can be build with `nix build #clusterName.attrName` or run with `nix run #clusterName.attrName`
@@ -197,6 +194,7 @@ let
         rec {
 
           fqdn = "${clusterName}.${config.domain.suffix}";
+          name = "${clusterName}";
 
           # users TODO: add users?
 
@@ -205,6 +203,7 @@ let
 
             attrsets.recursiveUpdate
               {
+                name = serviceName;
                 roles = (
                   forEachAttrIn serviceDefinition.roles (
                     roleName: role:

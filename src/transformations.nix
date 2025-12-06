@@ -120,31 +120,10 @@ let # imports
     add.nixosModule config (
       clusterName: machineName: machineConfig: [
         {
+          # make the cluster config available in in the ``config`` attribute during machine evaluation
           clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
         }
       ]
-    );
-
-  clusterPackageTransformation =
-    config:
-
-    attrsets.recursiveUpdate config (
-
-      # Add a package for each machine to the flake output
-      add.clusterPackage config (
-        clusterName:
-
-        # For each script a package is added
-        forEachAttrIn config.extensions.cluster.packages (
-          scriptName: scriptClosure:
-
-          # call the script closure with the evaluated cluster config representation
-          callLeafFunctions {
-            node = scriptClosure;
-            clusterConfig = (clusterConfigClusterResolved config clusterName);
-          }
-        )
-      )
     );
 
   lateConfigTransformation =
@@ -196,27 +175,67 @@ let # imports
 
     ];
 
-  machinePackageTransformation =
+  packageTransformation =
     config:
 
-    attrsets.recursiveUpdate config (
+    lib.foldl (acc: elem: attrsets.recursiveUpdate acc elem) config (
+      [
 
-      # Add a package for each machine to the flake output
-      add.machinePackages config (
-        clusterName: machineName:
+        # Add a package for each cluster to the flake output
+        (add.clusterPackage config (
+          clusterName:
 
-        # For each script a package is added
-        forEachAttrIn config.extensions.clusterMachine.packages (
-          scriptName: scriptClosure:
+          # For each script a package is added
+          forEachAttrIn config.extensions.cluster.packages (
+            scriptName: scriptClosure:
 
-          # call the script closure with the evaluated cluster config representation
-          callLeafFunctions {
-            node = scriptClosure;
-            clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
-          }
+            # call the script closure with the evaluated cluster config representation
+            callLeafFunctions {
+              node = scriptClosure;
+              clusterConfig = (clusterConfigClusterResolved config clusterName);
+            }
+          )
+        ))
 
+        # Add a package for each machine to the flake output
+        (add.machinePackages config (
+          clusterName: machineName:
+
+          # For each script a package is added
+          forEachAttrIn config.extensions.clusterMachine.packages (
+            scriptName: scriptClosure:
+
+            # call the script closure with the evaluated cluster config representation
+            callLeafFunctions {
+              node = scriptClosure;
+              clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
+            }
+
+          )
+        ))
+
+      ]
+      ++ (lib.attrValues (
+        # For all services the package extensions are evaluated
+        forEachAttrIn config.extensions.clusterServices (
+          serviceName: serviceDefinition:
+
+          # Add a package for each service to the flake output
+          (add.servicePackages config serviceName (
+            clusterName:
+
+            (forEachAttrIn serviceDefinition.packages (
+              scriptName: scriptClosure:
+
+              # call the script closure with the evaluated cluster config representation
+              callLeafFunctions {
+                node = scriptClosure;
+                clusterConfig = (clusterConfigClusterResolved config clusterName);
+              }
+            ))
+          ))
         )
-      )
+      ))
     );
 
 in
@@ -231,8 +250,7 @@ in
     deploymentTransformations = [
       # order is important
       lateConfigTransformation
-      clusterPackageTransformation
-      machinePackageTransformation
+      packageTransformation
     ];
 
   };

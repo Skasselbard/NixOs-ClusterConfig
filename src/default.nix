@@ -63,7 +63,7 @@ let
         ./services.nix
         ./options.nix
         ./extensionOptions.nix
-        ./info.nix
+        # ./info.nix
         {
           config = {
             _module.args = {
@@ -144,11 +144,6 @@ let
       # is missing the service modules.
       # If we want to add transformations that depend on the final nixos configuration (including services),
       # we need another evaluation and extension step here.
-      # Example: I thought about a kubernetes option that includes all node labels from all nodes in the cluster.
-      # If the labels are defined in the service module itself (domain.cluster.{clustername}.services.{servicename} which is logically possible) the definition is not considered in Step 6.
-      # However, if we add a transformation (extensions.XXXTransformation) and an additional evaluation (evalMachines) the service modules are part of the configuration during the transformation.
-      # During this transformation the configuration of all machines can be read again und the labels can be collected and added to the resulting configuration.
-      # This way we can add additional configurations based on machine states that consider service modules as well.
 
       # Step 7:
       # Transformations to add packages for deployment scripts and other tools
