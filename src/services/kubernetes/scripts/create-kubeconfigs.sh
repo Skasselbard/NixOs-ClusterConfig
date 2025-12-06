@@ -30,7 +30,7 @@ while [[ $# -gt 0 ]]; do
     -r|--role) ROLE="$2"; shift 2 ;;
     -s|--server) SERVER="$2"; shift 2 ;;
     -c|--cert-dir) CERT_DIR="$2"; shift 2 ;;
-    -a|--ca-name) CA_NAME="$2"; shift 2 ;;
+    -a|--ca-path) CA_PATH="$2"; shift 2 ;;
     -n|--cluster-name) CLUSTER_NAME="$2"; shift 2 ;;
     -o|--output-dir) OUTPUT_DIR="$2"; shift 2 ;;
     -h|--help) usage ;;
@@ -39,20 +39,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required arguments
-if [[ -z "${ROLE:-}" || -z "${SERVER:-}" || -z "${CERT_DIR:-}" || -z "${CA_NAME:-}" ]]; then
+if [[ -z "${ROLE:-}" || -z "${SERVER:-}" || -z "${CERT_DIR:-}" || -z "${CA_PATH:-}" ]]; then
   echo "[ERROR] Missing required arguments."
   usage
 fi
 
 # Paths
 mkdir -p "$OUTPUT_DIR"
-CA_CERT="${CERT_DIR}/${CA_NAME}.crt"
 CLIENT_CERT="${CERT_DIR}/${ROLE}.crt"
 CLIENT_KEY="${CERT_DIR}/${ROLE}.key"
 OUTPUT_FILE="${OUTPUT_DIR}/${ROLE}.kubeconfig"
 
 # Validate files
-for f in "$CA_CERT" "$CLIENT_CERT" "$CLIENT_KEY"; do
+for f in "$CA_PATH" "$CLIENT_CERT" "$CLIENT_KEY"; do
   if [[ ! -f "$f" ]]; then
     echo "[ERROR] Missing required file: $f"
     exit 1
@@ -65,10 +64,10 @@ CONTEXT_NAME="${ROLE}@${CLUSTER_NAME}"
 echo "[INFO] Generating kubeconfig for role '${ROLE}' → ${OUTPUT_FILE}"
 echo "[INFO] Cluster: ${CLUSTER_NAME}"
 echo "[INFO] Server: ${SERVER}"
-echo "[INFO] Using CA: ${CA_NAME}"
+echo "[INFO] Using CA: ${CA_PATH}"
 
 kubectl config set-cluster "${CLUSTER_NAME}" \
-  --certificate-authority="${CA_CERT}" \
+  --certificate-authority="${CA_PATH}" \
   --embed-certs=true \
   --server="${SERVER}" \
   --kubeconfig="${OUTPUT_FILE}"

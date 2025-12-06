@@ -80,33 +80,39 @@
             # the cluster name will also be used for fqdn generation
             example = {
 
-              certificates.sets = {
-                kubernetes = {
-                  intermediates = {
-                    ica = {
-                      commonName = "A";
-                      domains = [ "example.com" ];
-                      expires = "5 year";
-                      signedBy = [ "kubernetes" ];
-                      # organization = "ExampleOrg";
-                      # organizationalUnit = "IT";
-                      # country = "DE";
-                      # province = "Bundesland";
-                      # locality = "TownStadt";
+              certificates.sets =
+                let
+                  kubernetesAccounts = clusterConfig.domain.clusters.example.services.kubernetes.accounts;
+                  clusterName = "example.com";
+                  mapSet = setName: {
+                    ca = {
+                      commonName = "${setName}-root-ca";
+                      expires = "10 year";
                     };
-                  };
-                  certs = {
-                    api-server = {
-                      commonName = "A";
-                      domains = [ "example.com" ];
-                      ips = [ "127.0.0.1" ];
+                    intermediates = {
+                      "${setName}-ca" = {
+                        commonName = "A";
+                        domains = [ clusterName ];
+                        expires = "5 year";
+                        signedBy = [ "${setName}" ];
+                      };
+                    };
+                    certs = builtins.mapAttrs (accountName: account: {
+                      commonName = account.roleName or null;
+                      organization = account.kubernetesGroup or null;
+                      domains = account.domains or [ ];
+                      ips = account.ips or [ ];
                       uri = [ ];
-                      expires = "5 year";
-                      signedBy = [ "ica" ];
-                    };
+                      expires = "2 year";
+                      signedBy = [ "${setName}" ];
+                      # signedBy = [ "${setName}-ca" ];
+                    }) kubernetesAccounts."${setName}";
                   };
+                in
+                {
+                  etcd = mapSet "etcd";
+                  kubernetes = mapSet "kubernetes";
                 };
-              };
 
               #############################################
               # Services
@@ -160,127 +166,132 @@
                       machineName = config.networking.hostName;
                       isEtcdMember = config.services.etcd.enable;
                       isControlPlaneMember = config.services.kubernetes.apiserver.enable;
+                      sources = config.clusterConfig.clusters.this.machines.this.kubernetes.certificates;
                     in
                     {
                       # configuring the secrets to deploy the certificates with the secret-service cluster service
-                      # users.users = with config.services.kubernetes.cluster.certificates; {
-                      #   etcd = lib.mkIf isEtcdMember {
-                      #     secrets.file = {
-                      #       ca-cert = {
-                      #         backendPath = "./certs/etcd-ca.crt";
-                      #         linkPath = etcd.caCertFile.sourcePath;
-                      #         permissions = "555";
-                      #       };
-                      #       ca-key = {
-                      #         backendPath = "./certs/etcd-ca.key";
-                      #         linkPath = etcd.caKeyFile.sourcePath;
-                      #       };
-                      #       server-cert = {
-                      #         backendPath = "./certs/etcd-server.crt";
-                      #         linkPath = etcd.serverCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       server-key = {
-                      #         backendPath = "./certs/etcd-server.key";
-                      #         linkPath = etcd.serverKeyFile.sourcePath;
-                      #       };
-                      #       peer-cert = {
-                      #         backendPath = "./certs/etcd-peer.crt";
-                      #         linkPath = etcd.peerCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       peer-key = {
-                      #         backendPath = "./certs/etcd-peer.key";
-                      #         linkPath = etcd.peerKeyFile.sourcePath;
-                      #       };
-                      #     };
-                      #   };
-                      #   kubernetes = {
-                      #     secrets.file = {
-                      #       apiserver-server-cert = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/apiserver.crt";
-                      #         linkPath = apiServer.certFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       apiserver-server-key = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/apiserver.key";
-                      #         linkPath = apiServer.keyFile.sourcePath;
-                      #       };
-                      #       ca-cert = {
-                      #         backendPath = "./certs/k8s-ca.crt";
-                      #         linkPath = caCertFile.sourcePath;
-                      #         permissions = "555";
-                      #       };
-                      #       ca-key = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/k8s-ca.key";
-                      #         linkPath = caKeyFile.sourcePath;
-                      #       };
-                      #       "etcd-client-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/apiserver-etcd-client-${machineName}.crt";
-                      #         linkPath = apiServer.etcdClientCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       "etcd-client-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/apiserver-etcd-client-${machineName}.key";
-                      #         linkPath = apiServer.etcdClientKeyFile.sourcePath;
-                      #       };
-                      #       "kubelet-server-cert-${machineName}" = {
-                      #         backendPath = "./certs/kubelet-server-${machineName}.crt";
-                      #         linkPath = kubeletCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       "kubelet-server-key-${machineName}" = {
-                      #         backendPath = "./certs/kubelet-server-${machineName}.key";
-                      #         linkPath = kubeletKeyFile.sourcePath;
-                      #       };
-                      #       "kubelet-client-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/kubelet-client-${machineName}.crt";
-                      #         linkPath = apiServer.kubeletClientCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       "kubelet-client-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/kubelet-client-${machineName}.key";
-                      #         linkPath = apiServer.kubeletClientKeyFile.sourcePath;
-                      #       };
-                      #       "addon-manager-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/admin.crt";
-                      #         linkPath = addonManagerCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       "addon-manager-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/admin.key";
-                      #         linkPath = addonManagerKeyFile.sourcePath;
-                      #       };
-                      #       "controller-manager-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/controller-manager-${machineName}.crt";
-                      #         linkPath = controllerManagerCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       "controller-manager-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/controller-manager-${machineName}.key";
-                      #         linkPath = controllerManagerKeyFile.sourcePath;
-                      #       };
-                      #       "scheduler-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/scheduler-${machineName}.crt";
-                      #         linkPath = schedulerCertFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       "scheduler-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/scheduler-${machineName}.key";
-                      #         linkPath = schedulerKeyFile.sourcePath;
-                      #       };
-                      #       service-account = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/sa.pub";
-                      #         linkPath = saPubFile.sourcePath;
-                      #         permissions = "444";
-                      #       };
-                      #       service-account-key = lib.mkIf isControlPlaneMember {
-                      #         backendPath = "./certs/sa.key";
-                      #         linkPath = saKeyFile.sourcePath;
-                      #       };
-                      #     };
-                      #   };
-                      # };
+                      users.users = {
+                        etcd = lib.mkIf isEtcdMember {
+                          secrets.file = {
+                            ca-cert = {
+                              backendPath = "./certificates/etcd/ca/etcd.crt";
+                              # backendPath = "./certificates/etcd/intermediates/etcd-ca.crt";
+                              linkPath = sources.etcd.caCertFile.sourcePath;
+                              permissions = "555";
+                            };
+                            ca-key = {
+                              backendPath = "./certificates/etcd/ca/etcd.key";
+                              # backendPath = "./certificates/etcd/intermediates/etcd-ca.key";
+                              linkPath = sources.etcd.caKeyFile.sourcePath;
+                            };
+                            server-cert = {
+                              backendPath = "./certificates/etcd/certs/server.crt";
+                              linkPath = sources.etcd.serverCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            server-key = {
+                              backendPath = "./certificates/etcd/certs/server.key";
+                              linkPath = sources.etcd.serverKeyFile.sourcePath;
+                            };
+                            peer-cert = {
+                              backendPath = "./certificates/etcd/certs/peer.crt";
+                              linkPath = sources.etcd.peerCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            peer-key = {
+                              backendPath = "./certificates/etcd/certs/peer.key";
+                              linkPath = sources.etcd.peerKeyFile.sourcePath;
+                            };
+                          };
+                        };
+                        kubernetes = {
+                          secrets.file = {
+                            apiserver-server-cert = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/apiserver.crt";
+                              linkPath = sources.apiServer.certFile.sourcePath;
+                              permissions = "444";
+                            };
+                            apiserver-server-key = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/apiserver.key";
+                              linkPath = sources.apiServer.keyFile.sourcePath;
+                            };
+                            ca-cert = {
+                              backendPath = "./certificates/kubernetes/ca/kubernetes.crt";
+                              # backendPath = "./certificates/kubernetes/intermediates/kubernetes-ca.crt";
+                              linkPath = sources.caCertFile.sourcePath;
+                              permissions = "555";
+                            };
+                            ca-key = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/ca/kubernetes.key";
+                              # backendPath = "./certificates/kubernetes/intermediates/kubernetes-ca.key";
+                              linkPath = sources.caKeyFile.sourcePath;
+                            };
+                            "etcd-client-cert-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/etcd/certs/apiserver-etcd-client-${machineName}.crt";
+                              linkPath = sources.apiServer.etcdClientCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "etcd-client-key-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/etcd/certs/apiserver-etcd-client-${machineName}.key";
+                              linkPath = sources.apiServer.etcdClientKeyFile.sourcePath;
+                            };
+                            "kubelet-server-cert-${machineName}" = {
+                              backendPath = "./certificates/kubernetes/certs/kubelet-${machineName}.crt";
+                              linkPath = sources.kubeletCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "kubelet-server-key-${machineName}" = {
+                              backendPath = "./certificates/kubernetes/certs/kubelet-${machineName}.key";
+                              linkPath = sources.kubeletKeyFile.sourcePath;
+                            };
+                            "kubelet-client-cert-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/apiserver-kubelet-client-${machineName}.crt";
+                              linkPath = sources.apiServer.kubeletClientCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "kubelet-client-key-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/apiserver-kubelet-client-${machineName}.key";
+                              linkPath = sources.apiServer.kubeletClientKeyFile.sourcePath;
+                            };
+                            "addon-manager-cert-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/admin.crt";
+                              linkPath = sources.addonManagerCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "addon-manager-key-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/admin.key";
+                              linkPath = sources.addonManagerKeyFile.sourcePath;
+                            };
+                            "controller-manager-cert-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/controller-manager-${machineName}.crt";
+                              linkPath = sources.controllerManagerCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "controller-manager-key-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/controller-manager-${machineName}.key";
+                              linkPath = sources.controllerManagerKeyFile.sourcePath;
+                            };
+                            "scheduler-cert-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/scheduler-${machineName}.crt";
+                              linkPath = sources.schedulerCertFile.sourcePath;
+                              permissions = "444";
+                            };
+                            "scheduler-key-${machineName}" = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certificates/kubernetes/certs/scheduler-${machineName}.key";
+                              linkPath = sources.schedulerKeyFile.sourcePath;
+                            };
+                            service-account = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certs/sa.pub";
+                              linkPath = sources.saPubFile.sourcePath;
+                              permissions = "444";
+                            };
+                            service-account-key = lib.mkIf isControlPlaneMember {
+                              backendPath = "./certs/sa.key";
+                              linkPath = sources.saKeyFile.sourcePath;
+                            };
+                          };
+                        };
+                      };
 
                     };
                 };

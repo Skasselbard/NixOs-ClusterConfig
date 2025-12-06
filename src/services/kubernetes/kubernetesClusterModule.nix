@@ -38,106 +38,6 @@ let
 
   certOptions = (import ./certificates/clusterOptions.nix) { inherit lib; };
 
-  deploymentAnnotation =
-    config:
-    let
-
-      kubernetesScripts = add.clusterPackage config (
-        clusterName: clusterConfig:
-        let
-          # get the attrset of the current cluster
-          cluster = config.domain.clusters.${clusterName};
-          clusterFqdn = cluster.fqdn;
-
-          # get all ControlPLane nodes
-          controlPlaneMachines =
-            if builtins.hasAttr "controlPlane" cluster.services.kubernetes.roles then
-              filters.resolveDefinitions cluster.services.kubernetes.roles.controlPlane clusterName config
-            else
-              (builtins.trace "Warning: kubernetes controlPlane role is not defined" [ ]);
-
-          workerMachines =
-            if builtins.hasAttr "worker" cluster.services.kubernetes.roles then
-              filters.resolveDefinitions cluster.services.kubernetes.roles.controlPlane clusterName config
-            else
-              (builtins.trace "Warning: kubernetes worker role is not defined" [ ]);
-
-          etcdMachines =
-            let
-              etcdRoles =
-                if builtins.hasAttr "etcd" cluster.services.kubernetes.roles then
-                  filters.resolveDefinitions cluster.services.kubernetes.roles.etcd clusterName config
-                else
-                  [ ];
-            in
-            if etcdRoles == [ ] then controlPlaneMachines else etcdRoles;
-          # pick an arbitrary machine from the kubernetes machines
-          firstMachine = builtins.head controlPlaneMachines;
-
-          certData-mapping = import ./control-plane/cert-data-mapper.nix {
-            inherit
-              clusterFqdn
-              controlPlaneMachines
-              etcdMachines
-              kubeLib
-              lib
-              pkgs
-              workerMachines
-
-              ;
-            control-plane-config = firstMachine.nixosConfiguration.config;
-          };
-          certData = certData-mapping.certData;
-          certData-json-file = certData-mapping.certDate-json-file;
-
-        in
-        {
-          kubernetes = {
-
-            createKubeConfigs =
-              if clusterConfig.services ? kubernetes then
-                if controlPlaneMachines != [ ] then
-                  let
-                    apiServer = "kubernetes.${cluster.fqdn}";
-                  in
-                  (pkgs.writeShellScriptBin "createKubeConfigs" ''
-                    mkdir -p certs
-                    PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-                    ${pkgs.bash}/bin/bash ${./scripts/create-kubeconfigs.sh}\
-                      --role admin \
-                      --server https://${apiServer}:6443 \
-                      --cert-dir ./certs \
-                      --ca-name k8s-ca \
-                      --cluster-name ${clusterName} \
-                      --output-dir ./kubeconfigs 
-                  '')
-                else
-                  pkgs.writeShellScriptBin "createKubeConfigs" "echo \"no control-plane machine is configured for this cluster\""
-              else
-                pkgs.writeShellScriptBin "createKubeConfigs" "echo \"kubernetes is not configured for this cluster\"";
-
-            createServiceAccount =
-              if clusterConfig.services ? kubernetes then
-                if controlPlaneMachines != [ ] then
-                  (pkgs.writeShellScriptBin "createServiceAccount" ''
-                    set -euo pipefail
-                    mkdir -p certs
-                    cd certs
-                    PATH=$PATH:${pkgs.openssl}/bin:${pkgs.jq}/bin
-                    echo "[INFO] Generating Service Account Keys"
-                    ${pkgs.bash}/bin/bash ${./scripts/create-sa-keys.sh} --config ${certData-json-file} --alg p384
-                  '')
-                else
-                  pkgs.writeShellScriptBin "createServiceAccount" "echo \"no control-plane machine is configured for this cluster\""
-              else
-                pkgs.writeShellScriptBin "createServiceAccount" "echo \"kubernetes is not configured for this cluster\"";
-          };
-        }
-      );
-
-    in
-    kubernetesScripts;
-
 in
 {
   config.extensions.transformations.clusterTransformations = [ addFlakeInputs ];
@@ -166,6 +66,78 @@ in
         default = "cilium";
       };
 
+      kubeConfigs = {
+
+        accountNames = mkOption {
+          description = ''
+            A list of account names for which kubeConfigs should be generated.
+            Certificates with these names have to exists in your certDir.
+          '';
+          type = lib.types.listOf lib.types.str;
+          default = [
+            "admin"
+            "super-admin"
+          ];
+        };
+
+        apiServer = mkOption {
+          description = ''
+            Hostname to the api server (ip or fqdn) used in the generation scripts.
+            By default kubernetes.<clusterName>.<suffix> will be used.
+          '';
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+        };
+
+        certDir = mkOption {
+          description = ''
+            Path to the certificates from which the kubeConfigs should be build.
+            Certificates with the name <accountName>.cert should be stored in this path.
+          '';
+          type = lib.types.str;
+          default = "./certificates/kubernetes/certs";
+        };
+
+        caPath = mkOption {
+          description = "The path to the certificate authority that signed the used certificates.";
+          type = lib.types.str;
+          default = "./certificates/kubernetes/ca/kubernetes.crt";
+        };
+
+      };
+
+      serviceAccount = {
+
+        privateKeyPath = mkOption {
+          description = "Path to the generated private key file.";
+          type = lib.types.str;
+          default = "./serviceAccount/sa.key";
+        };
+
+        publicKeyPath = mkOption {
+          description = "Path to the generated public key file.";
+          type = lib.types.str;
+          default = "./serviceAccount/sa.pub";
+        };
+
+        encrypt = mkOption {
+          description = "Encrypt the key with a passphrase";
+          type = lib.types.bool;
+          default = false;
+        };
+
+        algorithm = mkOption {
+          description = "Algorithm to use for the key generation";
+          type = lib.types.enum [
+            "ed25519"
+            "rsa-4096"
+            "p384"
+          ];
+          default = "ed25519";
+        };
+
+      };
+
       virtualIps = mkOption {
         description = ''
           A list of IP addresses the cluster should be available on.
@@ -184,6 +156,55 @@ in
 
     late.config.accounts =
       { clusterConfig }: (import ./accounts/defaultAccounts.nix { inherit lib clusterConfig kubeLib; });
+
+    packages = {
+      createKubeConfigs =
+        { clusterConfig }:
+        let
+          controlPlaneMachines = clusterConfig.clusters.this.services.kubernetes.roles.controlPlane or [ ];
+          clusterFqdn = clusterConfig.clusters.this.fqdn;
+          clusterName = clusterConfig.clusters.this.name;
+          kubeConfigs = clusterConfig.clusters.this.services.kubernetes.kubeConfigs;
+          apiServer =
+            if kubeConfigs.apiServer == null then "kubernetes.${clusterFqdn}" else kubeConfigs.apiServer;
+        in
+        if controlPlaneMachines != [ ] then
+          (pkgs.writeShellScriptBin "createKubeConfigs" ''
+            export PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
+            for ACCOUNT_NAME in ${toString kubeConfigs.accountNames}; do
+              ${pkgs.bash}/bin/bash ${./scripts/create-kubeconfigs.sh}\
+                --role $ACCOUNT_NAME \
+                --server https://${apiServer}:6443 \
+                --cert-dir ${kubeConfigs.certDir} \
+                --ca-path ${kubeConfigs.caPath} \
+                --cluster-name ${clusterName} \
+                --output-dir ./kubeConfigs
+            done
+          '')
+        else
+          pkgs.writeShellScriptBin "createKubeConfigs" "echo \"no control-plane machine is configured for this cluster\"";
+
+      createServiceAccount =
+        { clusterConfig }:
+        let
+          controlPlaneMachines = clusterConfig.clusters.this.services.kubernetes.roles.controlPlane or [ ];
+          serviceAccountConfig = clusterConfig.clusters.this.services.kubernetes.serviceAccount;
+        in
+        if controlPlaneMachines != [ ] then
+          (pkgs.writeShellScriptBin "createServiceAccount" ''
+            set -euo pipefail
+            export PATH=$PATH:${pkgs.openssl}/bin:${pkgs.jq}/bin
+            export SA_KEY=${serviceAccountConfig.privateKeyPath}
+            export SA_PUB=${serviceAccountConfig.publicKeyPath}
+            export SA_ENCRYPT=${toString serviceAccountConfig.encrypt}
+            export SA_ALG=${serviceAccountConfig.algorithm}
+
+            echo "[INFO] Generating Service Account Keys"
+            ${pkgs.bash}/bin/bash ${./scripts/create-sa-keys.sh}
+          '')
+        else
+          pkgs.writeShellScriptBin "createServiceAccount" "echo \"no control-plane machine is configured for this cluster\"";
+    };
 
   };
 

@@ -26,8 +26,7 @@ let
 
       # Ips
       controlPlaneIps = kubeLib.getControlPlaneIps kubernetes.roles;
-      etcdIps = # lib.debug.traceSeqN 2 kubernetes.roles.controlPlane
-        kubeLib.getEtcdIps kubernetes.roles;
+      etcdIps = kubeLib.getEtcdIps kubernetes.roles;
       virtualIps = kubernetes.virtualIps;
 
       # helpers
@@ -37,7 +36,7 @@ let
         machines: accountName: accountBuilder:
         builtins.listToAttrs (
           map (machine: {
-            name = "accountName-${machine.name}";
+            name = "${accountName}-${machine.name}";
             value = (accountBuilder machine);
           }) machines
         );
@@ -112,7 +111,7 @@ let
         };
 
         addon-manager = {
-          roleName = "kubernetes-admin";
+          roleName = "addon-manager";
           kubernetesGroup = "kubeadm:cluster-admins";
           expectedCertPath = certificates.addonManagerCertFile.targetPath;
           expectedKeyPath = certificates.addonManagerKeyFile.targetPath;

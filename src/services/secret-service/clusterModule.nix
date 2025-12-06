@@ -1,22 +1,15 @@
 {
   pkgs,
   lib,
-  clusterlib,
   ...
 }:
 let
-  attrsets = lib.attrsets;
-  strings = lib.strings;
   attrNames = lib.attrNames;
   concatMap = lib.concatMap;
   concatStringsSep = lib.concatStringsSep;
   filterAttrs = lib.filterAttrs;
   mapAttrs = lib.mapAttrs;
   mapAttrsToList = lib.mapAttrsToList;
-
-  forEachAttrIn = clusterlib.forEachAttrIn;
-  get = clusterlib.get;
-  add = clusterlib.add;
 
   secretDeploymentScript =
     deploymentUser: deploymentHost: nixosConfig:
@@ -138,81 +131,62 @@ let
 
 in
 
-let
-  # Build the deployment scripts and functions including
-  # - nixosConfigurations for each machine
-  # - minimal setup images in packages.$system.$machineName.iso
-  deploymentAnnotation =
-    config:
-    let
-
-      buildScripts = add.machinePackages config (
-        machineName: machineConfig: _config: {
-
-          deploySecrets =
-            let
-              deploymentConfig = machineConfig.deployment;
-              nixosConfig = machineConfig.nixosConfiguration.config;
-              host = deploymentConfig.targetHost;
-              secretServiceUser = nixosConfig.users.users.secret-service.name;
-              deploymentUser =
-                if deploymentConfig ? targetUser && deploymentConfig.targetUser != null then
-                  deploymentConfig.targetUser
-                else
-                  "";
-              rootUser = nixosConfig.users.users.root.name;
-              deployCmd = user: host: "bash ${(secretDeploymentScript user host nixosConfig)}";
-            in
-            pkgs.writeScriptBin "connect-secrets.sh" ''
-              #!/usr/bin/env bash
-              set -e
-              echo "Deploying Secrets to host: ${host}"
-
-              echo
-              echo "Trying to connect as user: ${secretServiceUser}"
-              if ssh -o 'NumberOfPasswordPrompts 1' "${secretServiceUser}@${host}" "echo successfully connected"; then
-                ${(deployCmd secretServiceUser host)}
-                exit 0
-              fi
-
-              echo
-              echo "Connection failed with user: ${secretServiceUser}. Trying deployment user: ${deploymentUser}"
-              if ssh -o 'NumberOfPasswordPrompts 1' "${
-                if deploymentUser != "" then deploymentUser + "@" else ""
-              }${host}" "echo successfully connected"; then
-                 ${(deployCmd deploymentUser host)}
-                exit 0
-              fi
-
-              echo
-              echo "Connection failed with deployment user: ${deploymentUser}. Trying root user: ${rootUser}"
-              if ssh -o 'NumberOfPasswordPrompts 1' "${rootUser}@${host}" "echo successfully connected"; then
-                ${(deployCmd rootUser host)}
-                exit 0
-              fi
-
-              echo
-              echo "Failed to deploy secrets. All connection attempts failed."
-              exit 1
-            '';
-
-        }
-      );
-    in
-    attrsets.recursiveUpdate buildScripts {
-
-      nixosConfigurations = forEachAttrIn (get.machines config) (
-        machineName: machineConfig: machineConfig.nixosConfiguration
-      );
-
-    };
-
-in
 {
   config.extensions = {
-    transformations.deploymentTransformations = [ deploymentAnnotation ];
     clusterServices.secrets = {
       defaultModule = import ./secretService.nix;
+    };
+    clusterMachine = {
+      packages = {
+        deploySecrets =
+          { clusterConfig }:
+          let
+            this = clusterConfig.clusters.this.machines.this;
+            deploymentConfig = this.deployment;
+            nixosConfig = this.config;
+            host = deploymentConfig.targetHost;
+            secretServiceUser = nixosConfig.users.users.secret-service.name;
+            deploymentUser =
+              if deploymentConfig ? targetUser && deploymentConfig.targetUser != null then
+                deploymentConfig.targetUser
+              else
+                "";
+            rootUser = nixosConfig.users.users.root.name;
+            deployCmd = user: host: "bash ${(secretDeploymentScript user host nixosConfig)}";
+          in
+          pkgs.writeScriptBin "connect-secrets.sh" ''
+            #!/usr/bin/env bash
+            set -e
+            echo "Deploying Secrets to host: ${host}"
+
+            echo
+            echo "Trying to connect as user: ${secretServiceUser}"
+            if ssh -o 'NumberOfPasswordPrompts 1' "${secretServiceUser}@${host}" "echo successfully connected"; then
+              ${(deployCmd secretServiceUser host)}
+              exit 0
+            fi
+
+            echo
+            echo "Connection failed with user: ${secretServiceUser}. Trying deployment user: ${deploymentUser}"
+            if ssh -o 'NumberOfPasswordPrompts 1' "${
+              if deploymentUser != "" then deploymentUser + "@" else ""
+            }${host}" "echo successfully connected"; then
+               ${(deployCmd deploymentUser host)}
+              exit 0
+            fi
+
+            echo
+            echo "Connection failed with deployment user: ${deploymentUser}. Trying root user: ${rootUser}"
+            if ssh -o 'NumberOfPasswordPrompts 1' "${rootUser}@${host}" "echo successfully connected"; then
+              ${(deployCmd rootUser host)}
+              exit 0
+            fi
+
+            echo
+            echo "Failed to deploy secrets. All connection attempts failed."
+            exit 1
+          '';
+      };
     };
   };
 }

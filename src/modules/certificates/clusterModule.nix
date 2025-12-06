@@ -19,6 +19,7 @@
             this = clusterConfig.clusters.this;
             certData = pkgs.writers.writeJSON "cert-data.json" this.certificates;
             generate-certs = ./generate-certs.sh;
+            
           in
           pkgs.writeShellScriptBin "create-certs" ''
             export PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin

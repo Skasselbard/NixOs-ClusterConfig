@@ -43,6 +43,8 @@ opt() {
   fi
 }
 
+strip_quotes() { sed 's/^"\(.*\)"$/\1/'; }
+
 ################################################################################
 # Begin processing all certificate sets
 ################################################################################
@@ -84,6 +86,13 @@ for SET in $SETS; do
   if ! file_exists "$ROOT_KEY"; then
     echo "Generating root CA: $SET"
 
+    mapfile -t DOMAINS < <(json ".sets.\"$SET\".ca.permitDomains[]?")
+
+    PERMIT_DOMAIN_ARG=""
+    if [[ ${#DOMAINS[@]} -gt 0 ]]; then
+      PERMIT_DOMAIN_ARG="--domain $(IFS=,; echo "${DOMAINS[*]}")"
+    fi
+
     certstrap --depot-path "$CA_DIR" init \
       --common-name "$COMMON_NAME" \
       --expires "$(json ".sets.\"$SET\".ca.expires")" \
@@ -94,7 +103,7 @@ for SET in $SETS; do
       $(opt --province "$(json ".sets.\"$SET\".ca.province")") \
       $(opt --locality "$(json ".sets.\"$SET\".ca.locality")") \
       --passphrase "$(json ".sets.\"$SET\".ca.passPhrase")" \
-      $(json ".sets.\"$SET\".ca.permitDomains[]?" | sed 's/^/--permit-domain /') \
+      $PERMIT_DOMAIN_ARG \
       $( [[ $(json ".sets.\"$SET\".ca.pathLength") != "null" ]] && echo --path-length "$(json ".sets.\"$SET\".ca.pathLength")" )
 
     mv "$CA_DIR/$COMMON_NAME.crt" $ROOT_CRT
@@ -118,6 +127,25 @@ for SET in $SETS; do
     INT_CSR="$INT_DIR/$INAME.csr"
     INT_CRT="$INT_DIR/$INAME.crt"
 
+    mapfile -t DOMAINS < <(json ".sets.\"$SET\".certs.\"$INAME\".domains[]?")
+    mapfile -t IPS < <(json ".sets.\"$SET\".certs.\"$INAME\".ips[]?")
+    mapfile -t URIS < <(json ".sets.\"$SET\".certs.\"$INAME\".uri[]?")
+
+    DOMAIN_ARG=""
+    if [[ ${#DOMAINS[@]} -gt 0 ]]; then
+      DOMAIN_ARG="--domain $(IFS=,; echo "${DOMAINS[*]}")"
+    fi
+
+    IP_ARG=""
+    if [[ ${#IPS[@]} -gt 0 ]]; then
+      IP_ARG="--ip $(IFS=,; echo "${IPS[*]}")"
+    fi
+
+    URI_ARG=""
+    if [[ ${#IPS[@]} -gt 0 ]]; then
+      URI_ARG="--ip $(IFS=,; echo "${IPS[*]}")"
+    fi
+
     # Generate intermediate CSR + key if missing
     if ! file_exists "$INT_KEY"; then
       certstrap --depot-path "$INT_DIR" request-cert \
@@ -130,9 +158,9 @@ for SET in $SETS; do
         $(opt --province "$(json ".sets.\"$SET\".intermediates.\"$INAME\".province")") \
         $(opt --locality "$(json ".sets.\"$SET\".intermediates.\"$INAME\".locality")") \
         --passphrase "$(json ".sets.\"$SET\".intermediates.\"$INAME\".passPhrase")" \
-        $(json ".sets.\"$SET\".intermediates.\"$INAME\".domains[]?" | sed 's/^/--domain /') \
-        $(json ".sets.\"$SET\".intermediates.\"$INAME\".ips[]?" | sed 's/^/--ip /') \
-        $(json ".sets.\"$SET\".intermediates.\"$INAME\".uri[]?" | sed 's/^/--uri /')
+        $DOMAIN_ARG \
+        $IP_ARG \
+        $URI_ARG
 
       mv "$INT_DIR/$COMMON_NAME.key" $INT_KEY
       chmod 0400 "$INT_KEY"
@@ -195,6 +223,26 @@ for SET in $SETS; do
 
     COMMON_NAME="$(json ".sets.\"$SET\".certs.\"$CNAME\".commonName")"
 
+    mapfile -t DOMAINS < <(json ".sets.\"$SET\".certs.\"$CNAME\".domains[]?")
+    mapfile -t IPS < <(json ".sets.\"$SET\".certs.\"$CNAME\".ips[]?")
+    mapfile -t URIS < <(json ".sets.\"$SET\".certs.\"$CNAME\".uri[]?")
+
+    DOMAIN_ARG=""
+    if [[ ${#DOMAINS[@]} -gt 0 ]]; then
+      DOMAIN_ARG="--domain $(IFS=,; echo "${DOMAINS[*]}")"
+    fi
+
+    IP_ARG=""
+    if [[ ${#IPS[@]} -gt 0 ]]; then
+      IP_ARG="--ip $(IFS=,; echo "${IPS[*]}")"
+    fi
+
+    URI_ARG=""
+    if [[ ${#IPS[@]} -gt 0 ]]; then
+      URI_ARG="--ip $(IFS=,; echo "${IPS[*]}")"
+    fi
+
+
     # Create key+CSR if missing
     if ! file_exists "$KEY"; then
       certstrap --depot-path "$CERT_DIR" request-cert \
@@ -208,9 +256,9 @@ for SET in $SETS; do
         $(opt --province "$(json ".sets.\"$SET\".certs.\"$CNAME\".province")") \
         $(opt --locality "$(json ".sets.\"$SET\".certs.\"$CNAME\".locality")") \
         --passphrase "$(json ".sets.\"$SET\".certs.\"$CNAME\".passPhrase")" \
-        $(json ".sets.\"$SET\".certs.\"$CNAME\".domains[]?" | sed 's/^/--domain /') \
-        $(json ".sets.\"$SET\".certs.\"$CNAME\".ips[]?" | sed 's/^/--ip /') \
-        $(json ".sets.\"$SET\".certs.\"$CNAME\".uri[]?" | sed 's/^/--uri /')
+        $DOMAIN_ARG \
+        $IP_ARG \
+        $URI_ARG
 
       chmod "$(json ".sets.\"$SET\".certs.\"$CNAME\".keyPerm")" "$KEY"
     else
