@@ -10,7 +10,6 @@ let
 
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
-  eval = clusterlib.eval;
   update = clusterlib.update;
   filtersToPaths = filters.filtersToPaths;
 
@@ -19,7 +18,7 @@ let
     filter:
     asserts.assertMsg (strings.hasPrefix "domain" filter) "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
 
-  # Copies all services to the cluster machine attributs for machines in the 'selectors' of the service.
+  # Copies all services to the cluster machine attributes for machines in the 'selectors' of the service.
   clusterServiceToMachineServices =
     config:
     update.machines config (

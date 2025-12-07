@@ -29,6 +29,13 @@ let
       default = "";
     };
 
+    name = mkOption {
+      description = "The name of the cluster as listed under clusterConfig.domain.clusters.";
+      type = str;
+      example = "example";
+      default = "";
+    };
+
     machines = mkOption {
       description = ''
         A list of machines that are part of the cluster with their cluster config level configuration.
@@ -44,6 +51,14 @@ let
 
       serviceDefinition.options
       // {
+
+        name = mkOption {
+          description = "The name of the service as listed under clusterConfig.domain.clusters.<clusterName>.services";
+          type = str;
+          example = "example";
+          default = "";
+        };
+
         selectors = mkOption {
           description = "A list of resolved nixos machines"; # TODO: more details
           type = listOf (submodule machineType);

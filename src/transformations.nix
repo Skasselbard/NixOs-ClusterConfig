@@ -87,7 +87,7 @@ let # imports
 
         {
           # add options for the config that is set by the cluster config
-          imports = [ ((import ./nixosOptions.nix) { inherit config clusterlib; }) ];
+          imports = [ ((import ./options/nixosOptions.nix) { inherit config clusterlib; }) ];
         }
 
         {

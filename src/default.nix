@@ -61,8 +61,8 @@ let
         ./deployment.nix
         ./transformations.nix
         ./services.nix
-        ./options.nix
-        ./extensionOptions.nix
+        ./options/options.nix
+        ./options/extensionOptions.nix
         # ./info.nix
         {
           config = {
