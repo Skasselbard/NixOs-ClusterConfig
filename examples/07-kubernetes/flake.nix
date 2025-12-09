@@ -43,14 +43,20 @@
       # import the nixpkgs attribute from the flake inputs
       pkgs = import nixpkgs { inherit system; };
 
+      # With the lib, we can evaluate the Cluster Config to access data from machines and services
+      clusterLib = clusterConfigFlake.lib;
       # The filters are used to resolve hosts when expanding the ClusterConfig
-      filters = clusterConfigFlake.lib.filters;
+      filters = clusterLib.filters;
 
       # Configuration from other Layers, e.g.: NixOs machine configurations
       configurations = (import ../00-exampleConfigs) { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
       homeModules = configurations.homeModules;
+
+      # Kubernetes requires a lot of secrets and certificates
+      # For this example we define them in a function in a separate file
+      generateSecrets = import ./secrets.nix;
 
       #####################################################
       # ClusterConfig
@@ -155,145 +161,24 @@
                   # The keepalived master server will assume this address, but when it is unreachable, a backup server will fail over.
                   virtualIps = [ "192.168.122.210" ];
 
-                  # You can add extra configuration to the kubernetes service module here
-                  # In theory you could e.g. overwrite and disable high-availability services (keepalived and ha proxy) here if you don't ned them, however, this is not tested
-                  # If you keep the high-availability services, make sure to adjust the virtualIps below
-                  # The other configuration here is required to make the certificates work and to deploy them with the secret-service.
-                  # If you bring and deploy your own certificates, you can skip that part.
-                  extraConfig =
-                    { config, lib, ... }:
-                    let
-                      machineName = config.networking.hostName;
-                      isEtcdMember = config.services.etcd.enable;
-                      isControlPlaneMember = config.services.kubernetes.apiserver.enable;
-                      sources = config.clusterConfig.clusters.this.machines.this.kubernetes.certificates;
-                    in
-                    {
-                      # configuring the secrets to deploy the certificates with the secret-service cluster service
-                      users.users = {
-                        etcd = lib.mkIf isEtcdMember {
-                          secrets.file = {
-                            ca-cert = {
-                              backendPath = "./certificates/etcd/ca/etcd.crt";
-                              # backendPath = "./certificates/etcd/intermediates/etcd-ca.crt";
-                              linkPath = sources.etcd.caCertFile.sourcePath;
-                              permissions = "555";
-                            };
-                            ca-key = {
-                              backendPath = "./certificates/etcd/ca/etcd.key";
-                              # backendPath = "./certificates/etcd/intermediates/etcd-ca.key";
-                              linkPath = sources.etcd.caKeyFile.sourcePath;
-                            };
-                            server-cert = {
-                              backendPath = "./certificates/etcd/certs/server.crt";
-                              linkPath = sources.etcd.serverCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            server-key = {
-                              backendPath = "./certificates/etcd/certs/server.key";
-                              linkPath = sources.etcd.serverKeyFile.sourcePath;
-                            };
-                            peer-cert = {
-                              backendPath = "./certificates/etcd/certs/peer.crt";
-                              linkPath = sources.etcd.peerCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            peer-key = {
-                              backendPath = "./certificates/etcd/certs/peer.key";
-                              linkPath = sources.etcd.peerKeyFile.sourcePath;
-                            };
-                          };
-                        };
-                        kubernetes = {
-                          secrets.file = {
-                            apiserver-server-cert = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/apiserver.crt";
-                              linkPath = sources.apiServer.certFile.sourcePath;
-                              permissions = "444";
-                            };
-                            apiserver-server-key = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/apiserver.key";
-                              linkPath = sources.apiServer.keyFile.sourcePath;
-                            };
-                            ca-cert = {
-                              backendPath = "./certificates/kubernetes/ca/kubernetes.crt";
-                              # backendPath = "./certificates/kubernetes/intermediates/kubernetes-ca.crt";
-                              linkPath = sources.caCertFile.sourcePath;
-                              permissions = "555";
-                            };
-                            ca-key = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/ca/kubernetes.key";
-                              # backendPath = "./certificates/kubernetes/intermediates/kubernetes-ca.key";
-                              linkPath = sources.caKeyFile.sourcePath;
-                            };
-                            "etcd-client-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/etcd/certs/apiserver-etcd-client-${machineName}.crt";
-                              linkPath = sources.apiServer.etcdClientCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "etcd-client-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/etcd/certs/apiserver-etcd-client-${machineName}.key";
-                              linkPath = sources.apiServer.etcdClientKeyFile.sourcePath;
-                            };
-                            "kubelet-server-cert-${machineName}" = {
-                              backendPath = "./certificates/kubernetes/certs/kubelet-${machineName}.crt";
-                              linkPath = sources.kubeletCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "kubelet-server-key-${machineName}" = {
-                              backendPath = "./certificates/kubernetes/certs/kubelet-${machineName}.key";
-                              linkPath = sources.kubeletKeyFile.sourcePath;
-                            };
-                            "kubelet-client-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/apiserver-kubelet-client-${machineName}.crt";
-                              linkPath = sources.apiServer.kubeletClientCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "kubelet-client-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/apiserver-kubelet-client-${machineName}.key";
-                              linkPath = sources.apiServer.kubeletClientKeyFile.sourcePath;
-                            };
-                            "addon-manager-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/admin.crt";
-                              linkPath = sources.addonManagerCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "addon-manager-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/admin.key";
-                              linkPath = sources.addonManagerKeyFile.sourcePath;
-                            };
-                            "controller-manager-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/controller-manager-${machineName}.crt";
-                              linkPath = sources.controllerManagerCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "controller-manager-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/controller-manager-${machineName}.key";
-                              linkPath = sources.controllerManagerKeyFile.sourcePath;
-                            };
-                            "scheduler-cert-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/scheduler-${machineName}.crt";
-                              linkPath = sources.schedulerCertFile.sourcePath;
-                              permissions = "444";
-                            };
-                            "scheduler-key-${machineName}" = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certificates/kubernetes/certs/scheduler-${machineName}.key";
-                              linkPath = sources.schedulerKeyFile.sourcePath;
-                            };
-                            service-account = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certs/sa.pub";
-                              linkPath = sources.saPubFile.sourcePath;
-                              permissions = "444";
-                            };
-                            service-account-key = lib.mkIf isControlPlaneMember {
-                              backendPath = "./certs/sa.key";
-                              linkPath = sources.saKeyFile.sourcePath;
-                            };
-                          };
-                        };
-                      };
+                  # # You can add extra configuration to the kubernetes service module here
+                  # # In theory you could e.g. overwrite and disable high-availability services (keepalived and ha proxy) here if you don't ned them, however, this is not tested
+                  # # If you keep the high-availability services, make sure to adjust the virtualIps below
+                  # # The other configuration here is required to make the certificates work and to deploy them with the secret-service.
+                  # # If you bring and deploy your own certificates, you can skip that part.
+                  # extraConfig =
+                  #   { config, lib, ... }:
+                  #   let
+                  #     machineName = config.networking.hostName;
+                  #     isEtcdMember = config.services.etcd.enable;
+                  #     isControlPlaneMember = config.services.kubernetes.apiserver.enable;
+                  #     sources = config.clusterConfig.clusters.this.machines.this.kubernetes.certificates;
+                  #   in
+                  #   {
+                  #     # configuring the secrets to deploy the certificates with the secret-service cluster service
+                  #     users.users =
 
-                    };
+                  #   };
                 };
 
               };
@@ -334,44 +219,53 @@
               # Machines
               machines = {
 
-                vm0 = {
-                  inherit system;
+                vm0 =
+                  let
+                    machineName = "vm0";
+                  in
+                  {
+                    inherit system;
 
-                  # The kubernetes cluster module defines some machine options to setup keepalived and kubernetes node labels
-                  # Some of them are required to configure keepalived
-                  kubernetes.keepalived = {
-                    # Required to configure the interface for the virtual ip.
-                    virtualIpInterface = "eth0";
-                    # You can define the priority here, the higher the value, the higher the priority.
-                    # Max value is 255.
-                    # The machine with the highest priority will be the master for the virtual ip.
-                    # If no priority is defined here, priorities will be assigned in order of the role definition beginning with 255; priorities that are already assigned for other nodes will be skipped.
-                    # priority = 236;
-                  };
-                  # You can define labels for kubernetes nodes here.
-                  # These labels will be added to the kubernetes node definition.
-                  # You can list them with ``kubectl get nodes --show-labels``
-                  kubernetes.nodeLabels = {
-                    "cluster.example.com/LOCALTestLabel" = "vm0";
-                  };
+                    # The kubernetes cluster module defines some machine options to setup keepalived and kubernetes node labels
+                    # Some of them are required to configure keepalived
+                    kubernetes.keepalived = {
+                      # Required to configure the interface for the virtual ip.
+                      virtualIpInterface = "eth0";
+                      # You can define the priority here, the higher the value, the higher the priority.
+                      # Max value is 255.
+                      # The machine with the highest priority will be the master for the virtual ip.
+                      # If no priority is defined here, priorities will be assigned in order of the role definition beginning with 255; priorities that are already assigned for other nodes will be skipped.
+                      # priority = 236;
+                    };
+                    # You can define labels for kubernetes nodes here.
+                    # These labels will be added to the kubernetes node definition.
+                    # You can list them with ``kubectl get nodes --show-labels``
+                    kubernetes.nodeLabels = {
+                      "cluster.example.com/TestLabel" = machineName;
+                    };
 
-                  deployment = {
-                    targetHost = "192.168.122.200";
-                    formatScript = "disko"; # format vms on recreation
-                  };
+                    deployment = {
+                      targetHost = "192.168.122.200";
+                      formatScript = "disko"; # format vms on recreation
+                    };
 
-                  nixosModules = [
-                    machines.vm0
-                    # since the vms use disko for mounting, we still need to include the NixOs module
-                    inputs.disko.nixosModules.default
-                  ];
-                };
+                    secrets = generateSecrets {
+                      machineConfig = self.nixosConfigurations.${machineName}.config;
+                      lib = pkgs.lib;
+                    };
+
+                    nixosModules = [
+                      machines.vm0
+                      # since the vms use disko for mounting, we still need to include the NixOs module
+                      inputs.disko.nixosModules.default
+                    ];
+                  };
 
                 vm1 = {
                   inherit system;
 
                   kubernetes.nodeLabels = {
-                    "cluster.example.com/LOCALTestLabel" = "vm1";
+                    "cluster.example.com/TestLabel" = "vm1";
                   };
                   kubernetes.keepalived = {
                     virtualIpInterface = "eth0";

@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
     # HomeManager to overwrite the version used in cluster-config
     home-manager = {
-      url = "github:nix-community/home-manager/release-24.11";
+      url = "github:nix-community/home-manager/release-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -15,7 +15,8 @@
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
-      url = "github:Skasselbard/NixOs-ClusterConfig";
+      # url = "github:Skasselbard/NixOs-ClusterConfig"; #TODO:
+      url = "path:../../";
     };
 
     # Import disko to configure partitioning
@@ -52,13 +53,15 @@
       homeModules = configurations.homeModules;
 
       #####################################################
-      # ClusterConfig 
+      # ClusterConfig
       #####################################################
       clusterConfig = clusterConfigFlake.lib.buildCluster {
 
         modules = [
           clusterConfigFlake.clusterConfigModules.default
-          ../../src/modules/secret-service/clusterModule.nix # TODO:
+          clusterConfigFlake.clusterConfigModules.secret-service
+          # clusterConfigFlake.clusterConfigModules.dns
+          ../../src/services/dns/clusterModule.nix # TODO:
         ];
 
         domain = {
@@ -77,7 +80,10 @@
                 dns = {
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
-                  definition = clusterConfigFlake.clusterServices.staticDns;
+                };
+
+                secrets = {
+                  selectors = [ filters.clusterMachines ];
                 };
 
               };
@@ -88,7 +94,7 @@
 
                 root = {
                   # If a user in your cluster uses HomeManager
-                  # the ``home.stateVersion`` attribute has to be defined for all users 
+                  # the ``home.stateVersion`` attribute has to be defined for all users
                   homeManagerModules = [ homeModules.default ];
                   systemConfig = {
                     extraGroups = [ "wheel" ];
@@ -123,25 +129,27 @@
                   deployment = {
                     targetHost = "192.168.122.200";
                   };
+
+                  secrets = {
+                    testService.file = {
+                      testSecret.backendPath = "~/.zshrc";
+                    };
+                    admin.file = {
+                      adminSecret.backendPath = "~/.zshrc";
+                    };
+                  };
+
                   nixosModules = [
                     machines.vm0
                     # since the vms use disko for mounting, we still need to include the NixOs module
                     inputs.disko.nixosModules.default
-                    ../../src/modules/secret-service/secretService.nix # TODO:
                     ({
                       users.groups.testService = { };
                       users.users.testService = {
                         isNormalUser = false;
                         isSystemUser = true;
                         group = "testService";
-                        secrets.file = {
-                          testSecret.backendPath = "~/.zshrc";
-                        };
-                      };
-                      users.users.admin = {
-                        secrets.file = {
-                          adminSecret.backendPath = "~/.zshrc";
-                        };
+
                       };
                     })
                   ];
