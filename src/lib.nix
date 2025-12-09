@@ -186,80 +186,110 @@ let
 
     # Building a representation of the cluster config.
     # This will be past to each nixos machine configuration, so that they can use the information for configuration, e.g. in cluster services.
-    clusterConfig = config: {
-      suffix = config.domain.suffix;
-      clusters = forEachAttrIn config.domain.clusters (
-        clusterName: clusterDefinition:
+    clusterConfig =
+      config:
+      {
+        clusterName ? null, # if given, a "this" cluster is added that points to the cluster with the given name
+        machineName ? null, # if given, a "this" machine is added that points to the machine with the given name in the "this" cluster
+      }:
+      if builtins.isString machineName && !builtins.isString clusterName then
+        throw "trying to evaluate clusterConfig with machineName but no clusterName"
+      else if !builtins.isString clusterName && clusterName != null then
+        throw "trying to evaluate clusterConfig with clusterName that is not a string"
+      else if !builtins.isString machineName && machineName != null then
+        throw "trying to evaluate clusterConfig with machineName that is not a string"
+      else
+        let
+          # Add cluster information including "this" pointer for the current cluster and machine.
+          clusterConfigMachineResolved = attrsets.recursiveUpdate clusterConfigBase {
+            clusters.this = attrsets.recursiveUpdate clusterConfigBase.clusters."${clusterName}" {
+              machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
+            };
+          };
 
-        rec {
+          clusterConfigClusterResolved = attrsets.recursiveUpdate clusterConfigBase {
+            clusters.this = clusterConfigBase.clusters."${clusterName}";
+          };
 
-          fqdn = "${clusterName}.${config.domain.suffix}";
-          name = "${clusterName}";
+          clusterConfigBase = {
+            suffix = config.domain.suffix;
+            clusters = forEachAttrIn config.domain.clusters (
+              clusterName: clusterDefinition:
 
-          # users TODO: add users?
+              rec {
 
-          services = forEachAttrIn clusterDefinition.services (
-            serviceName: serviceDefinition:
+                fqdn = "${clusterName}.${config.domain.suffix}";
+                name = "${clusterName}";
 
-            attrsets.recursiveUpdate
-              {
-                name = serviceName;
-                roles = (
-                  forEachAttrIn serviceDefinition.roles (
-                    roleName: role:
-                    lists.forEach (filters.resolveMachineName role clusterName config) (
-                      machineName: machines."${machineName}"
+                # users TODO: add users?
+
+                services = forEachAttrIn clusterDefinition.services (
+                  serviceName: serviceDefinition:
+
+                  attrsets.recursiveUpdate
+                    {
+                      name = serviceName;
+                      roles = (
+                        forEachAttrIn serviceDefinition.roles (
+                          roleName: role:
+                          lists.forEach (filters.resolveMachineName role clusterName config) (
+                            machineName: machines."${machineName}"
+                          )
+                        )
+                      );
+                      selectors = lists.forEach (
+                        # comment to force linebreak in formatter
+                        filters.resolveMachineName serviceDefinition.selectors clusterName config
+                      ) (machineName: machines."${machineName}");
+                    }
+
+                    (
+                      removeAttrs serviceDefinition [
+                        "selectors"
+                        "roles"
+                        "definition"
+                        "extraConfig"
+                      ]
                     )
-                  )
+
                 );
-                selectors = lists.forEach (
-                  # comment to force linebreak in formatter
-                  filters.resolveMachineName serviceDefinition.selectors clusterName config
-                ) (machineName: machines."${machineName}");
+
+                machines = forEachAttrIn clusterDefinition.machines (
+                  machineName: machineDefinition:
+
+                  attrsets.recursiveUpdate
+                    {
+                      name = machineName;
+                      ips = get.ips machineDefinition.nixosConfiguration.config;
+                      fqdn = machineDefinition.nixosConfiguration.config.networking.fqdn;
+                      serviceAddresses = lists.forEach machineDefinition.serviceAddresses (entry: entry.tag);
+                      services = lib.attrNames machineDefinition.services;
+                      config = machineDefinition.nixosConfiguration.config;
+                    }
+                    (
+                      builtins.removeAttrs machineDefinition [
+                        "nixosConfiguration"
+                        "nixosModules"
+                        "services"
+                        "users"
+                      ]
+                    )
+
+                );
+
               }
-
-              (
-                removeAttrs serviceDefinition [
-                  "selectors"
-                  "roles"
-                  "definition"
-                  "extraConfig"
-                ]
-              )
-
-          );
-
-          machines = forEachAttrIn clusterDefinition.machines (
-            machineName: machineDefinition:
-
-            attrsets.recursiveUpdate
-              {
-                name = machineName;
-                ips = get.ips machineDefinition.nixosConfiguration.config;
-                fqdn = machineDefinition.nixosConfiguration.config.networking.fqdn;
-                serviceAddresses = lists.forEach machineDefinition.serviceAddresses (entry: entry.tag);
-                services = lib.attrNames machineDefinition.services;
-                config = machineDefinition.nixosConfiguration.config;
-              }
-              (
-                builtins.removeAttrs machineDefinition [
-                  "nixosConfiguration"
-                  "nixosModules"
-                  "services"
-                  "users"
-                ]
-              )
-
-          );
-
-        }
-        // (removeAttrs clusterDefinition [
-          "machines"
-          "services"
-          "users"
-        ])
-      );
-    };
+              // (removeAttrs clusterDefinition [
+                "machines"
+                "services"
+                "users"
+              ])
+            );
+          };
+        in
+        if clusterName != null then
+          if machineName != null then clusterConfigMachineResolved else clusterConfigClusterResolved
+        else
+          clusterConfigBase;
 
   };
 

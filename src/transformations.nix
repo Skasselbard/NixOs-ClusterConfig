@@ -10,26 +10,6 @@ let # imports
   mkDefault = lib.mkDefault;
 
   # helperFunctions
-  # Add cluster information including "this" pointer for the current cluster and machine.
-  clusterConfigMachineResolved =
-    config: clusterName: machineName:
-    let
-      clusterConfigBase = eval.clusterConfig config;
-    in
-    attrsets.recursiveUpdate clusterConfigBase {
-      clusters.this = attrsets.recursiveUpdate clusterConfigBase.clusters."${clusterName}" {
-        machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
-      };
-    };
-
-  clusterConfigClusterResolved =
-    config: clusterName:
-    let
-      clusterConfigBase = eval.clusterConfig config;
-    in
-    attrsets.recursiveUpdate clusterConfigBase {
-      clusters.this = clusterConfigBase.clusters."${clusterName}";
-    };
 
   # Detect if a value looks like a function expecting clusterConfig.
   # A valid function must accept an attrset and must reference "clusterConfig"
@@ -121,7 +101,7 @@ let # imports
       clusterName: machineName: machineConfig: [
         {
           # make the cluster config available in in the ``config`` attribute during machine evaluation
-          clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
+          clusterConfig = (eval.clusterConfig config { inherit clusterName machineName; });
         }
       ]
     );
@@ -140,7 +120,7 @@ let # imports
           # call the closure with the evaluated cluster config representation
           callLeafFunctions {
             node = configClosure;
-            clusterConfig = (clusterConfigClusterResolved config clusterName);
+            clusterConfig = (eval.clusterConfig config { inherit clusterName; });
           }
         )
       ))
@@ -154,7 +134,7 @@ let # imports
           # call the closure with the evaluated cluster config representation
           callLeafFunctions {
             node = configClosure;
-            clusterConfig = (clusterConfigClusterResolved config clusterName);
+            clusterConfig = (eval.clusterConfig config { inherit clusterName; });
           }
         )
       ))
@@ -168,7 +148,7 @@ let # imports
           # call the closure with the evaluated cluster config representation
           callLeafFunctions {
             node = configClosure;
-            clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
+            clusterConfig = (eval.clusterConfig config { inherit clusterName machineName; });
           }
         )
       ))
@@ -192,7 +172,7 @@ let # imports
             # call the script closure with the evaluated cluster config representation
             callLeafFunctions {
               node = scriptClosure;
-              clusterConfig = (clusterConfigClusterResolved config clusterName);
+              clusterConfig = (eval.clusterConfig config { inherit clusterName; });
             }
           )
         ))
@@ -208,7 +188,7 @@ let # imports
             # call the script closure with the evaluated cluster config representation
             callLeafFunctions {
               node = scriptClosure;
-              clusterConfig = (clusterConfigMachineResolved config clusterName machineName);
+              clusterConfig = (eval.clusterConfig config { inherit clusterName machineName; });
             }
 
           )
@@ -230,7 +210,7 @@ let # imports
               # call the script closure with the evaluated cluster config representation
               callLeafFunctions {
                 node = scriptClosure;
-                clusterConfig = (clusterConfigClusterResolved config clusterName);
+                clusterConfig = (eval.clusterConfig config { inherit clusterName; });
               }
             ))
           ))
