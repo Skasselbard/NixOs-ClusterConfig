@@ -40,9 +40,24 @@ let
           ) selectors)
         ) services;
 
+        # resolve the filters in the selectors and roles to the machine names
+        resolvedServices = forEachAttrIn filteredServices (
+          serviceName: serviceDefinition:
+          serviceDefinition
+          // {
+            name = serviceName;
+            roles = (
+              forEachAttrIn serviceDefinition.roles (
+                roleName: role: (filters.resolveMachineName role clusterName config)
+              )
+            );
+            selectors = filters.resolveMachineName serviceDefinition.selectors clusterName config;
+          }
+        );
+
       in
       {
-        services = filteredServices;
+        services = resolvedServices;
       }
     );
 
