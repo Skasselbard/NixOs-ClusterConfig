@@ -4,6 +4,15 @@
   ...
 }:
 let
+
+  attrsOf = lib.types.attrsOf;
+  nullOr = lib.types.nullOr;
+  rawType = lib.types.raw;
+  str = lib.types.str;
+  submodule = lib.types.submodule;
+
+  mkOption = lib.mkOption;
+
   attrNames = lib.attrNames;
   concatMap = lib.concatMap;
   concatStringsSep = lib.concatStringsSep;
@@ -12,19 +21,20 @@ let
   mapAttrsToList = lib.mapAttrsToList;
 
   secretDeploymentScript =
-    deploymentUser: deploymentHost: nixosConfig:
+    deploymentUser: deploymentHost: clusterConfig:
     let
-      secretServiceName = nixosConfig.systemd.services.secret-service.name;
+      this = clusterConfig.clusters.this.machines.this;
+      secretServiceName = this.config.systemd.services.secret-service.name;
 
-      backends = nixosConfig.services.secrets.backends;
+      backends = clusterConfig.clusters.this.services.secrets.backends;
       userSecrets = mapAttrs (
-        user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig.secrets
-      ) nixosConfig.users.users;
+        user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig
+      ) this.secrets;
 
-      tmpPath = nixosConfig.services.secrets.deployment.tempPath;
-      persistentPath = nixosConfig.services.secrets.deployment.persistentPath;
-      databaseFileName = nixosConfig.services.secrets.deployment.database.fileName;
-      metadataFileName = nixosConfig.services.secrets.deployment.metadata.fileName;
+      tmpPath = this.deployment.secrets.path.temp;
+      persistentPath = this.deployment.secrets.path.persistent;
+      databaseFileName = this.deployment.secrets.database.fileName;
+      metadataFileName = this.deployment.secrets.metadata.fileName;
       generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
     in
     pkgs.writeScript "deploy-secrets.sh" ''
@@ -83,7 +93,7 @@ let
       DATE=$(date --iso-8601=seconds)
       CONFIG_HASH=${builtins.hashString "sha256" (builtins.toJSON userSecrets)}
       METADATA="{\"date\": \"$DATE\", \"configHash\": \"$CONFIG_HASH\"}" 
-      ENCRYPTION_KEY=$(echo $METADATA | ${nixosConfig.services.secrets.deriveEncryptionKey})
+      ENCRYPTION_KEY=$(echo $METADATA | ${clusterConfig.clusters.this.services.secrets.deriveEncryptionKey})
 
       echo "Initializing encrypted folder..."
       ${pkgs.gocryptfs}/bin/gocryptfs -quiet -init -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName}
@@ -129,14 +139,157 @@ let
       echo "Deployment completed."
     '';
 
+  # Secrets can be defined for a machine user for each backend
+  secretUserType = attrsOf (submodule backendTypeSubmodule);
+
+  # generate secret options for each backend
+  backendTypeSubmodule.options = mapAttrs (
+    _: _:
+    mkOption {
+      # Multiple secrets can be defined in each backend
+      type = attrsOf (submodule {
+        options = {
+          backendPath = mkOption {
+            type = str;
+            description = "Path to the secret as expected by the backend. E.g. simple file path for the 'file' backend.";
+          };
+          linkPath = mkOption {
+            type = nullOr str;
+            description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
+            default = null;
+          };
+          permissions = mkOption {
+            type = str;
+            default = "400";
+            description = "Permissions of the file. By default only readable by the owner.";
+          };
+        };
+      });
+    }
+  ) backends;
+
+  backends = {
+    file = {
+      retrieveSecretCommand = mkOption {
+        type = rawType; # (types.str -> types.str -> types.str);
+        default = secretName: secretPath: "cat ${secretPath}";
+        description = ''
+          A function that takes the secret name and the secret path and returns a shell command string
+          to retrieve the secret. For the file backend, this could simply return content of the secret in the given path.
+        '';
+      };
+      validateSecretCommand = mkOption {
+        type = rawType; # (types.str -> types.str -> types.str);
+        default = secretName: secretPath: "[ -f ${secretPath} -a -r ${secretPath} ]";
+        description = ''
+          A function that takes the secret name and the secret path and returns a shell command string
+          to validate the secret. For the file backend, this could check if the file exists and is readable.
+        '';
+      };
+    };
+  };
+
 in
 
 {
   config.extensions = {
+
     clusterServices.secrets = {
+
       defaultModule = import ./secretService.nix;
+
+      options = {
+
+        inherit backends;
+
+        deriveEncryptionKey = mkOption {
+          type = str;
+          default = ''${pkgs.jq}/bin/jq .configHash | sha256sum | ${pkgs.gawk}/bin/awk '{print $1}' '';
+          description = ''
+            A shell command that generates a deterministic encryption key. The default uses SHA-256.
+          '';
+        };
+      };
+
     };
+
     clusterMachine = {
+
+      options = {
+        deployment = {
+          secrets = {
+
+            path = {
+              persistent = mkOption {
+                type = str;
+                default = "/var/lib/nixos-secret-service";
+                description = ''
+                  Working directory for persisting encrypted files.
+                '';
+              };
+              temp = mkOption {
+                type = str;
+                default = "/dev/shm/nixos-secret-service";
+                description = ''
+                  Working directory for persisting encrypted files.
+                '';
+              };
+            };
+            metadata.fileName = mkOption {
+              type = str;
+              default = "deployment-info.json";
+              description = ''
+                Deployment location for the metadata file about the deployment.
+              '';
+            };
+            database.fileName = mkOption {
+              type = str;
+              default = "secrets.enc";
+              description = ''
+                Deployment location for the encrypted archive containing the secrets.
+              '';
+            };
+
+          };
+        };
+
+        secrets = mkOption {
+          description = ''
+            Defines the secrets.
+
+            Each secret is defined for a user and a backend.
+            The In the example, secrets are defined for etcd and kubernetes user using the file backend.
+          '';
+          type = secretUserType;
+          default = { };
+          example = {
+            etcd.file = {
+              ca-cert = {
+                backendPath = "./path/to/ca/etcd.crt";
+                linkPath = "/path/on/remote/etcd.crt";
+                permissions = "555";
+              };
+              ca-key = {
+                backendPath = "./path/to/ca/etcd.key";
+                linkPath = "/path/on/remote/etcd.key";
+              };
+            };
+            kubernetes.file = {
+              ca-cert = {
+                backendPath = "./path/to/ca/kubernetes.crt";
+                linkPath = "/path/on/remote/kubernetes.crt";
+                permissions = "555";
+              };
+              ca-key = {
+                backendPath = "./path/to/ca/kubernetes.key";
+                linkPath = "/path/on/remote/kubernetes.key";
+              };
+            };
+          };
+
+        };
+      };
+
       packages = {
         deploySecrets =
           { clusterConfig }:
@@ -152,7 +305,7 @@ in
               else
                 "";
             rootUser = nixosConfig.users.users.root.name;
-            deployCmd = user: host: "bash ${(secretDeploymentScript user host nixosConfig)}";
+            deployCmd = user: host: "bash ${(secretDeploymentScript user host clusterConfig)}";
           in
           pkgs.writeScriptBin "connect-secrets.sh" ''
             #!/usr/bin/env bash

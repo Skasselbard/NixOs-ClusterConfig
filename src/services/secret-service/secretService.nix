@@ -6,126 +6,24 @@
 }:
 
 let
-  attrs = lib.types.attrs;
-  attrsOf = lib.types.attrsOf;
-  rawType = lib.types.raw;
-  str = lib.types.str;
-  submodule = lib.types.submodule;
-
-  mkOption = lib.mkOption;
-
   attrNames = lib.attrNames;
-  filterAttrs = lib.filterAttrs;
 
   mapAttrsToList = lib.mapAttrsToList;
   concatStringsSep = lib.concatStringsSep;
   concatMap = lib.concatMap;
 
-  tmpPath = config.services.secrets.deployment.tempPath;
-  persistentPath = config.services.secrets.deployment.persistentPath;
-  databaseFileName = config.services.secrets.deployment.database.fileName;
-  metadataFileName = config.services.secrets.deployment.metadata.fileName;
+  secretsServiceConfig = config.clusterConfig.clusters.this.services.secrets;
+  this = config.clusterConfig.clusters.this.machines.this;
+
+  tmpPath = this.deployment.secrets.path.temp;
+  persistentPath = this.deployment.secrets.path.persistent;
+  databaseFileName = this.deployment.secrets.database.fileName;
+  metadataFileName = this.deployment.secrets.metadata.fileName;
   mountPath = "${tmpPath}/mount"; # Location where secrets are decrypted
   encryptedArchive = "${persistentPath}/${databaseFileName}"; # Path to the encrypted file
-  encryptionKeyCommand = "cat ${persistentPath}/${metadataFileName} | ${config.services.secrets.deriveEncryptionKey}"; # Derives the encryption key
+  encryptionKeyCommand = "cat ${persistentPath}/${metadataFileName} | ${secretsServiceConfig.deriveEncryptionKey}"; # Derives the encryption key
 in
 {
-  options = {
-
-    services.secrets = {
-      deployment = {
-        persistentPath = mkOption {
-          type = str;
-          default = "/var/lib/nixos-secret-service";
-          description = ''
-            Working directory for persisting encrypted files.
-          '';
-        };
-        tempPath = mkOption {
-          type = str;
-          default = "/dev/shm/nixos-secret-service";
-          description = ''
-            Working directory for persisting encrypted files.
-          '';
-        };
-        metadata.fileName = mkOption {
-          type = str;
-          default = "deployment-info.json";
-          description = ''
-            Deployment location for the metadata file about the deployment.
-          '';
-        };
-        database.fileName = mkOption {
-          type = str;
-          default = "secrets.enc";
-          description = ''
-            Deployment location for the encrypted archive containing the secrets.
-          '';
-        };
-      };
-      backends.file = {
-        retrieveSecretCommand = mkOption {
-          type = rawType; # (types.str -> types.str -> types.str);
-          default = secretName: secretPath: "cat ${secretPath}";
-          description = ''
-            A function that takes the secret name and the secret path and returns a shell command string
-            to retrieve the secret. For the file backend, this could simply return content of the secret in the given path.
-          '';
-        };
-        validateSecretCommand = mkOption {
-          type = rawType; # (types.str -> types.str -> types.str);
-          default = secretName: secretPath: "[ -f ${secretPath} -a -r ${secretPath} ]";
-          description = ''
-            A function that takes the secret name and the secret path and returns a shell command string
-            to validate the secret. For the file backend, this could check if the file exists and is readable.
-          '';
-        };
-      };
-      deriveEncryptionKey = mkOption {
-        type = str;
-        default = ''${pkgs.jq}/bin/jq .configHash | sha256sum | ${pkgs.gawk}/bin/awk '{print $1}' '';
-        description = ''
-          A shell command that generates a deterministic encryption key. The default uses SHA-256.
-        '';
-      };
-    };
-
-    users.users =
-      let
-        secretOptions = {
-          options = {
-            config = mkOption {
-              type = attrs;
-              default = { };
-              description = "Configuration specific to this secret.";
-            };
-            backendPath = mkOption {
-              type = str;
-              description = "Path to the secret as expected by the backend. E.g. simple file path for the 'file' backend.";
-            };
-            linkPath = mkOption {
-              type = str;
-              description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
-            };
-            permissions = mkOption {
-              type = str;
-              default = "400";
-              description = "Permissions of the file. By default only readable by the owner.";
-            };
-          };
-        };
-
-        userOptions = {
-          options.secrets = mkOption {
-            type = attrsOf (attrsOf (submodule secretOptions));
-            default = { };
-            description = "Secrets for the user, organized by backend.";
-          };
-        };
-      in
-      mkOption { type = attrsOf (submodule userOptions); };
-  };
-
   config = # mkIf (config.secrets.backends != { }) # TODO: disable config if no secrets are configured
 
     {
@@ -151,13 +49,11 @@ in
       systemd.services.secret-service =
         let
           users = attrNames usersWithSecrets; # List of users with secrets
-          usersWithSecrets = filterAttrs (_: user: user ? secrets && user.secrets != { }) config.users.users;
+          usersWithSecrets = this.secrets;
 
           generateBindMountsScript =
             user: userCfg:
             let
-              userSecrets = userCfg.secrets;
-
               perBackend = mapAttrsToList (
                 backend: secrets:
                 let
@@ -208,7 +104,7 @@ in
                   ##############
 
                 ''
-              ) userSecrets;
+              ) userCfg;
 
             in
             concatStringsSep "\n" (lib.flatten perBackend);
@@ -276,7 +172,7 @@ in
               concatMap (
                 user:
                 let
-                  userSecrets = config.users.users.${user}.secrets;
+                  userSecrets = usersWithSecrets.${user};
                 in
                 concatMap (
                   backend:
@@ -288,9 +184,9 @@ in
                     let
                       secretCfg = secrets.${secret};
                       source = "${tmpPath}/${user}/${secret}";
-                      target = secretCfg.linkPath;
+                      target = secretCfg.linkPath or null;
                     in
-                    if secretCfg ? linkPath then
+                    if target != null then
                       [
                         ''
                           echo "Linking ${source} -> ${target}"
@@ -318,7 +214,7 @@ in
               concatMap (
                 user:
                 let
-                  userSecrets = config.users.users.${user}.secrets;
+                  userSecrets = usersWithSecrets.${user};
                 in
                 concatMap (
                   backend:
@@ -329,9 +225,9 @@ in
                     secret:
                     let
                       secretCfg = secrets.${secret};
-                      target = secretCfg.linkPath;
+                      target = secretCfg.linkPath or null;
                     in
-                    if secretCfg ? linkPath then
+                    if target != null then
                       [
                         ''
                           echo "Unlinking ${target}"
