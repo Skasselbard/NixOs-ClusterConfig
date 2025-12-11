@@ -308,39 +308,6 @@ let
 
     clusterMachines = config: clusterName: config.domain.clusters."${clusterName}".machines;
 
-    # Take a clusterConfig and return an essential representation that is serializable.
-    # The essential representation is build by taking the annotation attributes of the clusterConfig nodes.
-    clusterInfo =
-      config:
-      let
-
-        machineInfo = overwrite.machines config (
-          clusterName: machineName: machineConfig:
-          machineConfig.annotations
-          // {
-            _type = "machine";
-            deployment.tags = machineConfig.deployment.tags;
-            deployment.targetHost = machineConfig.deployment.targetHost;
-            deployment.targetPort = machineConfig.deployment.targetPort;
-          }
-        );
-
-        serviceInfo = overwrite.services machineInfo (
-          clusterName: serviceName: serviceConfig:
-          serviceConfig.annotations // { _type = "service"; }
-        );
-
-        userInfo = update.clusters serviceInfo (
-          clusterName: clusterConfig: { users = (attrsets.attrNames clusterConfig.users); }
-        );
-      in
-
-      attrsets.recursiveUpdate config {
-        # Generate a cluster config attribute that can be used to query config information
-        # All leaves of the structure must be serializable; in particular: cannot be functions / lambdas
-        clusterInfo.domain = userInfo.domain;
-      };
-
     interface = {
       ips =
         interfaceDefinition:
@@ -450,102 +417,6 @@ let
       );
   };
 
-  # overwrite the attributes on a clusterConfig level, delete unesed values
-  overwrite = {
-
-    # updateClustersFn = clusterName -> clusterConfig -> clusterConfig
-    clusters =
-      config: updateClustersFn:
-      config
-      // {
-        domain = config.domain // {
-          clusters = (
-            forEachAttrIn config.domain.clusters (
-              clusterName: clusterConfig: (updateClustersFn clusterName clusterConfig)
-            )
-          );
-        };
-      };
-
-    # updateServicesFn = clusterName -> serviceName -> serviceConfig -> serviceConfig
-    services =
-      config: updateServicesFn:
-      update.clusters config (
-        clusterName: clusterConfig: {
-          services = (
-            forEachAttrIn clusterConfig.services (
-              serviceName: serviceConfig: (updateServicesFn clusterName serviceName serviceConfig)
-            )
-          );
-        }
-      );
-
-    # updateMachinesFn = clusterName -> machineName -> machineConfig -> machineConfig
-    machines =
-      config: updateMachinesFn:
-      update.clusters config (
-        clusterName: clusterConfig: {
-          machines = (
-            forEachAttrIn clusterConfig.machines (
-              machineName: machineConfig: (updateMachinesFn clusterName machineName machineConfig)
-            )
-          );
-        }
-      );
-
-    # updateUsersFn = clusterName -> serName -> userConfig -> userConfig
-    users =
-      config: updateUsersFn:
-      update.clusters config (
-        clusterName: clusterConfig: {
-          users = (
-            forEachAttrIn clusterConfig.users (
-              userName: userConfig: (updateUsersFn clusterName userName userConfig)
-            )
-          );
-        }
-      );
-  };
-
-  # Defines a list machine annotations.
-  # AnnotationPath is a '.' separated path or name of the annotation
-  # all other options are the same as in lib.mkOption
-  # example:
-  # options = clusterlib.mkAnnotations [
-  #   {
-  #     annotationPath = "kubernetes.nodeLabels";
-  #     description = "A set of labels that will be added to the node when registered in the kubernetes cluster.";
-  #     type = lib.types.attrsOf lib.types.str;
-  #     default = { };
-  #   }
-  #   {
-  #     annotationPath = "kubernetes.keepalived.publicNatInterfaces";
-  #     type = lib.types.listOf lib.types.str;
-  #     default = [ ];
-  #   }
-  # ];
-  mkAnnotations =
-    annotations:
-    let
-      # Create one attrset per annotation
-      annotationAttrs = map (
-        annotation:
-        lib.attrsets.setAttrByPath (lib.splitString "." annotation.annotationPath) (
-          lib.mkOption (removeAttrs annotation [ "annotationPath" ])
-        )
-      ) annotations;
-
-      # Merge all generated attrsets together
-      options.annotations = lib.foldl' lib.recursiveUpdate { } annotationAttrs;
-
-      annotatedMachineType = {
-        inherit options;
-      };
-    in
-    {
-      domain = domainType { clusterType = clusterType { machineType = annotatedMachineType; }; };
-    };
-
   #############
   # Type stubs that can be extended
 
@@ -613,8 +484,6 @@ in
     get
     ip
     machineType
-    mkAnnotations
-    overwrite
     update
     ;
 }

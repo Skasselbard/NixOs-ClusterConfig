@@ -143,7 +143,7 @@
                     machines.vm0
                     # since the vms use disko for mounting, we still need to include the NixOs module
                     inputs.disko.nixosModules.default
-                    ({
+                    {
                       users.groups.testService = { };
                       users.users.testService = {
                         isNormalUser = false;
@@ -151,7 +151,7 @@
                         group = "testService";
 
                       };
-                    })
+                    }
                   ];
                 };
 

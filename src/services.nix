@@ -1,12 +1,12 @@
-{ pkgs, clusterlib, ... }:
+{ lib, clusterlib, ... }:
 let
   # imports
-  asserts = pkgs.lib.asserts;
-  strings = pkgs.lib.strings;
-  attrsets = pkgs.lib.attrsets;
-  lists = pkgs.lib.lists;
+  asserts = lib.asserts;
+  strings = lib.strings;
+  attrsets = lib.attrsets;
+  lists = lib.lists;
 
-  filters = import ./filters.nix { lib = pkgs.lib; };
+  filters = import ./filters.nix { inherit lib; };
 
   forEachAttrIn = clusterlib.forEachAttrIn;
   add = clusterlib.add;
@@ -79,7 +79,6 @@ let
 
 in
 {
-
   config.extensions.transformations = {
     clusterTransformations = [ clusterServiceToMachineServices ];
     moduleTransformations = [ machineServiceToNixOsConfiguration ];

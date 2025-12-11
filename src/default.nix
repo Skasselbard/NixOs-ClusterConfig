@@ -1,24 +1,9 @@
 { flakeInputs }:
 
-# Notes:
-
-# TODO: Tooling goals:
-# a tool should be able to parse the config and build views; e.g.:
-#   - hardware info (maybe also retrieved by ssh)
-#   - vm configuration
-#   - configured hosts with type and ip configuration
-#   - a list of dns names with ip and usage information
-#   - version information
-#   - k3s information (configured and retrieved)
-#   - configured users on different machines
-#   - configured interfaces and ips
-#   - imported views for each configured service
-
 let # imports
 
   pkgs = import flakeInputs.nixpkgs {
     # the exact value of 'system' should be unimportant since we only use lib
-    # TODO: is the above statement still true?
     system = "x86_64-linux";
   };
 
@@ -27,23 +12,12 @@ let # imports
   clusterlib =
     with flakeInputs;
     import ./lib.nix {
-      inherit nixpkgs flake-utils;
-      lib = pkgs.lib;
+      inherit lib nixpkgs flake-utils;
     };
 
-  filters = import ./filters.nix { lib = pkgs.lib; };
+  filters = import ./filters.nix { inherit lib; };
   add = clusterlib.add;
-  update = clusterlib.update;
-  forEachAttrIn = clusterlib.forEachAttrIn;
-
-  lists = lib.lists;
-  attrsets = lib.attrsets;
   evalModules = lib.evalModules;
-  head = builtins.head;
-
-in
-
-let
 
   # Use the NixOs module system to evaluate the clusterConfig
   #
@@ -98,13 +72,6 @@ let
       currentConfig: transformator: (transformator currentConfig)
     ) config transformations;
 
-  # TODOs:
-  # - conditionally include virtual interfaces (networking.interfaces.<name>.virtual = true) -> not useful for dns
-  # - include dhcp hints for static dhcp ip -> known dhcp ips should be addable
-  # tagging
-  # - cluster annotations: fqdn, all ips, all machine names + fqdns, all service names, service selectors per service
-  # maybe define cluster groups in the same way as services und users
-
   # a function that builds and evaluates the clusterConfig to apply directly on the cluster definition
   buildCluster =
     config:
@@ -124,12 +91,6 @@ let
 
       # Step 4:
       # DEPRECATED!
-      # Annotate the cluster with data from the configurations
-      # This includes:
-      # - the used IP addresses
-      # - the FQDN
-      # - resolved filters
-      # evalAnnotatedCluster = annotate machineEvaluatedCluster;
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)
@@ -138,12 +99,6 @@ let
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
       nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
-
-      # TODO: Consider another extension step
-      # Reasoning: In the previous extension step (moduleTransformations) the nixos configuration of each machine
-      # is missing the service modules.
-      # If we want to add transformations that depend on the final nixos configuration (including services),
-      # we need another evaluation and extension step here.
 
       # Step 7:
       # Transformations to add packages for deployment scripts and other tools

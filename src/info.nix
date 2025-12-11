@@ -69,6 +69,16 @@ let
 
 in
 {
+  # TODO: Tooling goals:
+  # a tool should be able to parse the config and build views; e.g.:
+  #   - vm configuration
+  #   - configured hosts with type and ip configuration
+  #   - a list of dns names with ip and usage information
+  #   - version information
+  #   - configured users on different machines
+  #   - configured interfaces and ips
+  #   - imported views for each configured service
+
   config.extensions = {
 
     # transformations.deploymentTransformations = [
