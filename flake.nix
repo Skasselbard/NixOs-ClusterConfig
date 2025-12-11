@@ -73,7 +73,7 @@
 
       clusterConfigModules = {
 
-        # Imports a selction of usefull deployment modules
+        # Imports a selection of useful deployment modules
         default = {
           imports = [
             self.clusterConfigModules.home-manager
@@ -82,37 +82,46 @@
           ];
         };
 
+        # definitions and scripts to generate tls certificates
+        certificates = {
+          imports = [ "${self}/src/modules/certificates/clusterModule.nix" ];
+        };
+
+        # Makes a colmena hive definition available under 'clusterConfig.colmena'.
+        # Also adds an app definition for colmena that makes colmena available in your flake by running
+        # 'nix run .#colmena [colmena-sub-cmd] -- [colmenaOptions]'
+        colmena = {
+          imports = [ "${self}/src/modules/colmena.nix" ];
+        };
+
+        # A module that populates the /etc/hosts file of each machine with selected machines in the cluster
+        simpleDns = {
+          imports = [ "${self}/src/services/dns.nix" ];
+        };
+
         # Makes a list of 'homeManagerModules' available for the user configurations.
-        # The home-amanager modules in that list will be added to the user configuration.
+        # The home-manager modules in that list will be added to the user configuration.
         # Each home-manager module should set '_class = "homeManager";' to be evaluated by home-manager
         # since this commit https://github.com/nix-community/home-manager/commit/26e72d85e6fbda36bf2266f1447215501ec376fd
         home-manager = {
           imports = [ "${self}/src/modules/homeManager.nix" ];
         };
 
+        kubernetes.imports = [ "${self}/src/services/kubernetes/kubernetesClusterModule.nix" ];
+
+        secret-service.imports = [ "${self}/src/services/secret-service/clusterModule.nix" ];
+
         # Makes a deployment script available (currently) for each machine
-        # under 'clusterconfig.packages.{system}.{machinename}.setup'.
-        # The script remotly deploys the machines sytem (build from the machine nixosConfiguration) to
+        # under 'clusterConfig.packages.{system}.{machineName}.setup'.
+        # The script remotely deploys the machines system (build from the machine nixosConfiguration) to
         # a running linux machine reachable under '...{machineConfig}.deployment.targetHost'.
         # The currently running system will be overwritten.
         nixos-anywhere = {
           imports = [ "${self}/src/modules/nixosAnywhere.nix" ];
         };
 
-        # Makes a colmena hive definition available under 'clusterConfig.colmena'.
-        # Also adds an app deinition for colmena that makes colmena availablke in your flake by runnong
-        # 'nix run .#colmena [colmena-sub-cmd] -- [colmenaOptions]'
-        colmena = {
-          imports = [ "${self}/src/modules/colmena.nix" ];
-        };
-
         # Module to add scripts for vault initialization to the flake packages
         vault.imports = [ "${self}/src/services/vault/vaultClusterModule.nix" ];
-
-        kubernetes.imports = [ "${self}/src/services/kubernetes/kubernetesClusterModule.nix" ];
-
-        secret-service.imports = [ "${self}/src/services/secret-service/clusterModule.nix" ];
-
       };
     };
 }
