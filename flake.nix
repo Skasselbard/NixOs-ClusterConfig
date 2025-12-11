@@ -95,8 +95,8 @@
         };
 
         # A module that populates the /etc/hosts file of each machine with selected machines in the cluster
-        simpleDns = {
-          imports = [ "${self}/src/services/dns.nix" ];
+        simple-dns = {
+          imports = [ "${self}/src/services/dns/clusterModule.nix" ];
         };
 
         # Makes a list of 'homeManagerModules' available for the user configurations.
