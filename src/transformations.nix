@@ -218,6 +218,13 @@ let # imports
       ))
     );
 
+  nixosModuleTransformations =
+    config:
+    add.nixosModule config (
+      _: _: _:
+      config.extensions.clusterMachine.nixosModules
+    );
+
 in
 {
 
@@ -225,7 +232,10 @@ in
 
     clusterTransformations = [ clusterTransformation ];
 
-    moduleTransformations = [ moduleTransformation ];
+    moduleTransformations = [
+      moduleTransformation
+      nixosModuleTransformations
+    ];
 
     deploymentTransformations = [
       # order is important

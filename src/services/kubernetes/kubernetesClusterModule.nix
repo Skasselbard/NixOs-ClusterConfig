@@ -23,25 +23,20 @@ let
       ;
   };
 
-  addFlakeInputs =
-    config:
-    add.nixosModule config (
-      _: _: _: {
-        _module.args = {
-          inherit # flake inputs needed for the kubeLib of the kubernetesService
-            nixhelm
-            nix-kube-generators
-            ;
-        };
-      }
-    );
-
   certOptions = (import ./certificates/clusterOptions.nix) { inherit lib; };
 
 in
 {
-  config.extensions.transformations.clusterTransformations = [ addFlakeInputs ];
-  # config.extensions.transformations.deploymentTransformations = [ deploymentAnnotation ];
+  config.extensions.clusterMachine.nixosModules = [
+    {
+      _module.args = {
+        inherit # flake inputs needed for the kubeLib of the kubernetesService
+          nixhelm
+          nix-kube-generators
+          ;
+      };
+    }
+  ];
   config.extensions.clusterServices.kubernetes = {
 
     defaultModule = import ./kubernetesService.nix;

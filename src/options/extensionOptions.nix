@@ -66,6 +66,14 @@ let
         type = attrsOf anything;
       };
 
+      nixosModules = mkOption {
+        description = ''
+          A list of NixOs modules that are added to the machine's NixOs configuration.
+        '';
+        type = listOf raw;
+        default = [ ];
+      };
+
       late.config = mkOption {
         description = ''
           A set of cluster machine options that will be set after the machine configurations were fully evaluated.
