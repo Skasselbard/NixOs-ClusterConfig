@@ -15,14 +15,18 @@
         ]
       },
       "locked": {
-        "path": "../../",
-        "type": "path"
+        "lastModified": 1765889539,
+        "narHash": "sha256-XGkL/vZ0ALsz7Hvs4NvpPJIfwUh1vDccu4hQruQ6cAw=",
+        "owner": "Skasselbard",
+        "repo": "NixOs-ClusterConfig",
+        "rev": "d24d3f258ab9d6d6efb76f533d624de1f7972cf3",
+        "type": "github"
       },
       "original": {
-        "path": "../../",
-        "type": "path"
-      },
-      "parent": []
+        "owner": "Skasselbard",
+        "repo": "NixOs-ClusterConfig",
+        "type": "github"
+      }
     },
     "colmena": {
       "inputs": {
