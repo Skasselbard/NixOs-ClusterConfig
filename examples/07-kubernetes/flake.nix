@@ -73,9 +73,9 @@
           # It also defines annotations for keepalived virtualIps and kubernetes node labels
           clusterConfigFlake.clusterConfigModules.kubernetes
 
-          # TODO: add to flake exports
-          ../../src/services/dns/clusterModule.nix
-          ../../src/modules/certificates/clusterModule.nix
+          clusterConfigFlake.clusterConfigModules.simpleDns
+
+          clusterConfigFlake.clusterConfigModules.certificates
         ];
 
         domain = {

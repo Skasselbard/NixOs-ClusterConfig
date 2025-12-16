@@ -1,15 +1,11 @@
 {
   pkgs,
-  clusterlib,
   lib,
   flakeInputs,
   ...
 }:
 let
   mkOption = lib.mkOption;
-
-  add = clusterlib.add;
-  filters = clusterlib.filters;
 
   nixhelm = flakeInputs.nixhelm;
   nix-kube-generators = flakeInputs.nix-kube-generators;

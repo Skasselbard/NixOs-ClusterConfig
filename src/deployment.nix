@@ -44,20 +44,6 @@ let
           ])
         ) nixosConfig.networking.wireless;
 
-      networkmanager = # filter old options that are deprecated or cause conflicts
-        attrsets.filterAttrs (
-          optionName: optionDefinition:
-          !(builtins.elem optionName [
-            "firewallBackend"
-            "dynamicHosts"
-            "enableFccUnlock"
-            "extraConfig"
-            "packages"
-            "fccUnlockScripts"
-            "useDnsmasq"
-          ])
-        ) nixosConfig.networking.networkmanager;
-
       users =
         let
           # filter some users that get created by default
@@ -157,7 +143,6 @@ let
           networking.interfaces = interfaces;
           # TODO: nameservers and gateway!
           networking.wireless = wireless;
-          networking.networkmanager = networkmanager;
 
           # copy a selection of users
           users.users = users;
