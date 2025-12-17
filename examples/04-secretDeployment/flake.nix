@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # HomeManager to overwrite the version used in cluster-config
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -15,14 +15,13 @@
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
-      # url = "github:Skasselbard/NixOs-ClusterConfig"; #TODO:
-      url = "path:../../";
+      url = "github:Skasselbard/NixOs-ClusterConfig";
     };
 
     # Import disko to configure partitioning
     # If you want to use disko for formatting or device definitions, this option is required
     disko = {
-      url = "github:nix-community/disko/v1.1.0";
+      url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -60,8 +59,7 @@
         modules = [
           clusterConfigFlake.clusterConfigModules.default
           clusterConfigFlake.clusterConfigModules.secret-service
-          # clusterConfigFlake.clusterConfigModules.dns
-          ../../src/services/dns/clusterModule.nix # TODO:
+          clusterConfigFlake.clusterConfigModules.simple-dns
         ];
 
         domain = {
