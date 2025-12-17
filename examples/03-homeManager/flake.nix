@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # HomeManager to overwrite the version used in cluster-config
     home-manager = {
-      url = "github:nix-community/home-manager/release-24.05";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -21,7 +21,7 @@
     # Import disko to configure partitioning
     # If you want to use disko for formatting or device definitions, this option is required
     disko = {
-      url = "github:nix-community/disko/v1.1.0";
+      url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -52,11 +52,14 @@
       homeModules = configurations.homeModules;
 
       #####################################################
-      # ClusterConfig 
+      # ClusterConfig
       #####################################################
       clusterConfig = clusterConfigFlake.lib.buildCluster {
 
-        modules = [ clusterConfigFlake.clusterConfigModules.default ];
+        modules = [
+          clusterConfigFlake.clusterConfigModules.default
+          clusterConfigFlake.clusterConfigModules.simple-dns
+        ];
 
         domain = {
           suffix = "com";
@@ -74,7 +77,6 @@
                 dns = {
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
-                  definition = clusterConfigFlake.clusterServices.staticDns;
                 };
 
               };
@@ -85,7 +87,7 @@
 
                 root = {
                   # If a user in your cluster uses HomeManager
-                  # the ``home.stateVersion`` attribute has to be defined for all users 
+                  # the ``home.stateVersion`` attribute has to be defined for all users
                   homeManagerModules = [ homeModules.default ];
                   systemConfig = {
                     extraGroups = [ "wheel" ];
