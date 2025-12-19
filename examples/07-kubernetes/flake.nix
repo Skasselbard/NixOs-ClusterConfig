@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # HomeManager to overwrite the version used in cluster-config
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -56,6 +56,7 @@
 
       # Kubernetes requires a lot of secrets and certificates
       # For this example we define them in a function in a separate file
+      # See the certificate definitions for more details
       generateSecrets = import ./secrets.nix;
 
       #####################################################
@@ -73,8 +74,8 @@
           # It also defines annotations for keepalived virtualIps and kubernetes node labels
           clusterConfigFlake.clusterConfigModules.kubernetes
 
-          clusterConfigFlake.clusterConfigModules.simpleDns
-
+          clusterConfigFlake.clusterConfigModules.simple-dns
+          # A module that defines scripts to generate tls certificates from a well defined data structure
           clusterConfigFlake.clusterConfigModules.certificates
         ];
 
@@ -86,15 +87,25 @@
             # the cluster name will also be used for fqdn generation
             example = {
 
+              # Kubernetes has a lot of components running with different accounts on multiple machines.
+              # For secure communication between these components, a lot of tls certificates are required.
+              # The kubernetes service module defines a data structure for accounts including required rights.
+              # The idea of the certificate generation is to transform these accounts into certificate definitions.
+              # The certificates module can then generate the required certificates based on these definitions.
               certificates.sets =
                 let
+                  # We use the result of our clusterConfig build function to access the account definitions from the kubernetes service
                   kubernetesAccounts = clusterConfig.domain.clusters.example.services.kubernetes.accounts;
                   clusterName = "example.com";
+                  # A function that takes a set of accounts and transforms them into certificate definitions with independent certificate authorities.
+                  # In kubernetes we have two main sets of accounts: etcd and kubernetes.
                   mapSet = setName: {
+                    # Certificate authorities definitions
                     ca = {
                       commonName = "${setName}-root-ca";
                       expires = "10 year";
                     };
+                    # You can define intermediate certificate authorities with a signer
                     intermediates = {
                       "${setName}-ca" = {
                         commonName = "A";
@@ -103,6 +114,8 @@
                         signedBy = [ "${setName}" ];
                       };
                     };
+                    # The actual certificate definition.
+                    # The main mapping from account to certificates happens here.
                     certs = builtins.mapAttrs (accountName: account: {
                       commonName = account.roleName or null;
                       organization = account.kubernetesGroup or null;
@@ -110,12 +123,13 @@
                       ips = account.ips or [ ];
                       uri = [ ];
                       expires = "2 year";
-                      signedBy = [ "${setName}" ];
-                      # signedBy = [ "${setName}-ca" ];
+                      # signedBy = [ "${setName}" ];
+                      signedBy = [ "${setName}-ca" ];
                     }) kubernetesAccounts."${setName}";
                   };
                 in
                 {
+                  # Apply the function to both accounts
                   etcd = mapSet "etcd";
                   kubernetes = mapSet "kubernetes";
                 };
@@ -131,6 +145,8 @@
                 };
 
                 # Secret service to make secrets and certificates for the kubernetes service users available on the machines
+                # The service defines scripts to deploy the secrets.
+                # The secrets themselves are defined in the machine config below.
                 secrets = {
                   selectors = [ filters.clusterMachines ];
                 };
@@ -154,6 +170,18 @@
                     ];
                   };
 
+                  kubeConfigs = {
+                    # We want to generate kubeConfigs for the admin and super-admin accounts
+                    accountNames = [
+                      "admin"
+                      "super-admin"
+                    ];
+                    # The api server address used in the kube-config files
+                    apiServer = "192.168.122.210";
+                    # We used the intermediate cas to sign our certificates, so we need them to generate valid kube-configs as well
+                    caPath = "./certificates/kubernetes/intermediates/kubernetes-ca.crt";
+                  };
+
                   # nodes to which the service is copied to
                   selectors = [ filters.clusterMachines ];
 
@@ -161,24 +189,17 @@
                   # The keepalived master server will assume this address, but when it is unreachable, a backup server will fail over.
                   virtualIps = [ "192.168.122.210" ];
 
-                  # # You can add extra configuration to the kubernetes service module here
-                  # # In theory you could e.g. overwrite and disable high-availability services (keepalived and ha proxy) here if you don't ned them, however, this is not tested
-                  # # If you keep the high-availability services, make sure to adjust the virtualIps below
-                  # # The other configuration here is required to make the certificates work and to deploy them with the secret-service.
-                  # # If you bring and deploy your own certificates, you can skip that part.
-                  # extraConfig =
-                  #   { config, lib, ... }:
-                  #   let
-                  #     machineName = config.networking.hostName;
-                  #     isEtcdMember = config.services.etcd.enable;
-                  #     isControlPlaneMember = config.services.kubernetes.apiserver.enable;
-                  #     sources = config.clusterConfig.clusters.this.machines.this.kubernetes.certificates;
-                  #   in
-                  #   {
-                  #     # configuring the secrets to deploy the certificates with the secret-service cluster service
-                  #     users.users =
-
-                  #   };
+                  # You can add extra configuration to the kubernetes service module here
+                  # In theory you could e.g. overwrite and disable high-availability services (keepalived and ha proxy) here if you don't need them, however, this is untested.
+                  extraConfig =
+                    {
+                      pkgs,
+                      config,
+                      lib,
+                      ...
+                    }:
+                    {
+                    };
                 };
 
               };
@@ -249,6 +270,10 @@
                       formatScript = "disko"; # format vms on recreation
                     };
 
+                    # Call the function to generate and define the secrets for this machine
+                    # You can deploy secrets and certificates in other ways as well.
+                    # In fact the secret service module is a proof of concept and that probably shows.
+                    # If you decide to use another method, you can reuse the account definitions from the kubernetes service to generate and deploy the required certificates.
                     secrets = generateSecrets {
                       machineConfig = self.nixosConfigurations.${machineName}.config;
                       lib = pkgs.lib;
@@ -261,45 +286,63 @@
                     ];
                   };
 
-                vm1 = {
-                  inherit system;
+                vm1 =
+                  let
+                    machineName = "vm1";
+                  in
+                  {
+                    inherit system;
 
-                  kubernetes.nodeLabels = {
-                    "cluster.example.com/TestLabel" = "vm1";
-                  };
-                  kubernetes.keepalived = {
-                    virtualIpInterface = "eth0";
-                    # priority = 234;
-                  };
+                    kubernetes.nodeLabels = {
+                      "cluster.example.com/TestLabel" = "vm1";
+                    };
+                    kubernetes.keepalived = {
+                      virtualIpInterface = "eth0";
+                      # priority = 234;
+                    };
 
-                  deployment = {
-                    targetHost = "192.168.122.201";
-                    formatScript = "disko"; # format vms on recreation
-                  };
+                    deployment = {
+                      targetHost = "192.168.122.201";
+                      formatScript = "disko"; # format vms on recreation
+                    };
 
-                  nixosModules = [
-                    machines.vm1
-                    inputs.disko.nixosModules.default
-                  ];
-                };
+                    secrets = generateSecrets {
+                      machineConfig = self.nixosConfigurations.${machineName}.config;
+                      lib = pkgs.lib;
+                    };
 
-                vm2 = {
-                  inherit system;
-
-                  kubernetes.keepalived = {
-                    virtualIpInterface = "eth0";
-                  };
-
-                  deployment = {
-                    targetHost = "192.168.122.202";
-                    formatScript = "disko"; # format vms on recreation
+                    nixosModules = [
+                      machines.vm1
+                      inputs.disko.nixosModules.default
+                    ];
                   };
 
-                  nixosModules = [
-                    machines.vm2
-                    inputs.disko.nixosModules.default
-                  ];
-                };
+                vm2 =
+                  let
+                    machineName = "vm2";
+                  in
+                  {
+                    inherit system;
+
+                    kubernetes.keepalived = {
+                      virtualIpInterface = "eth0";
+                    };
+
+                    deployment = {
+                      targetHost = "192.168.122.202";
+                      formatScript = "disko"; # format vms on recreation
+                    };
+
+                    secrets = generateSecrets {
+                      machineConfig = self.nixosConfigurations.${machineName}.config;
+                      lib = pkgs.lib;
+                    };
+
+                    nixosModules = [
+                      machines.vm2
+                      inputs.disko.nixosModules.default
+                    ];
+                  };
 
               };
             };

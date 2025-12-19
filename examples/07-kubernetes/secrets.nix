@@ -16,8 +16,8 @@ let
 
   etcdSecrets = {
     ca-cert = {
-      backendPath = "./certificates/etcd/ca/etcd.crt";
-      # backendPath = "./certificates/etcd/intermediates/etcd-ca.crt";
+      # backendPath = "./certificates/etcd/ca/etcd.crt";
+      backendPath = "./certificates/etcd/intermediates/etcd-ca.crt";
       linkPath = sources.etcd.caCertFile.sourcePath;
       permissions = "555";
     };
@@ -115,8 +115,8 @@ let
 
   kubernetesSecrets = {
     ca-cert = {
-      backendPath = "./certificates/kubernetes/ca/kubernetes.crt";
-      # backendPath = "./certificates/kubernetes/intermediates/kubernetes-ca.crt";
+      # backendPath = "./certificates/kubernetes/ca/kubernetes.crt";
+      backendPath = "./certificates/kubernetes/intermediates/kubernetes-ca.crt";
       linkPath = sources.caCertFile.sourcePath;
       permissions = "555";
     };

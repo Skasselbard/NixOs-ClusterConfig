@@ -92,7 +92,7 @@ let
 
         admin = {
           roleName = "kubernetes-admin";
-          kubernetesGroup = "kubeadm:cluster-admins";
+          kubernetesGroup = "system:masters";
           expectedCertPath = null;
           expectedKeyPath = null;
         };
@@ -112,7 +112,7 @@ let
 
         addon-manager = {
           roleName = "addon-manager";
-          kubernetesGroup = "kubeadm:cluster-admins";
+          kubernetesGroup = "system:masters";
           expectedCertPath = certificates.addonManagerCertFile.targetPath;
           expectedKeyPath = certificates.addonManagerKeyFile.targetPath;
         };

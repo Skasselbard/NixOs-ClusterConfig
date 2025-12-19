@@ -120,11 +120,11 @@ in
         algorithm = mkOption {
           description = "Algorithm to use for the key generation";
           type = lib.types.enum [
-            "ed25519"
+            # "ed25519"
             "rsa-4096"
-            "p384"
+            # "p384"
           ];
-          default = "ed25519";
+          default = "rsa-4096";
         };
 
       };
