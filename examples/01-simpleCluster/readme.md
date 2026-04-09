@@ -1,41 +1,107 @@
 # Simple Cluster Example
 
-Build a short functional cluster with three machines and a simple service.
+Build a minimal functional cluster with three virtual machines, a cluster user, and a static DNS service.
+
+## What You Will Learn
+
+- How to structure a ClusterConfig flake
+- How to define machines, users, and services in a cluster
+- The three-stage deployment workflow: build ISO → boot → create
 
 ## Prerequisites
 
-- Three virtual machines you can deploy to.
-  - With two network interfaces in the same virtual network.
-    - the network should use NAT for internet access
-    - one interface will use dhcp for internet access
-    - the other interface will be assigned with a static ip for predictable connections
-  - You may have to change the NixOs configuration in [Configs Folder](../00-exampleConfigs/).
-- Add the SSH private key from the [Config Folder](../00-exampleConfigs/secrets/sshKey) to your [SSH Agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
+- A Linux machine with Nix installed ([flakes enabled](https://wiki.nixos.org/wiki/Flakes))
+- Three virtual machines you can deploy to
+  - Each VM needs two network interfaces on the same virtual network:
+    - One interface (`eth0`) will be assigned a **static IP** for predictable connections
+    - One interface (`eth1`) will use **DHCP** for internet access (via NAT)
+  - The VMs should boot from ISO images
+  - You may need to adjust the disk device path in the [machine config](../00-exampleConfigs/machines/vm.nix) to match your hypervisor
+- The SSH private key from [secrets/sshKey](../00-exampleConfigs/secrets/sshKey) added to your SSH agent:
+
+  ```bash
+  ssh-add ../00-exampleConfigs/secrets/sshKey
+  ```
 
 ## Result
 
-Three Virtual machines with:
-- a fresh NixOs on previously formatted OS-Drive
-- static ips as set in the [configuration](../00-exampleConfigs/default.nix)
-- a root user with `root` as password
-  - and an authorization to connect with the ssh key from the [Config Folder](../00-exampleConfigs/secrets)
-- a hosts file with entries for all three machines in the cluster
+Three virtual machines with:
+
+- A fresh NixOS installation on formatted drives
+- Static IPs as configured in [00-exampleConfigs/default.nix](../00-exampleConfigs/default.nix):
+  - vm0: `192.168.122.200`
+  - vm1: `192.168.122.201`
+  - vm2: `192.168.122.202`
+- A `root` user (password: `root`) with SSH key authorization
+- A `/etc/hosts` file on each machine with entries for all three cluster machines (via the DNS service)
+
+## Flake Structure
+
+The `flake.nix` demonstrates the basic ClusterConfig pattern:
+
+```text
+inputs:   nixpkgs + clusterConfigFlake + disko
+            ↓
+outputs:  buildCluster { modules, domain.clusters.example.{services, users, machines} }
+            ↓
+result:   flake outputs (nixosConfigurations, packages, colmena)
+```
+
+Key points:
+
+- **Modules** load framework features (`default` = nixos-anywhere + colmena + home-manager, `simple-dns` = the DNS service)
+- **Services** use `selectors` (who gets the module) and `roles` (who provides data)
+- **Users** are deployed on all cluster machines
+- **Machines** define per-host NixOS config and deployment settings
+- The result of `buildCluster` is returned directly as the flake output
 
 ## Deployment
 
-1. Build the iso images with ``nix build .#vmX.iso``
-   - replace the X with the number from the vm name in the cluster-config
-   - you can run ``bash build-isos.sh`` from this folder to build all three machines in a `build` sub-folder
-2. Start three virtual machines, each one booting from a drive where one of the iso images is mounted
-   - all machines are configured with a different ip as seen in the ``machine`` attribute in the [configuration file](../00-exampleConfigs/default.nix)
-3. Deploy the complete machine configuration to the booted machines with ``nix run .#vmX.create``
-   - replace the X with the number from the vm name in the cluster-config
-   - you can run ``bash deploy.sh`` from this folder to deploy all three machines from the `build` sub-folder
-4. Boot the virtual machines from the OS drive
+### 1. Build ISO images
 
-## Test Setup
+```bash
+nix build .#example.vm0.iso -o ./build/vm0/
+nix build .#example.vm1.iso -o ./build/vm1/
+nix build .#example.vm2.iso -o ./build/vm2/
+```
 
-1. connect to a virtual machine with ssh: ``ssh root@192.168.122.200``
-2. from the vm test the connection to another machine: ``ping vm1``
+Or use the helper script: `bash build-isos.sh`
 
-You can also run the test script from this folder to test the configuration: ``bash test.sh``
+> The package path follows the pattern `.#<cluster>.<machine>.<command>`.
+
+### 2. Boot VMs from the ISO
+
+Start each VM with its ISO mounted as a boot drive. The ISO provides a minimal NixOS environment that accepts SSH connections for deployment.
+
+### 3. Deploy machine configurations
+
+```bash
+nix run .#example.vm0.create
+nix run .#example.vm1.create
+nix run .#example.vm2.create
+```
+
+Or use the helper script: `bash deploy.sh`
+
+> `create` uses [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) to format the disk (if `formatScript` is set) and install the full NixOS configuration remotely.
+
+### 4. Reboot
+
+Boot the VMs from their OS drive (remove the ISO). The machines are now running your cluster configuration.
+
+## Test
+
+Verify that the DNS service works — machines should resolve each other by hostname:
+
+```bash
+# SSH into vm0 and ping vm1 by name
+ssh root@192.168.122.200 "ping -c 1 vm1"
+```
+
+Or run all tests: `bash test.sh`
+
+## What's Next
+
+- [Example 02](../02-formatScripts/) — different format script options
+- [Example 03](../03-homeManager/) — per-user Home Manager configuration
+- [Example 04](../04-secretDeployment/) — deploying encrypted secrets

@@ -1,23 +1,34 @@
+# Cheat Sheet
+
+Quick reference for common ClusterConfig commands. See the [Command Reference](CommandReference.md) for detailed descriptions.
+
 ## Machine Commands
 
-- ``nix build .#machines.<machine name>.iso``: build an iso file for the machine
-- ``nix run .#machines.<machine name>.<command>``
-- ``nix run .#machines.<machine name>.build``: run a nix build of the machine with nixos-rebuild
-- ``nix run .#machines.<machine name>.deploy``: deploy the machine to the deployment.target with nixos-rebuild
-- ``nix run .#machines.<machine name>.connect``: connect to the deployment.target via ssh
-- ``nix run .#machines.<machine name>.hardware-configuration``: connect to the deployment.target and print the hardware configuration.nix via ssh
+```bash
+# Build
+nix build .#<cluster>.<machine>.iso                   # Build installation ISO
+nix run .#<cluster>.<machine>.build                    # Build system locally
 
-### Service Commands
-- ``nix run .#machines.<machine name>.services.<service name>.start``: 1
-- ``nix run .#machines.<machine name>.services.<service name>.restart``: deploy the machine to the deployment.target
-- ``nix run .#machines.<machine name>.services.<service name>.stop``: connect to the deployment.target via ssh
-- ``nix run .#machines.<machine name>.services.<service name>.status``: connect to the deployment.target and print the hardware configuration.nix via ssh
-- ``nix run .#machines.<machine name>.services.<service name>.log``: connect to the deployment.target and print the service log via ssh
+# Deploy
+nix run .#<cluster>.<machine>.create                   # Initial install (nixos-anywhere)
+nix run .#<cluster>.<machine>.deploy                   # Update system (nixos-rebuild)
 
-### Nixos Anywhere Commands
-- ``nix run .#machines.<machine name>.create``: Redeploys the entire nixos system on the deployment.target
-- ``nix run .#machines.<machine name>.format``: Runs the configured format script on deployment.target
+# Utilities
+nix run .#<cluster>.<machine>.connect                  # SSH into machine
+nix run .#<cluster>.<machine>.hardware-configuration   # Print hardware config
+nix run .#<cluster>.<machine>.format                   # Run format script remotely
+```
 
-### Secret Service Commands
-- ``nix run .#machines.<machine name>.deploy``: a normal deployment is needed to update the service itself
-- ``nix run .#machines.<machine name>.deploySecrets``: deploy the secrets defined for the secret-service to the deployment.target
+## Fleet Deployment (Colmena)
+
+```bash
+nix run .#colmena apply                                # Deploy all machines
+nix run .#colmena apply -- --on <machine>              # Deploy one machine
+nix run .#colmena build                                # Build without deploying
+```
+
+## Secret Deployment
+
+```bash
+nix run .#<cluster>.<machine>.deploySecrets            # Deploy encrypted secrets
+```

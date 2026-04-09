@@ -1,72 +1,73 @@
-
 # Usage
 
-- Follow the [examples](../examples/readme.md) for configuration guidances
+> **Note:** This document is a quick reference. For a detailed walkthrough, see [Getting Started](GettingStarted.md). For all available commands, see the [Command Reference](CommandReference.md).
 
-# Generated Command Usage
+## Deployment Stages
 
-## Build Artifacts
-These commands are executed with ``nix build``.
+The deployment process follows three stages:
 
-### Machine Commands
-``nix build .#machines.<machine name>.<command>``
-**Commands**:
-- **``iso``**: build an iso file for the machine
+### Stage 0: Build a Bootable ISO
 
-## Run commands
-These commands are executed with ``nix run``.
+Build an installation medium for initial machine setup:
 
-### Machine Commands
-``nix run .#machines.<machine name>.<command>``
-**Commands**:
-- **``build``**: run a nix build of the machine with nixos-rebuild
-- **``deploy``**: deploy the machine to the deployment.target with nixos-rebuild
-- **``connect``**: connect to the deployment.target via ssh
-- **``hardware-configuration``**: connect to the deployment.target and print the hardware configuration.nix via ssh
+```bash
+nix build .#<cluster>.<machine>.iso
+```
 
-### Machine Specific Service Commands
-``nix run .#machines.<machine name>.services.<service name>.<command>``
-These service commands assume that a systemd unit named "<service name>.unit" exists, which may not always be true (depending on the service implementation and configuration).
-**Commands**:
-- **``start``**: 1
-- **``restart``**: deploy the machine to the deployment.target
-- **``stop``**: connect to the deployment.target via ssh
-- **``status``**: connect to the deployment.target and print the hardware configuration.nix via ssh
-- **``log`**: connect to the deployment.target and print the hardware configuration.nix via ssh
+- The ISO inherits network configuration, users, SSH keys, and locale settings from the machine's cluster config
+- Write it to a USB drive or mount it in a virtual machine
+- The machine booted from the ISO is accessible via SSH
 
-## Module Commands
-Commands that are exposed by a module.
+### Stage 1: Initial System Installation
 
-### Nixos Anywhere
-The Nixos Anywhere module adds machine commands.
-``nix run .#machines.<machine name>.<command>``
-**Commands**:
-- **``create``**: Redeploys the entire nixos system on the deployment.target
-- **``format``**: Runs the configured format script on deployment.target
+With the target machine booted from the ISO:
 
+```bash
+nix run .#<cluster>.<machine>.create
+```
 
-# Stages
+This uses [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) to:
+1. Optionally run the configured format script (e.g., [disko](https://github.com/nix-community/disko))
+2. Install the full NixOS system configuration
 
-The installation process is devised into stages:
+After installation, boot from the OS drive.
 
-0. Installation medium with network config
-1. [nixos-anywhere](https://github.com/nix-community/nixos-anywhere/tree/main) remote installation
-2. Nixos configuration management
+### Stage 2: Configuration Updates
 
-## Stage 0: Bootable Iso Image for Installation Medium
+For ongoing changes, update the deployed system:
 
-- build a bootable image for the initial machine setup with ``nix build .#machines.<machine name>.iso``:
-  - used to for remote system install (stage 1)
-- physical access to the machine is needed but should be kept to a minimum
-  - the internet has to be reachable
-- can be used to retrieve the hardware-configuration.nix hardware-configuration.nix
+```bash
+# Single machine
+nix run .#<cluster>.<machine>.deploy
 
-## Stage 1: Remote Installation with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere/tree/main)
-- run the initial image from Stage 0 on the machine you want to set up
-- run an initial installation with ``nix run .#machines.<machine name>.create``
-- optional: partitioning with [disko](https://github.com/nix-community/disko/tree/master)
-  - the partitioning module helps to define formatting scripts
-  - the format script will be run as part of the nixos anywhere installation
+# All machines via colmena
+nix run .#colmena apply
+```
 
-## Stage 2: Nixos Configuration Management
-- To update your machines you can run ``nix run .#machines.<machine name>.deploy``
+## Working with Secrets
+
+If the `secret-service` module is loaded:
+
+```bash
+# Deploy the system first (to update the service itself)
+nix run .#<cluster>.<machine>.deploy
+
+# Then deploy secrets
+nix run .#<cluster>.<machine>.deploySecrets
+```
+
+## Retrieving Hardware Configuration
+
+To fetch the auto-detected hardware configuration from a running machine:
+
+```bash
+nix run .#<cluster>.<machine>.hardware-configuration
+```
+
+## Connecting to Machines
+
+```bash
+nix run .#<cluster>.<machine>.connect
+```
+
+Additional SSH arguments can be appended after the command.

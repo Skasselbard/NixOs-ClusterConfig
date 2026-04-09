@@ -1,37 +1,100 @@
-# HomeManager Example
+# Home Manager Example
 
-Use HomeManager modules on a per (cluster)user basis to customize the user experience.
+Configure per-user environments using [Home Manager](https://github.com/nix-community/home-manager) modules assigned at the cluster level.
+
+This example adds an `admin` user with a customized shell prompt (starship) alongside the existing `root` user.
+
+## What You Will Learn
+
+- How to assign Home Manager modules to cluster users
+- The `home.stateVersion` requirement when using Home Manager
+- How to override the Home Manager version used by ClusterConfig
+- Using `colmena` for deploying configuration updates
 
 ## Prerequisites
 
-- Three virtual machines you can deploy to.
-- Reuse the deployed machines from the [Simple Cluster Example](../01-simpleCluster/)
-  - Or build the ISOs and deploy the system again as described in the Simple Cluster Example
-- Add the SSH private key from the [Config Folder](../00-exampleConfigs/secrets/sshKey) to your [SSH Agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
+- Three VMs already deployed from [Example 01](../01-simpleCluster/)
+- The SSH private key added to your SSH agent:
+
+  ```bash
+  ssh-add ../00-exampleConfigs/secrets/sshKey
+  ```
+
+## Key Concepts
+
+### Home Manager modules per user
+
+Each cluster user can have a `homeManagerModules` list. These are standard Home Manager modules (files with `_class = "homeManager"`) that configure the user's environment (shell, programs, dotfiles, etc.).
+
+### The `home.stateVersion` requirement
+
+**Important:** Once ANY user in a cluster uses Home Manager, ALL users must include a module that sets `home.stateVersion`. The [default module](../00-exampleConfigs/homeManager/default.nix) in this example does exactly that:
+
+```nix
+{
+  _class = "homeManager";
+  home.stateVersion = "24.05";
+  programs.home-manager.enable = false;
+}
+```
+
+### Overriding the Home Manager version
+
+ClusterConfig bundles its own Home Manager input. If your nixpkgs version differs, override it with `inputs.home-manager.follows`:
+
+```nix
+clusterConfigFlake = {
+  inputs.nixpkgs.follows = "nixpkgs";
+  inputs.home-manager.follows = "home-manager";  # Use our version
+  url = "github:Skasselbard/NixOs-ClusterConfig";
+};
+```
 
 ## Result
 
-Three VMs with two cluster users (that are deployed on all machines in the cluster).
-The ``root`` user does not import custom HomeManager configuration,
-while the ``admin`` user deploys a starship configuration for bash.
-If you connect with the admin user the bash prompt should be colored
-(you may need nerdfonts on your working machine to display all symbols correctly).
-If you connect with root, the default prompt should be used.
+Three VMs with two cluster users deployed on all machines:
+
+| User | Home Manager Config | Shell Prompt |
+| --- | --- | --- |
+| `root` | Default module only (`home.stateVersion`) | Standard bash prompt |
+| `admin` | Default + [starship](../00-exampleConfigs/homeManager/starship.nix) | Colored starship prompt |
 
 ## Deployment
 
-If you haven't, deploy a base system as described in the [first example](../01-simpleCluster/).
-Then run
+Since the machines are already installed (from Example 01), use **colmena** to push the updated configuration:
 
 ```bash
 nix run .#colmena apply
 ```
 
-You can also run the deployment script with ``bash deploy.sh``.
+This deploys all machines from all clusters in the flake. Without additional flags, it deploys everything.
 
-## Test Setup
+Alternatively, deploy machines individually:
 
-1. Connect to a virtual machine as root with ssh: ``ssh root@192.168.122.200``
-2. Be welcomed with a default shell prompt
-3. Connect to a virtual machine as admin with ssh: ``ssh admin@192.168.122.200``
-4. Be welcomed with a colored shell prompt
+```bash
+nix run .#example.vm0.deploy
+nix run .#example.vm1.deploy
+nix run .#example.vm2.deploy
+```
+
+Or use the helper script: `bash deploy.sh`
+
+## Test
+
+1. Connect as root — you should see the default bash prompt:
+
+   ```bash
+   ssh root@192.168.122.200
+   ```
+
+2. Connect as admin — you should see a colored starship prompt:
+
+   ```bash
+   ssh admin@192.168.122.200
+   ```
+
+> **Tip:** You may need [Nerd Fonts](https://www.nerdfonts.com/) installed on your local machine to display all starship symbols correctly.
+
+## What's Next
+
+- [Example 04](../04-secretDeployment/) — deploying encrypted secrets to machines

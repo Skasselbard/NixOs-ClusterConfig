@@ -1,47 +1,66 @@
-{ # function parameters to build different vms
+# VM machine configuration template.
+#
+# This is a standard NixOS configuration — no ClusterConfig features here.
+# It is parameterized so each VM can have a different IP and disk device.
+#
+# This file is called from ../default.nix like:
+#   (import ./machines/vm.nix) { ip = "192.168.122.200"; osDevicePath = "/dev/disk/by-id/virtio-OS"; }
 
-ip, # The ip address configured for the eth0 interface
-osDevicePath # The path to the device where the os schould be installed on.
-# The device path depends on the kind and name of the drive given in your hipervisor.
-# For example in libvirt: if you Configure a VirtIO Disk with Serial 'OS' (in the advanced options)
-#   libvirt will call your device "virtio-OS" and 
-#   Linux will make it available by name under "/dev/disk/by-id/virtio-OS".
-
+{
+  # Function parameters — these differ per VM instance
+  ip, # The static IP address for eth0
+  osDevicePath,
+  # The disk device path for the OS installation
+  # In libvirt: configure a VirtIO disk with Serial "OS",
+  # then it appears as /dev/disk/by-id/virtio-OS.
 }:
-{ pkgs, config, ... }: {
+
+# Standard NixOS module function
+{ config, ... }:
+{
+
   imports = [ ./vm-hardware-configuration.nix ];
 
   system.stateVersion = "24.05";
 
+  # --- Boot configuration ---
   boot.loader.efi.canTouchEfiVariables = true;
   boot.loader.systemd-boot.enable = true;
-  nix.extraOptions = ''
-    # tarball-ttl = 0
-    experimental-features = nix-command flakes'';
 
-  # SSH configuration
+  # Enable flakes (required for ClusterConfig to work)
+  nix.extraOptions = "experimental-features = nix-command flakes";
+
+  # --- SSH ---
+  # Enable SSH so we can deploy to this machine remotely.
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = config.services.openssh.ports;
 
-  # We expect two interfaces on the vm connected to the same network.
-  # This will be always eth0 and eth1 in legacy style interface names.
-  # This is handy for vm definitions where the interfaces can be at
-  # arbitrary pci locations, which makes the new predictable
-  # interfaces rather unpredictable :p
+  # --- Networking ---
+  # We expect two interfaces on the VM connected to the same virtual network.
+  # Using predictable interface names can be unpredictable in VMs :p (PCI location varies),
+  # so we disable them. The interfaces will be named eth0, eth1, etc.
   networking.usePredictableInterfaceNames = true;
-  # eth0 will be static, so that we can connect to predictable ips
+
+  # eth0: static IP for predictable cluster communication.
+  # This is the address used in deployment.targetHost and in the DNS service.
   networking.interfaces."eth0" = {
-    ipv4.addresses = [{
-      address = ip;
-      prefixLength = 24;
-    }];
+    ipv4.addresses = [
+      {
+        address = ip;
+        prefixLength = 24;
+      }
+    ];
   };
-  # eht1 will use dhcp to make nat-ing to the outside world easy
+
+  # eth1: DHCP for internet access via NAT.
+  # This gives the VM internet access for downloading packages during deployment.
   networking.interfaces."eth1".useDHCP = true;
 
+  # --- Disk partitioning (disko) ---
+  # Disko is used for declarative partitioning.
+  # This config defines a simple GPT layout with an EFI system partition and a root partition.
+  # See: https://github.com/nix-community/disko/blob/master/example/simple-efi.nix
   disko = {
-    # disko configuration
-    # from examples: https://github.com/nix-community/disko/blob/master/example/simple-efi.nix
     devices = {
       disk = {
         main = {

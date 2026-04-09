@@ -1,29 +1,67 @@
-# Formatting Example
+# Format Scripts Example
 
-Use the ``deployment.formatScript`` option during an initial setup to prepare the machine storage drives.
+Control how disks are formatted during initial deployment using the `deployment.formatScript` option.
+
+This example shows the three available modes: skip formatting, automatic disko formatting, and custom format scripts.
+
+## What You Will Learn
+
+- The three `formatScript` modes: `null`, `"disko"`, and custom scripts
+- How to extract and wrap disko's generated format script for custom workflows
+- When to use each mode
 
 ## Prerequisites
 
-- Three virtual machines you can deploy to.
-  - You may have to change the NixOs configuration in [Configs Folder](../00-exampleConfigs/).
-- Add the SSH private key from the [Config Folder](../00-exampleConfigs/secrets/sshKey) to your [SSH Agent](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#adding-your-ssh-key-to-the-ssh-agent)
+- Three virtual machines deployed from [Example 01](../01-simpleCluster/) (or freshly booted from ISOs)
+- The SSH private key added to your SSH agent:
 
-## Result
+  ```bash
+  ssh-add ../00-exampleConfigs/secrets/sshKey
+  ```
 
-A different script executed for formatting during deployment:
-- vm0 skips formatting and installs the new system over the old (from [example 01](../01-simpleCluster/))
-- vm1 formats the vm device as configured in the ``disko`` attribute in the [NixOs Configuration](../00-exampleConfigs/machines/vm.nix).
-- vm2 extracts the format script from the ``disko`` attribute manually and prints a dummy line before and after the extracted script (during machine creation)
+## Format Script Options
+
+| Machine | `formatScript` | Behavior |
+| --- | --- | --- |
+| vm0 | `null` | Skips formatting entirely. Installs NixOS directly on existing partitions. |
+| vm1 | `"disko"` | Auto-generates a format script from the `disko.devices` config and runs it. |
+| vm2 | Custom script | Extracts the disko script manually and wraps it with custom pre/post commands. |
+
+### When to use each mode
+
+- **`null`** — The machine is already formatted, or you want to format manually from the boot ISO.
+- **`"disko"`** — Standard case: let disko handle everything based on your partition config.
+- **Custom script** — You need fine-grained control, e.g., formatting OS drives but preserving data drives, or running pre/post-format commands.
 
 ## Deployment
 
-1. Build the iso images with ``nix build .#vmX.iso``
-   - you can also use the iso build in the last example
-2. Start the three virtual machines, each one booting from a drive where one of the iso images is mounted
-3. Deploy the complete machine configuration to the booted machines with ``nix run .#vmX.create``
-   - you can run ``bash deploy.sh`` from this folder to deploy all three machines from the `build` sub-folder
+Build ISOs and boot the VMs (reuse from [Example 01](../01-simpleCluster/) or rebuild):
 
-## Test Setup
+```bash
+nix build .#example.vm0.iso -o ./build/vm0/
+nix build .#example.vm1.iso -o ./build/vm1/
+nix build .#example.vm2.iso -o ./build/vm2/
+```
 
-During deployment, vm0 should print a message instead of the formatting step and vm2 should print additional messages before and after formatting.
+Deploy the machines:
 
+```bash
+nix run .#example.vm0.create
+nix run .#example.vm1.create
+nix run .#example.vm2.create
+```
+
+Or use the helper script: `bash deploy.sh`
+
+## Verifying
+
+During deployment, observe the output:
+
+- **vm0**: You should see a message indicating that formatting is skipped
+- **vm1**: Disko formats the disk silently (standard output)
+- **vm2**: You should see the custom echo messages **before** and **after** the disko formatting step
+
+## What's Next
+
+- [Example 03](../03-homeManager/) — per-user Home Manager configuration
+- [Example 04](../04-secretDeployment/) — deploying encrypted secrets

@@ -1,66 +1,208 @@
-# Extensions (Rework)
+# Extending ClusterConfig
 
-How the cluster config can be extended and implications of the options.
+ClusterConfig can be extended with modules using the NixOS module system. Cluster modules are **not** the same as machine-level NixOS modules, even though both use the same underlying mechanism (`lib.evalModules`). A cluster module operates at the cluster level and can influence the configuration of multiple machines, add deployment scripts, and define new cluster services.
 
-## Extension Basics
+## How to Use a Module
 
-The intended way to extend cluster config is to write a cluster config module.
-To extend the cluster add your extensions with the ``clusterconfig.extension`` types.
-The definition of this types can be found in [extensionOptions.nix](../src/extensionOptions.nix).
-Look at the [modules](../src/modules/) and [services](../src/services/) folders for implementations.
-Cluster Modules are NOT modules for machine configurations, even though both are [nixOs modules](https://nixos.wiki/wiki/NixOS_modules).
-Cluster config reuses nixOs modules to facilitate the module system, however, while the result of a machine configuration is a NixOs System configuration used to setup physical or virtual machines, the Cluster Configs result is essentially a flake that defines several commands, including commands that use machine configurations e.g. to deploy the machine.
-Cluster Config modules can define and manipulate machine configuration (NixOs) modules for multiple machines.
-During evaluation of Cluster Config machine configurations are known.
-During evaluation of machine configurations the Cluster Config is not known.
-However, during evaluation of Cluster Config, the machine configuration is extended with information from the cluster.
-By convention, Cluster Config information should be added to ``config.clusterCluster`` of each machine configuration managed by the Cluster Config.
+Add a module to the `modules` list when calling `buildCluster`:
 
-## Extension Targets
+```nix
+clusterConfig = clusterConfigFlake.lib.buildCluster {
+  modules = [
+    clusterConfigFlake.clusterConfigModules.default
+    ./my-custom-module.nix           # as a path
+    { config = { ... }; }            # as an attribute set
+    { pkgs, lib, ... }: { ... }      # as a module closure
+  ];
 
-1. Cluster Service definitions
-2. Cluster Machine Definitions
-3. Cluster Config Transformations
+  domain = { ... };
+};
+```
 
-### Cluster service definitions
+## Module Arguments
 
-Extension option (1): ``clusterconfig.extension.clusterServices``
-Defines a new service (2) that can be configured under ``clusterconfig.domain.clusters.{cluster-name}.services``.
-The Extension option (1) is used to generate the service options (2).
+Cluster modules receive the following arguments:
 
-#### Extension options
-##### Default module
+| Argument | Description |
+| --- | --- |
+| `pkgs` | Nixpkgs package set |
+| `lib` | Nixpkgs lib |
+| `config` | The evaluated cluster config (not a machine config) |
+| `clusterlib` | ClusterConfig helper functions (see below) |
+| `filters` | Built-in filter functions |
+| `flakeInputs` | All flake inputs passed to the ClusterConfig flake |
 
-Implementation of the service.
-A NixOs module for the machine configuration; NOT a module for the cluster config.
-Will be copied to all machines that are configured in the service (2) selectors.
+## Extension Points
 
-Available config:  
-All options of the current machine configuration.
-Options added by Cluster Config to the machine config under ``config.cluster``.
+All extensions are configured under `config.extensions`. The extension system provides several targets:
 
-Unavailable config:
-Options set by other services default module (und their imports).
+### 1. Cluster-Level Extensions (`extensions.cluster`)
 
-##### Roles
-The allowed roles set in the service (2) roles.
+Add options, late-evaluated config, and packages at the cluster level.
 
-##### Scripts
-A set of scripts that can be run with the final cluster config generation.
-The scripts will be added the flake packages under ``#cluster.{cluster-name}.{service-name}.{script-name}`` and can be run with ``nix run .{script-package}``.
-A script definition is a function of the form ``{args} -> derivation``.
-The Cluster Config will execute the function add and the resulting derivation to the executable packages.
-During Cluster Config evaluation, before executing the function, the ``args`` argument of the function will be populated with the folowing information:
+```nix
+{
+  config.extensions.cluster = {
 
-TODO:
-- cluster info like in ``config.cluster`` like in the default module?
-- other information?
-- service config and machine config will be part of it
+    # New options available under domain.clusters.<name>
+    options.myOption = lib.mkOption {
+      type = lib.types.str;
+      default = "hello";
+    };
 
+    # Config values set after final machine evaluation
+    # Closures receive { clusterConfig } with the evaluated representation
+    late.config.myComputedValue = { clusterConfig }:
+      builtins.length (lib.attrNames clusterConfig.clusters.this.machines);
 
-## Limitations
+    # Packages available as: nix run .#<clusterName>.<packageName>
+    packages.myScript = { clusterConfig }:
+      pkgs.writeShellScriptBin "my-script" ''
+        echo "Cluster has machines: ${toString (lib.attrNames clusterConfig.clusters.this.machines)}"
+      '';
+  };
+}
+```
 
-Extension options (e.g. in ``clusterconfig.extension.clusterServices.options`` or ``clusterconfig.extension.clusterMachine.options``) need a default value, otherwise Cluster Config evaluation will raise the error ``The option `${OptionLocation}' was accessed but has no value defined. Try setting the option.``.
-This seems to happen during the build of the Cluster Config representation for the machine configuration.
-Building the representation seems to access the values and raise the error.
-If you need undefined values, use ``lib.types.nullOr`` in front of your type and set the default value to ``null``;
+### 2. Machine-Level Extensions (`extensions.clusterMachine`)
+
+Add options, NixOS modules, and packages at the per-machine level.
+
+```nix
+{
+  config.extensions.clusterMachine = {
+
+    # New options available under domain.clusters.<name>.machines.<name>
+    options.myMachineOption = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+    };
+
+    # NixOS modules added to EVERY machine's configuration
+    nixosModules = [
+      { environment.systemPackages = [ pkgs.vim ]; }
+    ];
+
+    # Config values set after final machine evaluation
+    late.config.myValue = { clusterConfig }:
+      clusterConfig.clusters.this.machines.this.fqdn;
+
+    # Packages available as: nix run .#<clusterName>.<machineName>.<packageName>
+    packages.myMachineScript = { clusterConfig }:
+      let
+        machineName = clusterConfig.clusters.this.machines.this.name;
+      in
+      pkgs.writeShellScriptBin "info-${machineName}" ''
+        echo "Machine: ${machineName}"
+      '';
+  };
+}
+```
+
+### 3. Service Definitions (`extensions.clusterServices`)
+
+Register new cluster services. See [Cluster Services](ClusterServices.md) for a detailed guide.
+
+```nix
+{
+  config.extensions.clusterServices.myService = {
+    defaultModule = import ./myServiceModule.nix;
+    roles = [ "primary" "secondary" ];
+    options = { ... };
+    packages = { ... };
+    late.config = { ... };
+  };
+}
+```
+
+### 4. Transformations (`extensions.transformations`)
+
+Add custom transformation functions that run at specific stages of the evaluation pipeline. Each transformation is a function `clusterConfig -> clusterConfig` rewriting the cluster config. For scenarios where the previous extension points are insufficient.
+
+```nix
+{
+  config.extensions.transformations = {
+
+    # Runs before machines are evaluated
+    clusterTransformations = [ myClusterTransform ];
+
+    # Runs after initial machine evaluation, before final evaluation
+    moduleTransformations = [ myModuleTransform ];
+
+    # Runs after final machine evaluation, for adding deployment artifacts
+    deploymentTransformations = [ myDeploymentTransform ];
+
+    # Runs as the final step, for extracting information
+    infoTransformations = [ myInfoTransform ];
+  };
+}
+```
+
+## The `clusterConfig` Representation
+
+Many extension closures (packages, late config) receive a `{ clusterConfig }` argument. This is **not** the raw cluster config but a processed representation that includes:
+
+- `clusterConfig.suffix` — the domain suffix
+- `clusterConfig.clusters.<name>.name` — cluster name
+- `clusterConfig.clusters.<name>.fqdn` — cluster FQDN
+- `clusterConfig.clusters.<name>.machines.<name>` — machine info (name, fqdn, ips, config, services, etc.)
+- `clusterConfig.clusters.<name>.services.<name>` — service info with resolved selectors and roles
+- `clusterConfig.clusters.this` — points to the current cluster (in machine/service contexts)
+- `clusterConfig.clusters.this.machines.this` — points to the current machine (in machine contexts)
+
+The `this` pointers are automatically injected when the closure is evaluated for a specific machine or cluster context.
+
+## Helper Library (`clusterlib`)
+
+ClusterConfig provides helper functions through `clusterlib`:
+
+| Function | Description |
+| --- | --- |
+| `forEachAttrIn attrSet fn` | Maps a function over an attribute set. Like `mapAttrs` but with reversed attributes for better readability |
+| `add.nixosModule config fn` | Adds NixOS modules to each machine via a function `clusterName -> machineName -> machineConfig -> modules` |
+| `add.nixosConfigurations config` | Evaluates `nixosModules` and adds `nixosConfiguration` to each machine |
+| `add.machinePackages config fn` | Adds flake packages to each machine |
+| `add.clusterPackage config fn` | Adds flake packages at the cluster level |
+| `add.servicePackages config serviceName fn` | Adds flake packages for a service |
+| `update.machines config fn` | Updates machine attributes via `clusterName -> machineName -> machineConfig -> attrs` |
+| `update.clusters config fn` | Updates cluster attributes |
+| `update.services config fn` | Updates service attributes |
+| `eval.clusterConfig config { clusterName; machineName; }` | Builds the clusterConfig representation with `this` pointers |
+| `get.machines config` | Returns all machines across all clusters |
+| `get.ips machineNixosConfig` | Extracts static IPs from a NixOS config |
+<!-- | `ip.tag`, `ip.openTcp`, `ip.staticIpV4OpenTcp` | Helpers for defining service address entries | -->
+
+## Important Limitations
+
+- Extension options (in `extensions.cluster.options`, `extensions.clusterMachine.options`, etc.) **must have default values**. Options without defaults will cause evaluation errors because the clusterConfig representation accesses all option values during construction. Use `lib.types.nullOr` with a default of `null` if a value is inherently optional.
+
+- Cluster modules operate at the cluster level and are evaluated separately from machine NixOS modules. During cluster module evaluation, individual machine NixOS configurations are not yet available (unless you are in a `late.config` closure or a deployment transformation).
+
+## Example: A Complete Module
+
+Here is a module that adds a `monitoring.enable` option to each machine and generates a script to check the status of all machines:
+
+```nix
+# monitoring-module.nix
+{ pkgs, lib, ... }:
+{
+  config.extensions = {
+
+    clusterMachine.options.monitoring.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Whether to enable monitoring on this machine.";
+    };
+
+    cluster.packages.check-status = { clusterConfig }:
+      let
+        machines = lib.attrValues clusterConfig.clusters.this.machines;
+        checks = map (m: ''
+          echo "Checking ${m.name} (${m.fqdn})..."
+          ssh root@${(builtins.head (builtins.attrValues m.ips))} "echo OK" 2>/dev/null || echo "  FAILED"
+        '') machines;
+      in
+      pkgs.writeShellScriptBin "check-status" (lib.concatStringsSep "\n" checks);
+  };
+}
+```

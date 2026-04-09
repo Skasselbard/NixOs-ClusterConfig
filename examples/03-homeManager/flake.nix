@@ -2,24 +2,27 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
-    # HomeManager to overwrite the version used in cluster-config
+    # Import Home Manager.
+    # By declaring it here and using `follows`, we override the version
+    # bundled with ClusterConfig to ensure all inputs use the same nixpkgs.
+    # The Home Manager version should match your nixpkgs channel (25.05 → release-25.05).
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.11";
+      url = "github:nix-community/home-manager/release-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Import clusterConfig flake
-    # Change this import to the github url
+    # Import the ClusterConfig flake.
+    # Note: `inputs.home-manager.follows` ensures ClusterConfig uses
+    # our Home Manager version above instead of its own.
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
       url = "github:Skasselbard/NixOs-ClusterConfig";
     };
 
-    # Import disko to configure partitioning
-    # If you want to use disko for formatting or device definitions, this option is required
+    # Import disko for declarative disk partitioning
     disko = {
       url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -35,20 +38,19 @@
       ...
     }:
 
-    let # Definitions and imports
+    let # --- Imports and definitions ---
 
       system = "x86_64-linux";
-
-      # import the pkgs attribute from the flake inputs
       pkgs = import nixpkgs { inherit system; };
-
-      # The filters are used to resolve hosts when expanding the ClusterConfig
       filters = clusterConfigFlake.lib.filters;
 
-      # Configuration from other Layers, e.g.: NixOs machine configurations
+      # Shared configuration (machines, secrets, Home Manager modules)
       configurations = (import ../00-exampleConfigs) { inherit pkgs; };
       secrets = configurations.secrets;
       machines = configurations.machines;
+
+      # Home Manager modules imported from the shared config folder.
+      # These are standard Home Manager modules (with `_class = "homeManager"`).
       homeModules = configurations.homeModules;
 
       #####################################################
@@ -66,47 +68,50 @@
 
           clusters = {
 
-            # the cluster name will also be used for fqdn generation
             example = {
 
               #############################################
               # Services
               services = {
-
-                # Static DNS via /etc/hosts file
                 dns = {
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
                 };
-
               };
 
               ############################################
               # Users
+              #
+              # Home Manager modules are assigned per user via `homeManagerModules`.
+              # IMPORTANT: Once ANY user has Home Manager modules, ALL users must
+              # provide a module that sets `home.stateVersion`. Without it, Home
+              # Manager will fail to evaluate.
               users = {
 
                 root = {
-                  # If a user in your cluster uses HomeManager
-                  # the ``home.stateVersion`` attribute has to be defined for all users
+                  # Even though root has no custom Home Manager config, we still
+                  # include the default module which sets `home.stateVersion`.
                   homeManagerModules = [ homeModules.default ];
+
                   systemConfig = {
                     extraGroups = [ "wheel" ];
-                    # 'root'
                     hashedPassword = secrets.pswdHash.root;
                     openssh.authorizedKeys.keys = [ secrets.ssh.publicKey ];
                   };
                 };
 
                 admin = {
-                  # Add modules per user for HomeManager
+                  # This user gets the starship prompt configuration via Home Manager.
+                  # Modules are evaluated in order; `default` sets stateVersion,
+                  # `starship` configures the starship shell prompt.
                   homeManagerModules = [
                     homeModules.default
                     homeModules.starship
                   ];
+
                   systemConfig = {
-                    isNormalUser = true;
+                    isNormalUser = true; # Creates a regular (non-root) user with a home directory
                     extraGroups = [ "wheel" ];
-                    # 'admin'
                     hashedPassword = secrets.pswdHash.admin;
                     openssh.authorizedKeys.keys = [ secrets.ssh.publicKey ];
                   };
@@ -115,6 +120,8 @@
 
               ############################################
               # Machines
+              # Note: No formatScript is set, so `create` will skip formatting.
+              # Use `deploy` (or colmena) to update already-installed machines.
               machines = {
 
                 vm0 = {
@@ -124,7 +131,6 @@
                   };
                   nixosModules = [
                     machines.vm0
-                    # since the vms use disko for mounting, we still need to include the NixOs module
                     inputs.disko.nixosModules.default
                   ];
                 };
@@ -160,6 +166,6 @@
       };
 
     in
-    # DO NOT FORGET!
-    clusterConfig; # use the generated cluster config as the flake content
+    # IMPORTANT: Return the clusterConfig directly as the flake output.
+    clusterConfig;
 }

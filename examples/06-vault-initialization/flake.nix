@@ -2,14 +2,14 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
     # If you want to youse your own homeManager version you have to import it
     # and overwrite the version from NixOs-ClusterConfig.
     # This can be useful if you need a more current version of homeManager
     # than used by NixOs-ClusterConfig
     home-manager = {
-      url = "github:nix-community/home-manager/release-24.05";
+      url = "github:nix-community/home-manager/release-25.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -24,7 +24,7 @@
     # Import disko to configure partitioning
     # If you want to use disko for formatting or device definitions, this option is required
     disko = {
-      url = "github:nix-community/disko/v1.1.0";
+      url = "github:nix-community/disko/v1.12.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -59,6 +59,7 @@
 
         modules = with clusterConfigFlake.clusterConfigModules; [
           default
+          simple-dns
           vault
         ];
 
@@ -75,43 +76,35 @@
                 dns = {
                   roles.hosts = [ filters.clusterMachines ];
                   selectors = [ filters.clusterMachines ];
-                  definition = clusterConfigFlake.clusterServices.staticDns;
-                  extraConfig = {
-                    services.staticDns.customEntries = {
-                      # You can set additional host entries, e.g. a default
-                      # machine that points to vault
-                      # This setting is not used by this example and only seves demonstration purposes
-                      "vault.example.com" = "192.168.122.200";
-                      "vault" = "192.168.122.200";
-                    };
+                  customEntries = {
+                    # Additional host entries pointing to the vault leader
+                    "vault.example.com" = "192.168.122.200";
+                    "vault" = "192.168.122.200";
                   };
                 };
 
                 vault = {
-                  roles = {
-                    apiAddress = [ (filters.hostname "vm0") ];
-                    clusterAddress = [ (filters.hostname "vm0") ];
-                  };
                   selectors = [
                     (filters.hostname "vm0")
                     (filters.hostname "vm1")
                     (filters.hostname "vm2")
                   ];
-                  definition = clusterConfigFlake.clusterServices.vault;
-                  extraConfig = {
-                    services.vault.cluster = {
-                      enableUi = true;
-                      # Used to self sign tls certificates for https communication
-                      # By default written to /var/lib/vault/certs
-                      certificates = {
-                        organizationUnit = "Demonstrations";
-                        organization = "ExampleOrg";
-                        country = "DE";
-                        locality = "TownStadt";
-                        province = "Bundesland";
-                      };
-                    };
 
+                  # Cluster-level vault options
+                  enableUi = true;
+
+                  # Used to self-sign TLS certificates for HTTPS communication.
+                  # By default they are written to /var/lib/vault/certs on each machine.
+                  certificates = {
+                    organizationUnit = "Demonstrations";
+                    organization = "ExampleOrg";
+                    country = "DE";
+                    locality = "TownStadt";
+                    province = "Bundesland";
+                  };
+
+                  # NixOS-level overrides applied to every vault machine
+                  extraConfig = {
                     # Allow vault to be installed while other unfree packages are still blocked
                     nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (pkgs.lib.getName pkg) [ "vault-bin" ];
                   };
@@ -122,7 +115,7 @@
               users = {
                 root = {
                   # If a user in your cluster uses HomeManager
-                  # the ``home.stateVersion`` attribute has to be defined for all users 
+                  # the ``home.stateVersion`` attribute has to be defined for all users
                   homeManagerModules = [ homeModules.default ];
                   systemConfig = {
                     extraGroups = [ "wheel" ];
@@ -155,11 +148,16 @@
                   vaultKeys =
                     machineConfig:
                     let
-                      cfg = machineConfig.services.vault.cluster;
-                      basePath = cfg.certificates.path.serverBase;
-                      rootCertName = cfg.certificates.path.caRootCertName + ".crt";
-                      tlsCertName = cfg.certificates.path.vaultCertName + ".crt";
-                      tlsKeyName = cfg.certificates.path.vaultKeyName + ".key";
+                      # Access the cluster-level vault service config through NixOS' clusterConfig
+                      certs = machineConfig.clusterConfig.clusters.this.services.vault.certificates;
+                      org = certs.organization;
+                      basePath = certs.path.serverBase;
+                      rootCertName =
+                        (if certs.path.caRootCertName != "" then certs.path.caRootCertName else "${org}-root") + ".crt";
+                      tlsCertName =
+                        (if certs.path.vaultCertName != "" then certs.path.vaultCertName else "${org}-vault") + ".crt";
+                      tlsKeyName =
+                        (if certs.path.vaultKeyName != "" then certs.path.vaultKeyName else "${org}-vault") + ".key";
                     in
                     {
 
