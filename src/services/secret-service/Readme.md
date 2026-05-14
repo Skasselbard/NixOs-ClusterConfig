@@ -18,13 +18,13 @@ These steps are done for deployment:
    - Iterates over `users.users.<user>.secrets.<backend>.<secret>` to retrieve each user's secrets.
 
 2. **Secrets Validation**  
-   - Execute a backend dependent.
+   - Execute one backend-level validation command per used backend.
    - **Aborts deployment** if any secret is missing or unreadable.
 
-3. **Encrypts Secrets**  
+3. **Encrypt Secrets**  
    - Generates an **encryption key** from deployment metadata.
    - Initializes a **gocryptfs-encrypted** directory.
-   - Stores secrets inside the encrypted folder.
+   - Stores secrets inside the encrypted folder as files.
 
 4. **Transfers Encrypted Secrets to Remote Machine**  
    - Copies encrypted archive (`secrets.enc`) via **rsync**.
@@ -38,18 +38,67 @@ These steps are done for deployment:
 
 ## **Configuration Options**
 ### **1. Deployment Options**
-| Option | Default | Description |
-|--------|---------|-------------|
-| `services.secrets.deployment.tempPath` | `/dev/shm/nixos-secret-service` | Temporary RAM location for secrets before encryption. |
-| `services.secrets.deployment.persistentPath` | `/var/lib/nixos-secret-service` | Where encrypted secrets are stored deployed to. |
-| `services.secrets.deployment.database.fileName` | `secrets.enc` | The encrypted archive filename. |
-| `services.secrets.deployment.metadata.fileName` | `deployment-info.json` | Metadata file storing deployment info.|
+
+- `services.secrets.deployment.tempPath` defaults to `/dev/shm/nixos-secret-service` and stores secrets in RAM before encryption.
+- `services.secrets.deployment.persistentPath` defaults to `/var/lib/nixos-secret-service` and stores the encrypted payload on the remote machine.
+- `services.secrets.deployment.database.fileName` defaults to `secrets.enc`.
+- `services.secrets.deployment.metadata.fileName` defaults to `deployment-info.json`.
 
 <!-- ### **2. Backend Configuration**
 | Option | Description |
 |--------|-------------|
 | `services.secrets.backends.<backend>.retrieveSecretCommand` | Retrieves a secret. |
 | `services.secrets.backends.<backend>.validateSecretCommand` | Validates a secret’s existence & permissions. | -->
+
+### **2. Backend Highlights**
+- `file`: Reads a local file directly.
+  - `backendPath` is the file system path in the form to the secret on the deployment machine.
+- `keepass`: Reads a local KeePass `.kdbx` database through the Rust helper CLI in `keepass-cli/`.
+  - `backendPath` is the KeePass entry path in the form `group/subgroup/entry`.
+  - `content = "attachment"` deploys one attachment from the entry.
+  - `content = "password"` deploys the KeePass password field.
+  - `attachmentName` is optional and only needed when an entry has multiple attachments.
+  - `services.secrets.backends.keepass.passwordCommand` can populate `SECRET_SERVICE_KEEPASS_PASSWORD` for non-interactive deployments.
+
+Deployment treats every backend as a batch: each used backend is prepared once, validated once, and retrieved once for the full set of configured secrets assigned to it.
+
+KeePass deployments stream one batch request payload to the helper over stdin for validation and reading. The batched read returns a JSON response with binary-safe base64 payloads, and the deployment script writes the staged files itself before `gocryptfs` encryption, so the overall secret-service flow still operates on files in the temporary deployment directory.
+
+### **3. KeePass Example**
+
+```nix
+{
+   clusterConfig.clusters.this.services.secrets.backends.keepass = {
+      databasePath = "/home/tom/secrets/shared.kdbx";
+      passwordCommand = "${pkgs.coreutils}/bin/cat /run/secrets/keepass-password";
+   };
+
+   clusterConfig.clusters.this.machines.node1.secrets = {
+      nginx.keepass = {
+         tls-cert = {
+            backendPath = "infra/prod/nginx";
+            content = "attachment";
+            attachmentName = "tls.crt";
+            linkPath = "/var/lib/nginx/tls.crt";
+            permissions = "440";
+         };
+         tls-key = {
+            backendPath = "infra/prod/nginx";
+            content = "attachment";
+            attachmentName = "tls.key";
+            linkPath = "/var/lib/nginx/tls.key";
+         };
+         basic-auth = {
+            backendPath = "infra/prod/nginx-basic-auth";
+            content = "password";
+            linkPath = "/var/lib/nginx/basic-auth";
+         };
+      };
+   };
+}
+```
+
+During deployment, only the secrets referenced by the machine configuration are read from KeePass, staged into the temporary deployment directory, encrypted with `gocryptfs`, and copied to the remote host.
 
 ---
 
@@ -64,7 +113,7 @@ These steps are done for deployment:
 
 # Secret-Service Nixos-Module
 
-## **Overview**
+## **Machine Module Overview**
 
 The **Secret Service** Nixos-Module on a remote machine, responsible for:
 - **Decrypting the received archive** (`secrets.enc`).
@@ -73,7 +122,7 @@ The **Secret Service** Nixos-Module on a remote machine, responsible for:
 
 ---
 
-## **How It Works**
+## **Machine Module Flow**
 
 The logic is done in a systemd service.
 1. **Mounts the Encrypted Secret Archive**
@@ -90,12 +139,11 @@ The logic is done in a systemd service.
 
 ---
 
-## **Configuration Options**
+## **Machine Module Configuration**
 ### **1. Deployment Paths**
-| Option | Default | Description |
-|--------|---------|-------------|
-| `services.secrets.deployment.persistentPath` | `/var/lib/nixos-secret-service` | Stores encrypted archive. |
-| `services.secrets.deployment.tempPath` | `/dev/shm/nixos-secret-service` | RAM-based decrypted storage. |
+
+- `services.secrets.deployment.persistentPath` defaults to `/var/lib/nixos-secret-service` and stores the encrypted archive.
+- `services.secrets.deployment.tempPath` defaults to `/dev/shm/nixos-secret-service` and stores the decrypted mount in RAM.
 
 <!-- ### **2. Encryption Configuration**
 | Option | Default | Description |

@@ -14,7 +14,7 @@ Secret management involves securely defining, distributing, and using sensitive 
 
 ## Components
 
-1. **Secret Store (Backend)**: The system where secrets are stored (e.g., files, Keepass, or Vault).
+1. **Secret Store (Backend)**: The system where secrets are stored (e.g., files, KeePass, or Vault).
 2. **Machine Deployment Mechanism (Script)**: Handles transferring secrets to remote machines.
 3. **User Deployment (Systemd Service)**: Ensures secrets are accessible to the correct user accounts or services.
 4. **Secret Access (Command or File)**: Enables usage of secrets, either through direct file access or decryption commands.
@@ -26,11 +26,13 @@ Secret management involves securely defining, distributing, and using sensitive 
 ### Phase 1: Secret Definition
 - Secrets are manually created in the secret store by a **local user**.
 - NixOS configuration defines users and associates them with secrets.
+- For the KeePass backend, `backendPath` maps to the KeePass entry path.
+- KeePass secrets can deploy either the entry password or one attachment.
 
 ### Phase 2: Machine Deployment
 - Secrets are transferred from the local machine to remote machines by a **deployment user**.
 - Credentials for the secret store are requested at runtime.
-- Secrets are validated, and deployment halts on errors.
+- Secrets are validated per backend in batches, and deployment halts on errors.
 - Secrets are stored in a central location on the remote machine to `/var/lib/nixos-secret-service/`.
 - Secrets will be overwritten on redeployment.
 - Access to the central location on the remote machine is restricted to the **secret service user**.
@@ -67,6 +69,7 @@ Secret management involves securely defining, distributing, and using sensitive 
 #### Validations
 - The remote is accessible.
 - Target directories exist or can be created.
+- Each used backend is prepared once, validated once, and retrieved once for all configured secrets belonging to that backend.
 
 ### Backend Types
 
@@ -79,18 +82,28 @@ Secrets are stored in local files on the machine.
 - **Validations**:
   - The file is accessible.
 
-#### 2. **Keepass** (Unimplemented)
-Secrets are stored in a `.kdbx` file.
-Secrets are extracted during deployment and saved as files on the remote machine.
+#### 2. **KeePass**
+Secrets are stored in a local `.kdbx` file.
+Secrets are extracted during deployment and staged into the temporary deployment directory before encryption and transfer to the remote machine.
 
 - **Secret Store**: `.kdbx` database.
-- **Global Settings**: 
+- **Global Settings**:
   - Path to the `.kdbx` file.
-- **Secret Settings**: 
-  - Path to the secret within the `.kdbx` file.
+  - Optional password file.
+  - Optional password command for automation.
+  - Optional KeePass key file.
+- **Secret Settings**:
+  - Path to the entry within the `.kdbx` file.
+  - Which content to deploy: `password` or `attachment`.
+  - Optional attachment name if the entry contains multiple attachments.
 - **Validations**:
   - `.kdbx` file exists.
   - The file can be unlocked.
+  - The requested entry exists.
+  - The requested password field or attachment exists.
+  - Deployments batch all requested KeePass entries for the backend so one database unlock can satisfy many secret reads.
+  - The batch request payload is streamed to the helper on stdin.
+  - The batch read returns a JSON response with base64-encoded secret bytes, and the deployment script materializes the staged files locally before encryption and transfer.
 
 #### 3. **Vault** (Unimplemented)
 Secrets are retrieved from a Vault instance.

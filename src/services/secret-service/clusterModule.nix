@@ -6,6 +6,7 @@
 let
 
   attrsOf = lib.types.attrsOf;
+  enum = lib.types.enum;
   nullOr = lib.types.nullOr;
   rawType = lib.types.raw;
   str = lib.types.str;
@@ -16,9 +17,213 @@ let
   attrNames = lib.attrNames;
   concatMap = lib.concatMap;
   concatStringsSep = lib.concatStringsSep;
+  escapeShellArg = lib.escapeShellArg;
   filterAttrs = lib.filterAttrs;
   mapAttrs = lib.mapAttrs;
-  mapAttrsToList = lib.mapAttrsToList;
+  optionalString = lib.optionalString;
+  optionals = lib.optionals;
+  unique = lib.unique;
+
+  keepassCli = pkgs.rustPlatform.buildRustPackage {
+    pname = "secret-service-keepass-cli";
+    version = "0.1.0";
+    src = ./keepass-cli;
+    cargoLock.lockFile = ./keepass-cli/Cargo.lock;
+  };
+
+  commonSecretOptions = {
+    backendPath = mkOption {
+      type = str;
+      description = "Path to the secret as expected by the backend. E.g. a file path for the `file` backend or an entry path like `group/subgroup/entry` for the `keepass` backend.";
+    };
+    linkPath = mkOption {
+      type = nullOr str;
+      description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
+      default = null;
+    };
+    permissions = mkOption {
+      type = str;
+      default = "400";
+      description = "Permissions of the file. By default only readable by the owner.";
+    };
+  };
+
+  keepassCommonArgs =
+    backendConfig:
+    concatStringsSep " " (
+      [
+        "--database"
+        (escapeShellArg backendConfig.databasePath)
+      ]
+      ++ optionals (backendConfig.passwordFile != null) [
+        "--password-file"
+        (escapeShellArg backendConfig.passwordFile)
+      ]
+      ++ optionals (backendConfig.keyFilePath != null) [
+        "--keyfile"
+        (escapeShellArg backendConfig.keyFilePath)
+      ]
+    );
+
+  keepassBatchPayload =
+    requests:
+    builtins.toJSON (
+      builtins.map (request: {
+        label = request.label;
+        entryPath = request.secretConfig.backendPath;
+        content = request.secretConfig.content;
+        attachmentName = request.secretConfig.attachmentName;
+      }) requests
+    );
+
+  backendDefinitions = {
+    file = {
+      secretOptions = { };
+      serviceOptions = {
+        prepareCommand = mkOption {
+          type = rawType;
+          default = _backendConfig: "";
+          description = ''
+            A function that takes the backend configuration and returns a shell snippet to prepare
+            the backend before validation and retrieval.
+          '';
+        };
+        retrieveSecretCommand = mkOption {
+          type = rawType;
+          default =
+            requests: _backendConfig:
+            concatStringsSep "\n" (
+              builtins.map (request: ''
+                echo "retrieving secret ${request.secretName}"
+                mkdir -p "$(dirname ${escapeShellArg request.targetPath})"
+                cat ${escapeShellArg request.secretConfig.backendPath} > ${escapeShellArg request.targetPath}
+                chmod 700 ${escapeShellArg request.targetPath}
+              '') requests
+            );
+          description = ''
+            A function that takes all secret requests for a backend and the backend configuration,
+            then returns a shell command string to retrieve them in one batch.
+          '';
+        };
+        validateSecretCommand = mkOption {
+          type = rawType;
+          default =
+            requests: _backendConfig:
+            concatStringsSep "\n" (
+              builtins.map (request: ''
+                [ -f ${escapeShellArg request.secretConfig.backendPath} -a -r ${escapeShellArg request.secretConfig.backendPath} ] || {
+                  echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
+                  exit 1
+                }
+              '') requests
+            );
+          description = ''
+            A function that takes all secret requests for a backend and the backend configuration,
+            then returns a shell command string to validate them in one batch.
+          '';
+        };
+      };
+    };
+
+    keepass = {
+      secretOptions = {
+        content = mkOption {
+          type = enum [
+            "attachment"
+            "password"
+          ];
+          default = "attachment";
+          description = "Which part of the KeePass entry should be deployed. Defaults to `attachment` so file-like secrets such as certificates work out of the box.";
+        };
+        attachmentName = mkOption {
+          type = nullOr str;
+          default = null;
+          description = "Optional attachment name inside the KeePass entry. Leave unset to use the only attachment on the entry.";
+        };
+      };
+      serviceOptions = {
+        prepareCommand = mkOption {
+          type = rawType;
+          default = backendConfig: ''
+            ${optionalString (backendConfig.databasePath == "") ''
+              echo "ERROR: services.secrets.backends.keepass.databasePath must be configured when KeePass secrets are used."
+              exit 1
+            ''}
+            ${optionalString (backendConfig.passwordCommand != null) ''
+              if [ -z "''${SECRET_SERVICE_KEEPASS_PASSWORD:-}" ]; then
+                export SECRET_SERVICE_KEEPASS_PASSWORD="$(${backendConfig.passwordCommand})"
+              fi
+            ''}
+          '';
+          description = ''
+            A function that takes the backend configuration and returns a shell snippet to prepare
+            the backend before validation and retrieval.
+          '';
+        };
+        databasePath = mkOption {
+          type = str;
+          default = "";
+          description = "Path to the local KeePass `.kdbx` database that should be queried during secret deployment.";
+        };
+        passwordFile = mkOption {
+          type = nullOr str;
+          default = null;
+          description = "Optional local file containing the KeePass database password.";
+        };
+        passwordCommand = mkOption {
+          type = nullOr str;
+          default = null;
+          description = "Optional shell command that prints the KeePass database password during deployment. The password is exported as `SECRET_SERVICE_KEEPASS_PASSWORD` for the helper CLI.";
+        };
+        keyFilePath = mkOption {
+          type = nullOr str;
+          default = null;
+          description = "Optional KeePass key file used in addition to or instead of a password.";
+        };
+        retrieveSecretCommand = mkOption {
+          type = rawType;
+          default =
+            requests: backendConfig:
+            let
+              requestPayload = keepassBatchPayload requests;
+            in
+            ''
+              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass batch-read ${keepassCommonArgs backendConfig} > "$KEEPASS_BATCH_RESPONSE_PATH"
+              ${requestPayload}
+              EOF_KEEPASS_BATCH
+
+              ${pkgs.jq}/bin/jq -r '.[] | [.label, .dataBase64] | @tsv' "$KEEPASS_BATCH_RESPONSE_PATH" | while IFS=$'\t' read -r label dataBase64; do
+                targetPath="$TMP_SECRET_ROOT/$label"
+                mkdir -p "$(dirname "$targetPath")"
+                printf '%s' "$dataBase64" | ${pkgs.coreutils}/bin/base64 --decode > "$targetPath"
+                chmod 700 "$targetPath"
+              done
+            '';
+          description = ''
+            Reads all requested KeePass secrets in one batch and writes them into the deployment staging directory.
+          '';
+        };
+        validateSecretCommand = mkOption {
+          type = rawType;
+          default =
+            requests: backendConfig:
+            let
+              requestPayload = keepassBatchPayload requests;
+            in
+            ''
+              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass batch-validate ${keepassCommonArgs backendConfig}
+              ${requestPayload}
+              EOF_KEEPASS_BATCH
+            '';
+          description = ''
+            Validates that the KeePass database can be unlocked and that all configured entry content exists.
+          '';
+        };
+      };
+    };
+  };
+
+  backends = mapAttrs (_: backendDefinition: backendDefinition.serviceOptions) backendDefinitions;
 
   secretDeploymentScript =
     deploymentUser: deploymentHost: clusterConfig:
@@ -26,16 +231,39 @@ let
       this = clusterConfig.clusters.this.machines.this;
       secretServiceName = this.config.systemd.services.secret-service.name;
 
-      backends = clusterConfig.clusters.this.services.secrets.backends;
-      userSecrets = mapAttrs (
-        user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig
-      ) this.secrets;
-
       tmpPath = this.deployment.secrets.path.temp;
       persistentPath = this.deployment.secrets.path.persistent;
       databaseFileName = this.deployment.secrets.database.fileName;
       metadataFileName = this.deployment.secrets.metadata.fileName;
       generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
+
+      backends = clusterConfig.clusters.this.services.secrets.backends;
+      userSecrets = mapAttrs (
+        user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig
+      ) this.secrets;
+      usedBackends = unique (concatMap (user: attrNames userSecrets."${user}") (attrNames userSecrets));
+      keepassBatchResponsePath = "${tmpPath}/keepass-batch-response.json";
+      backendSecretRequests =
+        backend:
+        concatMap (
+          user:
+          if builtins.hasAttr backend userSecrets."${user}" then
+            concatMap (
+              secretName:
+              let
+                secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
+              in
+              [
+                {
+                  inherit user secretName secretConfig;
+                  label = "${user}/${secretName}";
+                  targetPath = generateSecretPath user secretName;
+                }
+              ]
+            ) (attrNames userSecrets."${user}"."${backend}")
+          else
+            [ ]
+        ) (attrNames userSecrets);
     in
     pkgs.writeScript "deploy-secrets.sh" ''
       #!/usr/bin/env bash
@@ -46,46 +274,55 @@ let
         echo "Deleting temp folder..."
         # Weird Workaround to get the path to fusermount
         # If we use the path from a pkg we get permission issues
-        $(nix-shell -p gocryptfs --run 'which fusermount') -u ${tmpPath}/secrets
+        if [ -d ${tmpPath}/secrets ]; then
+          $(nix-shell -p gocryptfs --run 'which fusermount') -u ${tmpPath}/secrets || true
+        fi
         rm -rf ${tmpPath}
+        unset SECRET_SERVICE_KEEPASS_PASSWORD || true
       }
       trap cleanup EXIT ERR
 
+      export TMP_SECRET_ROOT=${escapeShellArg "${tmpPath}/secrets"}
+      export KEEPASS_BATCH_RESPONSE_PATH=${escapeShellArg keepassBatchResponsePath}
+
       ${concatStringsSep "\n" (
-        mapAttrsToList (backend: backendConfig: ''
-          echo "Requesting credentials for backend: ${backend}..."
-        '') backends
+        builtins.map (
+          backend:
+          let
+            backendConfig = backends.${backend};
+            prepareCommand = backendConfig.prepareCommand backendConfig;
+          in
+          ''
+            echo "Preparing backend: ${backend}..."
+            ${prepareCommand}
+          ''
+        ) usedBackends
       )}
+
+        mkdir -p ${tmpPath}
+        chmod 700 ${tmpPath}
 
       echo "Validating secrets..."
       ${concatStringsSep "\n" (
-        concatMap (
-          user:
-          concatMap (
-            backend:
-            concatMap (
-              secretName:
-              let
-                secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
-                validateCommand = (backends.${backend}.validateSecretCommand secretName secretConfig.backendPath);
-              in
-              [
-                ''
-                  if ! ${validateCommand}; then
-                    echo "Validation failed for secret '${secretName}' from user '${user}' at '${secretConfig.backendPath}'."
-                    echo "Validation command: '${validateCommand}'"
-                    echo "Aborting"
-                    exit 1
-                  fi
-                ''
-              ]
-            ) (attrNames userSecrets."${user}"."${backend}")
-          ) (attrNames userSecrets."${user}")
-        ) (attrNames userSecrets)
+        builtins.map (
+          backend:
+          let
+            backendConfig = backends.${backend};
+            backendRequests = backendSecretRequests backend;
+            validateCommand = backendConfig.validateSecretCommand backendRequests backendConfig;
+          in
+          ''
+            echo "Validating backend: ${backend}"
+            if ! ${validateCommand}; then
+              echo "Validation failed for backend '${backend}'."
+              echo "Validation command: '${validateCommand}'"
+              echo "Aborting"
+              exit 1
+            fi
+          ''
+        ) usedBackends
       )}
 
-      mkdir -p ${tmpPath}
-      chmod 700 ${tmpPath}
       mkdir -p ${tmpPath}/secrets # Store unencrypted secrets here
       mkdir -p ${tmpPath}/${databaseFileName} # Encrypted folder
 
@@ -100,28 +337,23 @@ let
       ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName} ${tmpPath}/secrets
 
       ${concatStringsSep "\n" (
-        concatMap (
-          user:
-          concatMap (
-            backend:
-            concatMap (
-              secretName:
-              let
-                secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
-                targetPath = generateSecretPath user secretName;
-                retrieveCommand = backends.${backend}.retrieveSecretCommand secretName secretConfig.backendPath;
-              in
-              [
-                ''
-                  echo "retrieving secret ${secretName}"
-                  mkdir -p "$(dirname ${targetPath})"
-                  ${retrieveCommand} | cat > ${targetPath}
-                  chmod 700 ${targetPath}
-                ''
-              ]
-            ) (attrNames userSecrets."${user}"."${backend}")
-          ) (attrNames userSecrets."${user}")
-        ) (attrNames userSecrets)
+        builtins.map (
+          backend:
+          let
+            backendConfig = backends.${backend};
+            backendRequests = backendSecretRequests backend;
+            retrieveCommand = backendConfig.retrieveSecretCommand backendRequests backendConfig;
+          in
+          ''
+            echo "Retrieving backend: ${backend}"
+            if ! ${retrieveCommand}; then
+              echo "Retrieval failed for backend '${backend}'."
+              echo "Read command: '${retrieveCommand}'"
+              echo "Aborting"
+              exit 1
+            fi
+          ''
+        ) usedBackends
       )}
 
       echo "Writing deployment metadata..."
@@ -144,50 +376,14 @@ let
 
   # generate secret options for each backend
   backendTypeSubmodule.options = mapAttrs (
-    _: _:
+    _: backendDefinition:
     mkOption {
       # Multiple secrets can be defined in each backend
       type = attrsOf (submodule {
-        options = {
-          backendPath = mkOption {
-            type = str;
-            description = "Path to the secret as expected by the backend. E.g. simple file path for the 'file' backend.";
-          };
-          linkPath = mkOption {
-            type = nullOr str;
-            description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
-            default = null;
-          };
-          permissions = mkOption {
-            type = str;
-            default = "400";
-            description = "Permissions of the file. By default only readable by the owner.";
-          };
-        };
+        options = commonSecretOptions // backendDefinition.secretOptions;
       });
     }
-  ) backends;
-
-  backends = {
-    file = {
-      retrieveSecretCommand = mkOption {
-        type = rawType; # (types.str -> types.str -> types.str);
-        default = secretName: secretPath: "cat ${secretPath}";
-        description = ''
-          A function that takes the secret name and the secret path and returns a shell command string
-          to retrieve the secret. For the file backend, this could simply return content of the secret in the given path.
-        '';
-      };
-      validateSecretCommand = mkOption {
-        type = rawType; # (types.str -> types.str -> types.str);
-        default = secretName: secretPath: "[ -f ${secretPath} -a -r ${secretPath} ]";
-        description = ''
-          A function that takes the secret name and the secret path and returns a shell command string
-          to validate the secret. For the file backend, this could check if the file exists and is readable.
-        '';
-      };
-    };
-  };
+  ) backendDefinitions;
 
 in
 
@@ -204,7 +400,7 @@ in
 
         deriveEncryptionKey = mkOption {
           type = str;
-          default = ''${pkgs.jq}/bin/jq .configHash | sha256sum | ${pkgs.gawk}/bin/awk '{print $1}' '';
+          default = "${pkgs.jq}/bin/jq .configHash | sha256sum | ${pkgs.gawk}/bin/awk '{print $1}' ";
           description = ''
             A shell command that generates a deterministic encryption key. The default uses SHA-256.
           '';
