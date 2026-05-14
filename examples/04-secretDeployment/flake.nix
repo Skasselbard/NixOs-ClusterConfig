@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     # Import Home Manager (override ClusterConfig's bundled version)
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -14,7 +14,8 @@
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
-      url = "github:Skasselbard/NixOs-ClusterConfig";
+      # url = "github:Skasselbard/NixOs-ClusterConfig";
+      url = "path:../../";
     };
 
     # Import disko for declarative disk partitioning
