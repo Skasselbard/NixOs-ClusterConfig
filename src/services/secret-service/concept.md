@@ -2,7 +2,7 @@
 
 ## Overview
 
-Secret management involves securely defining, distributing, and using sensitive data such as passwords, API keys, and certificates. This framework outlines a four-phase approach for handling secrets in NixOS deployments.
+Secret management in this module means defining secrets in a backend, deploying them to a machine in encrypted form, and making them available to the correct local users at runtime.
 
 ### Phases
 1. **Secret Definition**: Configuration of secrets in the secret store and machine users.
@@ -14,10 +14,10 @@ Secret management involves securely defining, distributing, and using sensitive 
 
 ## Components
 
-1. **Secret Store (Backend)**: The system where secrets are stored (e.g., files, KeePass, or Vault).
-2. **Machine Deployment Mechanism (Script)**: Handles transferring secrets to remote machines.
-3. **User Deployment (Systemd Service)**: Ensures secrets are accessible to the correct user accounts or services.
-4. **Secret Access (Command or File)**: Enables usage of secrets, either through direct file access or decryption commands.
+1. **Secret Store (Backend)**: The source of truth for the secret, for example a local file or a KeePass database.
+2. **Machine Deployment Script**: Reads backend content, encrypts it, and copies the result to the remote machine.
+3. **Runtime Systemd Service**: Decrypts the archive and exposes secrets to the correct local users.
+4. **Secret Access Path**: The mounted file or optional symlink that services and users consume.
 
 ---
 
@@ -25,38 +25,29 @@ Secret management involves securely defining, distributing, and using sensitive 
 
 ### Phase 1: Secret Definition
 - Secrets are manually created in the secret store by a **local user**.
-- NixOS configuration defines users and associates them with secrets.
+- Cluster configuration defines target users and associates them with secrets.
 - For the KeePass backend, `backendPath` maps to the KeePass entry path.
 - KeePass secrets can deploy either the entry password or one attachment.
+- For the file backend, `backendPath` is a local file path on the deployment machine.
 
 ### Phase 2: Machine Deployment
 - Secrets are transferred from the local machine to remote machines by a **deployment user**.
 - Credentials for the secret store are requested at runtime.
 - Secrets are validated per backend in batches, and deployment halts on errors.
-- Secrets are stored in a central location on the remote machine to `/var/lib/nixos-secret-service/`.
+- Secrets are first staged in a temporary local directory and then stored in encrypted form on the remote machine at `/var/lib/nixos-secret-service/` by default.
 - Secrets will be overwritten on redeployment.
 - Access to the central location on the remote machine is restricted to the **secret service user**.
 
 ### Phase 3: User Deployment
 - Secrets are distributed on the remote machine by the **secret service user** using a systemd service.
-- Secrets are handled based on type:
-  1. **Encrypted at Rest**:
-     - Accessed via a auto generated decryption/retrieve command.
-     - Required credentials are deployed with/instead of the secret.
-  2. **Stored in Files**:
-     - Stored with restrictive access permissions.
-- Secrets are bind-mounted to `/dev/shm/nixos-secret-service/${user}/${secret}`.
+- Secrets are decrypted to `${tmpPath}/mount` and then bind-mounted to `/dev/shm/nixos-secret-service/${user}` by default.
 - Additional, outdated bind mounts are removed.
-- Ownership is assigned to the secret service user.
-- Services can only access their own bind mounts.
+- Per-secret ownership is assigned to the target user and the `secret-service` group.
+- Optional `linkPath` values create managed symlinks for easier consumption by services.
 
 ### Phase 4: Secret Usage
-- Secrets are accessed by a **service account** or **user account**, depending on type:
-  1. **Encrypted at Rest**:
-     - Accessed through the generated decryption/retrieve command.
-     - Authentication is required during access.
-  2. **Stored in Files**:
-     - Directly accessed with appropriate file permissions.
+- Secrets are accessed by a **service account** or **user account** as regular files after the runtime service has mounted them.
+- Access is controlled through file ownership, file permissions, and read-only bind mounts.
 
 ---
 
@@ -64,7 +55,7 @@ Secret management involves securely defining, distributing, and using sensitive 
 
 ### Common Settings
 - **Backend Path**:
-  - Used to Identify the secret.
+  - Identifies the secret in the backend.
 
 #### Validations
 - The remote is accessible.
@@ -74,13 +65,15 @@ Secret management involves securely defining, distributing, and using sensitive 
 ### Backend Types
 
 #### 1. **Files**
-Secrets are stored in local files on the machine.
+Secrets are stored in local files on the deployment machine.
 
 - **Secret Store**: File location on disk.
 - **Secret Settings**:
   - Local file path.
 - **Validations**:
   - The file is accessible.
+- **Current limitation**:
+  - The backend currently expects simple shell-safe local paths. Prefer absolute paths without spaces or shell-style expansions.
 
 #### 2. **KeePass**
 Secrets are stored in a local `.kdbx` file.
@@ -107,8 +100,8 @@ Secrets are extracted during deployment and staged into the temporary deployment
 
 #### 3. **Vault** (Unimplemented)
 Secrets are retrieved from a Vault instance.
-If the secrets should always be accessed locally, the deployment user only copies the secret from vault to the remotes file location.
-For access via vault api, vault credentials need to be deployed on the remote.
+If the secrets should always be accessed locally, the deployment user would copy them from Vault into the remote file location.
+If services should access Vault directly, the remote machine would need the required Vault credentials.
 
 - **Secret Store**: Vault server.
 - **Global Settings**:

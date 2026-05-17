@@ -48,8 +48,17 @@ in
 
       systemd.services.secret-service =
         let
+          # Get the list of users with secrets configured, along with their backends and secrets
+          # Filter out users with empty configs, then filter out backends that are not configured, and finally filter out secrets that are not configured
+          usersWithSecrets = lib.filterAttrs (_: userConfig: userConfig != { }) (
+            lib.mapAttrs (
+              user: userConfig:
+              lib.filterAttrs (_: backendSecrets: builtins.isAttrs backendSecrets) (
+                if builtins.isAttrs userConfig then userConfig else { }
+              )
+            ) (if builtins.isAttrs this.secrets then this.secrets else { })
+          );
           users = attrNames usersWithSecrets; # List of users with secrets
-          usersWithSecrets = this.secrets;
 
           generateBindMountsScript =
             user: userCfg:
@@ -67,7 +76,7 @@ in
                     ''
                       # Secret ${secret}
                       #-----------------
-                      echo "Setting Permissions for secret '${secret}' for user '${user}'..."
+                      echo "Setting Permissions '${perm}' for secret '${secret}' for user '${user}'..."
                       if [ ! -f "${secretPath}" ]; then
                         echo "ERROR: Secret file '${secretPath}' does not exist"
                         exit 1

@@ -86,6 +86,16 @@
                 #   4. Generates a `deploySecrets` package per machine
                 secrets = {
                   selectors = [ filters.clusterMachines ];
+                  backends.keepass = {
+                    # The KeePass database is encrypted already, so using a Nix path here is acceptable.
+                    # Nix copies the `.kdbx` file into the store and the deployment helper reads it from there.
+                    # This is different from the `file` backend, where plain secret files must stay outside the store.
+                    databasePath = ../00-exampleConfigs/secrets/Passwords.kdbx;
+                    # For a real deployment you would usually replace this with a prompt, password file,
+                    # or secret manager integration. The example uses a fixed value so the workflow is reproducible.
+                    passwordCommand = "echo exampledb";
+                  };
+
                 };
 
               };
@@ -132,18 +142,26 @@
                   # Structure: secrets.<user>.<backend>.<secretName>
                   #
                   # The `file` backend copies a local file as a secret.
-                  # `backendPath` is the LOCAL path to the file on the build machine.
+                  # `backendPath` is the LOCAL path to the file on the deployment machine.
                   # The secret will be encrypted, deployed, and made available
                   # to the specified user on the target machine.
                   secrets = {
                     # Secrets for the "testService" system user.
                     # This user must exist on the machine (defined in nixosModules below).
                     testService.file = {
-                      testSecret.backendPath = "~/.zshrc";
+                      # IMPORTANT: Don't use nix paths like in this example in the file backend!!!!
+                      # If you do your file will be added to the nix store and will be readable by anyone.
+                      # I use this nix path here to easily include a file from the repo and the secret is not secret anyway.
+                      # You should use only strings to configure file locations in production!
+                      testSecret.backendPath = toString ../00-exampleConfigs/secrets/sshKey;
                     };
                     # Secrets for the "admin" cluster user.
                     admin.file = {
-                      adminSecret.backendPath = "~/.zshrc";
+                      # IMPORTANT: Don't use nix paths like in this example in the file backend!!!!
+                      # If you do your file will be added to the nix store and will be readable by anyone.
+                      # I use this nix path here to easily include a file from the repo and the secret is not secret anyway.
+                      # You should use only strings to configure file locations in production!
+                      adminSecret.backendPath = toString ../00-exampleConfigs/secrets/sshKey;
                     };
                   };
 
@@ -168,8 +186,46 @@
                   deployment = {
                     targetHost = "192.168.122.201";
                   };
-                  # vm1 has no secrets defined — it still gets the secret-service
-                  # NixOS module (because of the selector), but no secrets are deployed.
+
+                  # `vm1` demonstrates the KeePass backend.
+                  # All secrets below are resolved from the single database configured in
+                  # `services.secrets.backends.keepass`, then staged locally, encrypted,
+                  # copied to the target, and finally mounted for the `admin` user.
+                  secrets = {
+                    admin.keepass = {
+                      # Read the KeePass password field from the entry.
+                      testPassword = {
+                        backendPath = "04-secretDeployment/TestPassword";
+                        content = "password";
+                        linkPath = "/home/admin/secrets/testPassword";
+                        permissions = "440";
+                      };
+
+                      # Read the only attachment from the entry.
+                      attachment = {
+                        backendPath = "04-secretDeployment/TestAttachment";
+                        content = "attachment";
+                        linkPath = "/home/admin/secrets/attachment";
+                      };
+
+                      # Select a specific attachment when one entry contains several files.
+                      login = {
+                        backendPath = "04-secretDeployment/MultipleTestAttachments";
+                        content = "attachment";
+                        attachmentName = "Login.txt";
+                        linkPath = "/home/admin/secrets/login";
+                      };
+
+                      personalData = {
+                        backendPath = "04-secretDeployment/MultipleTestAttachments";
+                        content = "attachment";
+                        attachmentName = "PersonalData.txt";
+                        linkPath = "/home/admin/secrets/personalData";
+                      };
+                    };
+                  };
+
+                  # The service module is still enabled through the selector just like on the other machines.
                   nixosModules = [
                     machines.vm1
                     inputs.disko.nixosModules.default
@@ -181,6 +237,8 @@
                   deployment = {
                     targetHost = "192.168.122.202";
                   };
+
+                  # `vm2` receives the secret-service module but no secret definitions.
                   nixosModules = [
                     machines.vm2
                     inputs.disko.nixosModules.default

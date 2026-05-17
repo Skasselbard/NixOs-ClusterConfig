@@ -10,6 +10,8 @@ let
   nullOr = lib.types.nullOr;
   rawType = lib.types.raw;
   str = lib.types.str;
+  path = lib.types.path;
+  oneOf = lib.types.oneOf;
   submodule = lib.types.submodule;
 
   mkOption = lib.mkOption;
@@ -28,7 +30,13 @@ let
     pname = "secret-service-keepass-cli";
     version = "0.1.0";
     src = ./keepass-cli;
-    cargoLock.lockFile = ./keepass-cli/Cargo.lock;
+    # Workaround until keepass 4.x databases are fully supported by keepass-rs
+    cargoLock = {
+      lockFile = ./keepass-cli/Cargo.lock;
+      outputHashes = {
+        "keepass-0.0.0-placeholder-version" = "sha256-N7ZNLgNCUwQxpHurZLqw+GR0SF2hFnjAnwrq17lvUn0=";
+      };
+    };
   };
 
   commonSecretOptions = {
@@ -92,13 +100,15 @@ let
           type = rawType;
           default =
             requests: _backendConfig:
-            concatStringsSep "\n" (
-              builtins.map (request: ''
-                echo "retrieving secret ${request.secretName}"
-                mkdir -p "$(dirname ${escapeShellArg request.targetPath})"
-                cat ${escapeShellArg request.secretConfig.backendPath} > ${escapeShellArg request.targetPath}
-                chmod 700 ${escapeShellArg request.targetPath}
-              '') requests
+            pkgs.writeScript "retrieve-files.sh" (
+              concatStringsSep "\n" (
+                builtins.map (request: ''
+                  echo "retrieving secret ${request.secretName}"
+                  mkdir -p "$(dirname ${request.targetPath})"
+                  cat ${request.secretConfig.backendPath} > ${request.targetPath}
+                  chmod 700 ${request.targetPath}
+                '') requests
+              )
             );
           description = ''
             A function that takes all secret requests for a backend and the backend configuration,
@@ -109,13 +119,21 @@ let
           type = rawType;
           default =
             requests: _backendConfig:
-            concatStringsSep "\n" (
-              builtins.map (request: ''
-                [ -f ${escapeShellArg request.secretConfig.backendPath} -a -r ${escapeShellArg request.secretConfig.backendPath} ] || {
-                  echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
-                  exit 1
-                }
-              '') requests
+            pkgs.writeScript "validate-files.sh" (
+              concatStringsSep "\n" (
+                builtins.map (request: ''
+                  [[ -f ${request.secretConfig.backendPath} ]] || {
+                    echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
+                    echo "File '${request.secretConfig.backendPath}' does not exist."
+                    exit 1
+                  }
+                  [[ -r ${request.secretConfig.backendPath} ]] || {
+                    echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
+                    echo "File '${request.secretConfig.backendPath}' is not readable."
+                    exit 1
+                  }
+                '') requests
+              )
             );
           description = ''
             A function that takes all secret requests for a backend and the backend configuration,
@@ -161,7 +179,10 @@ let
           '';
         };
         databasePath = mkOption {
-          type = str;
+          type = oneOf [
+            str
+            path
+          ];
           default = "";
           description = "Path to the local KeePass `.kdbx` database that should be queried during secret deployment.";
         };
@@ -187,8 +208,8 @@ let
             let
               requestPayload = keepassBatchPayload requests;
             in
-            ''
-              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass batch-read ${keepassCommonArgs backendConfig} > "$KEEPASS_BATCH_RESPONSE_PATH"
+            pkgs.writeScript "retrieve-keepass.sh" ''
+              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass-cli batch-read ${keepassCommonArgs backendConfig} > "$KEEPASS_BATCH_RESPONSE_PATH"
               ${requestPayload}
               EOF_KEEPASS_BATCH
 
@@ -210,8 +231,8 @@ let
             let
               requestPayload = keepassBatchPayload requests;
             in
-            ''
-              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass batch-validate ${keepassCommonArgs backendConfig}
+            pkgs.writeScript "validate-keepass.sh" ''
+              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass-cli batch-validate ${keepassCommonArgs backendConfig}
               ${requestPayload}
               EOF_KEEPASS_BATCH
             '';
@@ -238,9 +259,16 @@ let
       generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
 
       backends = clusterConfig.clusters.this.services.secrets.backends;
-      userSecrets = mapAttrs (
-        user: userConfig: filterAttrs (_: backendSecrets: backendSecrets != null) userConfig
-      ) this.secrets;
+      # Get the list of users with secrets configured, along with their backends and secrets
+      # Filter out users with empty configs, then filter out backends that are not configured, and finally filter out secrets that are not configured
+      userSecrets = filterAttrs (_: userConfig: userConfig != { }) (
+        mapAttrs (
+          user: userConfig:
+          filterAttrs (_: backendSecrets: builtins.isAttrs backendSecrets) (
+            if builtins.isAttrs userConfig then userConfig else { }
+          )
+        ) (if builtins.isAttrs this.secrets then this.secrets else { })
+      );
       usedBackends = unique (concatMap (user: attrNames userSecrets."${user}") (attrNames userSecrets));
       keepassBatchResponsePath = "${tmpPath}/keepass-batch-response.json";
       backendSecretRequests =
@@ -313,9 +341,9 @@ let
           in
           ''
             echo "Validating backend: ${backend}"
-            if ! ${validateCommand}; then
+            if ! ${pkgs.bash}/bin/bash "${validateCommand}"; then
               echo "Validation failed for backend '${backend}'."
-              echo "Validation command: '${validateCommand}'"
+              echo "Validation command: ${validateCommand}"
               echo "Aborting"
               exit 1
             fi
@@ -346,9 +374,9 @@ let
           in
           ''
             echo "Retrieving backend: ${backend}"
-            if ! ${retrieveCommand}; then
+            if ! ${pkgs.bash}/bin/bash "${retrieveCommand}"; then
               echo "Retrieval failed for backend '${backend}'."
-              echo "Read command: '${retrieveCommand}'"
+              echo "Retrieval command: ${retrieveCommand}"
               echo "Aborting"
               exit 1
             fi
@@ -379,9 +407,12 @@ let
     _: backendDefinition:
     mkOption {
       # Multiple secrets can be defined in each backend
-      type = attrsOf (submodule {
-        options = commonSecretOptions // backendDefinition.secretOptions;
-      });
+      type = nullOr (
+        attrsOf (submodule {
+          options = commonSecretOptions // backendDefinition.secretOptions;
+        })
+      );
+      default = null;
     }
   ) backendDefinitions;
 

@@ -1,43 +1,43 @@
-
-
 # Secret-Service Cluster Module
-## **Overview**
-`clusterModule.nix` defines a **deployment mechanism** for secrets across a cluster of machines. It:
-- **Generates a deployment script** (`deploy-secrets.sh`) that:
-  - Retrieves secrets from backends.
-  - Encrypts them using `gocryptfs`.
-  - Transfers the encrypted archive to the remote machine.
-- **Provides a connection script** (`connect-secrets.sh`) to automate SSH-based deployment.
+## Overview
+
+`clusterModule.nix` implements the deployment side of the secret-service. It:
+
+- generates `deploy-secrets.sh` to read secrets from configured backends, encrypt them with `gocryptfs`, and copy the archive to the target machine,
+- generates `connect-secrets.sh` to try common SSH users automatically, and
+- registers backend options for both `file` and `keepass` secrets.
 
 ---
 
-## **How It Works**
-These steps are done for deployment:
+## Deployment Flow
 
-1. **Read Secrets Configuration**  
-   - Iterates over `users.users.<user>.secrets.<backend>.<secret>` to retrieve each user's secrets.
+These steps happen during deployment:
 
-2. **Secrets Validation**  
-   - Execute one backend-level validation command per used backend.
-   - **Aborts deployment** if any secret is missing or unreadable.
+1. **Collect machine secrets**
+   - Reads `clusterConfig.clusters.this.machines.<machine>.secrets.<user>.<backend>.<secret>`.
 
-3. **Encrypt Secrets**  
-   - Generates an **encryption key** from deployment metadata.
-   - Initializes a **gocryptfs-encrypted** directory.
-   - Stores secrets inside the encrypted folder as files.
+2. **Prepare and validate each backend once**
+   - Runs one prepare step per used backend.
+   - Runs one validation step per used backend for the full batch of requested secrets.
+   - Aborts the deployment if validation fails.
 
-4. **Transfers Encrypted Secrets to Remote Machine**  
-   - Copies encrypted archive (`secrets.enc`) via **rsync**.
-   - Stores metadata (`deployment-info.json`) remotely.
+3. **Stage and encrypt secrets**
+   - Retrieves all requested secrets into a temporary staging directory.
+   - Generates deployment metadata and derives an encryption key from it.
+   - Initializes a `gocryptfs` archive and writes the staged files into it.
 
-5. **Connection Script (`connect-secrets.sh`)**  
-   - **Tries multiple SSH users** (`secret-service`, deployment user, root).
-   - If a connection succeeds, runs the deployment script.
+4. **Transfer the encrypted payload**
+   - Copies `secrets.enc` via `rsync`.
+   - Writes `deployment-info.json` to the remote machine.
+
+5. **Restart the runtime service**
+   - Restarts the remote `secret-service` systemd unit after the transfer succeeds.
 
 ---
 
-## **Configuration Options**
-### **1. Deployment Options**
+## Configuration Overview
+
+### 1. Deployment options
 
 - `services.secrets.deployment.tempPath` defaults to `/dev/shm/nixos-secret-service` and stores secrets in RAM before encryption.
 - `services.secrets.deployment.persistentPath` defaults to `/var/lib/nixos-secret-service` and stores the encrypted payload on the remote machine.
@@ -50,21 +50,25 @@ These steps are done for deployment:
 | `services.secrets.backends.<backend>.retrieveSecretCommand` | Retrieves a secret. |
 | `services.secrets.backends.<backend>.validateSecretCommand` | Validates a secret’s existence & permissions. | -->
 
-### **2. Backend Highlights**
-- `file`: Reads a local file directly.
-  - `backendPath` is the file system path in the form to the secret on the deployment machine.
+### 2. Backend highlights
+- `file`: Reads a local file directly. `backendPath` is a local file path on the deployment machine.
 - `keepass`: Reads a local KeePass `.kdbx` database through the Rust helper CLI in `keepass-cli/`.
-  - `backendPath` is the KeePass entry path in the form `group/subgroup/entry`.
-  - `content = "attachment"` deploys one attachment from the entry.
-  - `content = "password"` deploys the KeePass password field.
-  - `attachmentName` is optional and only needed when an entry has multiple attachments.
-  - `services.secrets.backends.keepass.passwordCommand` can populate `SECRET_SERVICE_KEEPASS_PASSWORD` for non-interactive deployments.
+- `keepass backendPath`: Uses an entry path in the form `group/subgroup/entry`.
+- `keepass content`: `attachment` deploys one attachment and `password` deploys the KeePass password field.
+- `keepass attachmentName`: Selects one attachment when an entry contains multiple attachments.
+- `keepass passwordCommand`: Can populate `SECRET_SERVICE_KEEPASS_PASSWORD` for non-interactive deployments.
+- `keepass databasePath`: Currently accepts either a string path or a Nix path.
 
 Deployment treats every backend as a batch: each used backend is prepared once, validated once, and retrieved once for the full set of configured secrets assigned to it.
 
-KeePass deployments stream one batch request payload to the helper over stdin for validation and reading. The batched read returns a JSON response with binary-safe base64 payloads, and the deployment script writes the staged files itself before `gocryptfs` encryption, so the overall secret-service flow still operates on files in the temporary deployment directory.
+KeePass deployments stream one JSON batch payload to the helper over stdin for validation and reading. The batched read returns base64-encoded secret bytes, and the deployment script materializes the files in the staging directory before encryption.
 
-### **3. KeePass Example**
+### 3. Current limitations
+- `file.backendPath` is treated as a runtime string path on the deployment machine, not as a Nix-managed path. Keep it as a string literal in configuration, not a Nix path value that should be copied into the store.
+- Because the path is consumed by generated shell scripts, the safest form today is a plain absolute path such as `/home/tom/secrets/example.pem`.
+- Paths containing spaces are not handled reliably by the current `file` backend implementation. Prefer paths without spaces.
+
+### 4. KeePass example
 
 ```nix
 {
@@ -102,10 +106,12 @@ During deployment, only the secrets referenced by the machine configuration are 
 
 ---
 
-## **Deployment Workflow**
-1. **Run the deployment script manually or from CI/CD:**
-   Add the Module to your cluster config. TODO: example
-2. Run `nix run .#machines.<machine-name>.deploySecrets`
+## Deployment workflow
+
+1. Add the module to your cluster configuration.
+2. Deploy the machine configuration so the `secret-service` unit exists on the target.
+3. Run `nix run .#<cluster>.<machine>.deploySecrets` from the flake that defines the machine.
+4. Re-run `deploySecrets` whenever backend content changes.
 
 ---
 
@@ -113,34 +119,38 @@ During deployment, only the secrets referenced by the machine configuration are 
 
 # Secret-Service Nixos-Module
 
-## **Machine Module Overview**
+## Runtime service overview
 
-The **Secret Service** Nixos-Module on a remote machine, responsible for:
+The NixOS module on the remote machine is responsible for:
 - **Decrypting the received archive** (`secrets.enc`).
 - **Mounting secrets dynamically** using `gocryptfs`.
 - **Providing access to secrets per user**.
 
 ---
 
-## **Machine Module Flow**
+## Runtime service flow
 
-The logic is done in a systemd service.
-1. **Mounts the Encrypted Secret Archive**
+The runtime logic lives in the `secret-service` systemd service.
+
+1. **Mount the encrypted archive**
    - Retrieves the **encryption key** from metadata.
    - Uses `gocryptfs` to **decrypt the archive in RAM** (`/dev/shm/nixos-secret-service`).
 
-2. **Creates Bind Mounts Per User**
-   - Extracts **users with secrets** from `users.users.<user>.secrets`.
-   - Creates **bind mounts** at `/run/nixos-secret-service/<user>`.
-   - Sets **read only permissions** for each users secret.
+2. **Create bind mounts per user**
+   - Reads the machine's configured user secrets.
+   - Creates read-only bind mounts at `${tmpPath}/<user>`.
+   - Applies per-secret ownership and file permissions before mounting.
+   - Creates optional symlinks for secrets that define `linkPath`.
 
-3. **Handles Secure Unmounting**
+3. **Handle cleanup**
    - Secrets are **unmounted on service stop**.
+   - Managed symlinks are removed before unmounting.
 
 ---
 
-## **Machine Module Configuration**
-### **1. Deployment Paths**
+## Runtime module configuration
+
+### 1. Deployment paths
 
 - `services.secrets.deployment.persistentPath` defaults to `/var/lib/nixos-secret-service` and stores the encrypted archive.
 - `services.secrets.deployment.tempPath` defaults to `/dev/shm/nixos-secret-service` and stores the decrypted mount in RAM.
@@ -152,9 +162,10 @@ The logic is done in a systemd service.
 
 ---
 
-## **Example Workflow**
-1. **Deploy secrets using `connect-secrets.sh`.**
-2. **On the remote machine:**
-   - **The systemd service decrypts and mounts secrets.**
-   - **Users can access their bind-mounted secrets securely.**
-3. **Stopping the service unmounts all secrets.**
+## Example workflow
+
+1. Deploy machine configuration.
+2. Deploy secrets with `deploySecrets` or `connect-secrets.sh`.
+3. Let the remote `secret-service` unit decrypt and mount the archive.
+4. Access the bind-mounted or linked secrets as the target user.
+5. Stop the service to unmount the archive and remove the managed links.
