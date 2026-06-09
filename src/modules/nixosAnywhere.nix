@@ -76,8 +76,6 @@ in
           if this.deployment.formatScript == null then
             pkgs.writeShellScriptBin "format-${machineName}" "echo no format script configured"
           else
-            let
-            in
             pkgs.writeShellScriptBin "deploy" ''
               echo "Run format script on host ${machineName}?"
               echo "WARNING: disk content will be erased if you select yes!"

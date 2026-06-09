@@ -94,6 +94,8 @@
                     # For a real deployment you would usually replace this with a prompt, password file,
                     # or secret manager integration. The example uses a fixed value so the workflow is reproducible.
                     passwordCommand = "echo exampledb";
+                    # Optional, if your database uses a key file in addition to the password.
+                    # keyFilePath = /path/to/keyfile;
                   };
 
                 };

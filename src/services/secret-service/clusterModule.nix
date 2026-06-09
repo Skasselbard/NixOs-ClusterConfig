@@ -252,7 +252,7 @@ let
       this = clusterConfig.clusters.this.machines.this;
       secretServiceName = this.config.systemd.services.secret-service.name;
 
-      tmpPath = this.deployment.secrets.path.temp;
+      tmpPath = "${this.deployment.secrets.path.temp}/deployment";
       persistentPath = this.deployment.secrets.path.persistent;
       databaseFileName = this.deployment.secrets.database.fileName;
       metadataFileName = this.deployment.secrets.metadata.fileName;
@@ -390,7 +390,11 @@ let
       ssh "${deploymentUser}@${deploymentHost}" chown secret-service '${persistentPath}/${metadataFileName}'
 
       echo "Copying archive to remote..."
-      ${pkgs.rsync}/bin/rsync -avz --progress ${tmpPath}/${databaseFileName} "${deploymentUser}@${deploymentHost}:${persistentPath}"
+      ${pkgs.rsync}/bin/rsync \
+        -avz \
+        --progress \
+        --rsync-path="$(nix build nixpkgs#rsync --no-link --print-out-paths)/bin/rsync" \
+        ${tmpPath}/${databaseFileName} "${deploymentUser}@${deploymentHost}:${persistentPath}"
       ssh "${deploymentUser}@${deploymentHost}" chown -R secret-service '${persistentPath}/${databaseFileName}'
 
       echo "Restarting ${secretServiceName}"
@@ -539,18 +543,20 @@ in
             set -e
             echo "Deploying Secrets to host: ${host}"
 
-            echo
-            echo "Trying to connect as user: ${secretServiceUser}"
-            if ssh -o 'NumberOfPasswordPrompts 1' "${secretServiceUser}@${host}" "echo successfully connected"; then
-              ${(deployCmd secretServiceUser host)}
-              exit 0
-            fi
+            # echo
+            # echo "Trying to connect as user: ${secretServiceUser}"
+            # if ssh -o 'NumberOfPasswordPrompts 1' "${secretServiceUser}@${host}" "echo successfully connected"; then
+            #   echo "deployment scritp: ${(deployCmd secretServiceUser host)}"
+            #   ${(deployCmd secretServiceUser host)}
+            #   exit 0
+            # fi
 
             echo
             echo "Connection failed with user: ${secretServiceUser}. Trying deployment user: ${deploymentUser}"
             if ssh -o 'NumberOfPasswordPrompts 1' "${
               if deploymentUser != "" then deploymentUser + "@" else ""
             }${host}" "echo successfully connected"; then
+               echo "deployment scritp: ${(deployCmd deploymentUser host)}"
                ${(deployCmd deploymentUser host)}
               exit 0
             fi
@@ -558,7 +564,8 @@ in
             echo
             echo "Connection failed with deployment user: ${deploymentUser}. Trying root user: ${rootUser}"
             if ssh -o 'NumberOfPasswordPrompts 1' "${rootUser}@${host}" "echo successfully connected"; then
-              ${(deployCmd rootUser host)}
+            echo "deployment scritp: ${(deployCmd rootUser host)}"
+            ${(deployCmd rootUser host)}
               exit 0
             fi
 

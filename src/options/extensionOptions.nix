@@ -6,7 +6,6 @@ let
 
   attrsOf = lib.types.attrsOf;
   listOf = lib.types.listOf;
-  nullOr = lib.types.nullOr;
   raw = lib.types.raw;
   anything = lib.types.anything;
   str = lib.types.str;
