@@ -13,6 +13,7 @@ Common configurations (NixOS machine configs, SSH keys, password hashes) are sha
 | [02](./02-formatScripts/) | Format Scripts | The three `formatScript` modes: `null` (skip), `"disko"` (automatic), and custom scripts |
 | [03](./03-homeManager/) | Home Manager | Per-user Home Manager modules, the `stateVersion` requirement, and `colmena` updates |
 | [04](./04-secretDeployment/) | Secret Deployment (experimental)| Encrypted file secrets with the `secret-service` module, per-user permissions, and the `deploySecrets` command |
+| [08](./08-vms/) | Virtual Machines | Defining microVMs alongside machines, the microvm.nix backend, port forwarding, and VM state persistence with impermanence |
 
 > **Note:** Examples 05–07 (Vault, Kubernetes) use older configurations and have not been re-tested with the current version of ClusterConfig.
 
@@ -22,6 +23,8 @@ All examples expect:
 
 - A Linux system with Nix installed ([flakes enabled](https://wiki.nixos.org/wiki/Flakes))
 - Three virtual machines (see individual example READMEs for network setup details)
+  - Each VM uses a **single network interface** with a static IP
+  - Internet access for the VMs is provided via **NAT on the host** — see [Example 01](./01-simpleCluster/#host-nat) for details on configuring this on NixOS
 - The SSH private key from [secrets/sshKey](./00-exampleConfigs/secrets/sshKey) added to your SSH agent:
 
   ```bash

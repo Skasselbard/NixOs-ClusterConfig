@@ -76,7 +76,7 @@ let
   keepassBatchPayload =
     requests:
     builtins.toJSON (
-      builtins.map (request: {
+      map (request: {
         label = request.label;
         entryPath = request.secretConfig.backendPath;
         content = request.secretConfig.content;
@@ -102,7 +102,7 @@ let
             requests: _backendConfig:
             pkgs.writeScript "retrieve-files.sh" (
               concatStringsSep "\n" (
-                builtins.map (request: ''
+                map (request: ''
                   echo "retrieving secret ${request.secretName}"
                   mkdir -p "$(dirname ${request.targetPath})"
                   cat ${request.secretConfig.backendPath} > ${request.targetPath}
@@ -121,7 +121,7 @@ let
             requests: _backendConfig:
             pkgs.writeScript "validate-files.sh" (
               concatStringsSep "\n" (
-                builtins.map (request: ''
+                map (request: ''
                   [[ -f ${request.secretConfig.backendPath} ]] || {
                     echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
                     echo "File '${request.secretConfig.backendPath}' does not exist."
@@ -252,7 +252,7 @@ let
       this = clusterConfig.clusters.this.machines.this;
       secretServiceName = this.config.systemd.services.secret-service.name;
 
-      tmpPath = "${this.deployment.secrets.path.temp}/deployment";
+      tmpPath = "${this.deployment.secrets.path.deployment}";
       persistentPath = this.deployment.secrets.path.persistent;
       databaseFileName = this.deployment.secrets.database.fileName;
       metadataFileName = this.deployment.secrets.metadata.fileName;
@@ -313,8 +313,9 @@ let
       export TMP_SECRET_ROOT=${escapeShellArg "${tmpPath}/secrets"}
       export KEEPASS_BATCH_RESPONSE_PATH=${escapeShellArg keepassBatchResponsePath}
 
+      echo "Preparing backends..."
       ${concatStringsSep "\n" (
-        builtins.map (
+        map (
           backend:
           let
             backendConfig = backends.${backend};
@@ -326,13 +327,14 @@ let
           ''
         ) usedBackends
       )}
+      # End Preparing backends
 
-        mkdir -p ${tmpPath}
-        chmod 700 ${tmpPath}
+      mkdir -p ${tmpPath}
+      chmod 700 ${tmpPath}
 
       echo "Validating secrets..."
       ${concatStringsSep "\n" (
-        builtins.map (
+        map (
           backend:
           let
             backendConfig = backends.${backend};
@@ -350,6 +352,7 @@ let
           ''
         ) usedBackends
       )}
+      # End Validating secrets
 
       mkdir -p ${tmpPath}/secrets # Store unencrypted secrets here
       mkdir -p ${tmpPath}/${databaseFileName} # Encrypted folder
@@ -364,8 +367,9 @@ let
       ${pkgs.gocryptfs}/bin/gocryptfs -quiet -init -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName}
       ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName} ${tmpPath}/secrets
 
+      echo "Retrieving secrets..."
       ${concatStringsSep "\n" (
-        builtins.map (
+        map (
           backend:
           let
             backendConfig = backends.${backend};
@@ -383,6 +387,7 @@ let
           ''
         ) usedBackends
       )}
+      # End Retrieving secrets
 
       echo "Writing deployment metadata..."
       ssh "${deploymentUser}@${deploymentHost}" "mkdir -p '${persistentPath}'"
@@ -444,7 +449,7 @@ in
 
     };
 
-    clusterMachine = {
+    nodes = {
 
       options = {
         deployment = {
@@ -462,7 +467,14 @@ in
                 type = str;
                 default = "/dev/shm/nixos-secret-service";
                 description = ''
-                  Working directory for persisting encrypted files.
+                  Working directory for unencrypted files.
+                '';
+              };
+              deployment = mkOption {
+                type = str;
+                default = "/tmp/nixos-secret-service";
+                description = ''
+                  Working directory for deployment files on the deployment host.
                 '';
               };
             };

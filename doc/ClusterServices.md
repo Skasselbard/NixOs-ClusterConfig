@@ -43,26 +43,30 @@ The `simple-dns` module registers a service type called `dns` with a `hosts` rol
 
 ### Selectors
 
-A list of [filters](Concepts.md#filters) that resolve to machines. Every machine that matches at least one selector filter will receive the service's NixOS modules (`definition` + `extraConfig`).
+A list of [filters](Concepts.md#filters) that resolve to nodes (machines and/or VMs). Every node that matches at least one selector filter will receive the service's NixOS modules (`definition` + `extraConfig`).
 
 ```nix
 services.myService = {
   selectors = [ filters.clusterMachines ];  # all machines
   # or
-  selectors = [ (filters.hostname "node1") (filters.hostname "node2") ];  # specific machines
+  selectors = [ filters.clusterVms ];       # all VMs
+  # or
+  selectors = [ filters.clusterNodes ];     # all machines AND VMs
+  # or
+  selectors = [ (filters.machineName "node1") (filters.vmName "guest1") ];  # specific nodes
 };
 ```
 
 ### Roles
 
-A set of named filter lists. Roles let the service differentiate between groups of machines — for example, a primary node vs. replicas.
+A set of named filter lists. Roles let the service differentiate between groups of nodes — for example, a primary node vs. replicas.
 
 ```nix
 services.myService = {
-  selectors = [ filters.clusterMachines ];
+  selectors = [ filters.clusterNodes ];
   roles = {
-    primary = [ (filters.hostname "node1") ];
-    replicas = [ filters.clusterMachines ];
+    primary = [ (filters.machineName "node1") ];
+    replicas = [ filters.clusterVms ];     # VMs as replicas
   };
 };
 ```
@@ -86,14 +90,14 @@ services.myService = {
 
 During the ClusterConfig evaluation pipeline, services go through these steps:
 
-1. **Filter resolution** — The selector filters are evaluated to determine which machines are targeted. Machines matching any selector receive the service.
-   Machines that are not selected are not altered by this service.
+1. **Filter resolution** — The selector filters are evaluated to determine which nodes are targeted. Nodes (machines and/or VMs) matching any selector receive the service.
+   Nodes that are not selected are not altered by this service.
 
-2. **Role resolution** — Each role's filters are resolved to machine names. The resolved machines (with their names, IPs, FQDNs, etc.) become available to the machine configuration.
+2. **Role resolution** — Each role's filters are resolved to node names. The resolved nodes (with their names, IPs, FQDNs, etc.) become available to the node configuration.
 
-3. **Module injection** — For each selected machine, the service's `definition` and `extraConfig` are added to the machine's NixOS modules. When the machine's NixOS configuration is rebuilt, these modules are included.
+3. **Module injection** — For each selected node, the service's `definition` and `extraConfig` are added to the node's NixOS modules. When the node's NixOS configuration is rebuilt, these modules are included.
 
-4. **clusterConfig access** — Inside the service's NixOS module, the machine can access `config.clusterConfig` to read resolved service information, including which machines have which roles.
+4. **clusterConfig access** — Inside the service's NixOS module, the node can access `config.clusterConfig` to read resolved service information, including which nodes have which roles.
 
 ## Writing a Custom Service Module
 
@@ -174,22 +178,30 @@ let
   # The current cluster
   cluster = config.clusterConfig.clusters.this;
 
-  # The current machine
-  this = cluster.machines.this;
+  # The current node (works for machines AND VMs)
+  thisNode = cluster.nodes.this;
+
+  # Machine-specific (only in machine context)
+  # thisMachine = cluster.machines.this;
+
+  # VM-specific (only in VM context)
+  # thisVm = cluster.vms.this;
 
   # The current service's config
   serviceConfig = cluster.services.myService;
 
-  # Machines in the "primary" role
+  # Nodes in the "primary" role — could be machines, VMs, or both
   primaries = serviceConfig.roles.primary;
 
-  # Each machine in a role has: .name, .fqdn, .ips, .config, ...
+  # Each node in a role has: .name, .fqdn, .ips, .config, ...
   primaryIp = (builtins.head primaries).ips;
 in
 {
   # ... NixOS configuration using cluster information
 }
 ```
+
+Note the use of `cluster.nodes.this` instead of `cluster.machines.this` when you want your service to work for both machines and VMs. If your service only applies to machines, use `machines.this` instead.
 
 ## Patterns for Writing Services
 

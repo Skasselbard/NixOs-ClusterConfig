@@ -2,6 +2,7 @@
   config,
   lib,
   clusterlib,
+  flakeInputs,
   ...
 }:
 
@@ -21,6 +22,8 @@ let
   forEach = lib.lists.forEach;
   forEachAttrIn = clusterlib.forEachAttrIn;
   listToAttrs = builtins.listToAttrs;
+
+  vmType = import ../modules/vms/options.nix { inherit lib clusterlib config flakeInputs; };
 
   domainType = {
     suffix = domainDefinitionType;
@@ -63,7 +66,7 @@ let
             description = ''
               Service definition
 
-              Has to be closure in the form 
+              Has to be closure in the form
               { selectors, roles, this }:{
                 # configuration
               }
@@ -91,19 +94,37 @@ let
         type = attrsOf (submodule machineType);
         default = { };
       };
+
+      vms = mkOption {
+        description = ''
+          Virtual machines that run on cluster hosts.
+
+          VMs are managed by their host machine and deployed as part
+          of the host's NixOS configuration. Unlike machines, VMs do
+          not get individual deployment scripts or colmena entries.
+
+          This option is provided by the microvm-vms cluster module.
+          Without that module loaded, VMs are not supported.
+        '';
+        type = attrsOf (submodule {
+          options = machineType.options // vmType.options;
+        });
+        default = { };
+      };
+
     };
   };
 
-  machineType.options = config.extensions.clusterMachine.options // {
+  machineType.options = config.extensions.nodes.options // {
 
     system = mkOption {
-      description = lib."The type of system for this machine";
+      description = "System architecture for this VM (e.g. x86_64-linux).";
       example = "x86_64-linux";
       type = str;
     };
 
     users = mkOption {
-      description = "A list of users deployed on the machine node in addition to the cluster users.";
+      description = "A list of users deployed on the machine node. These are merged with cluster-level users during evaluation.";
       type = attrsOf (submodule userType);
       default = { };
       example = ''
@@ -135,27 +156,12 @@ let
       description = lib."machine specific config";
       type = listOf raw;
       default = [ ];
-      example = [{
-        boot.loader.systemd-boot.enable = true;
-      }];
+      example = [
+        {
+          boot.loader.systemd-boot.enable = true;
+        }
+      ];
     };
-
-    # virtualization = mkOption {
-    #   description = "A list of virtualizaion drivers that will generate a NixOs config that handles virtualization.";
-    #   type = attrsOf (submodule virtualizationType);
-    #   default = { };
-    # };
-
-    # TODO: how would a generic virtualization interface look like
-    # e.g. config -> [ (name = [ ip ]) ]
-
-    # virtDriver = {
-    #   functions = {
-    #     getSelectors = {}:{};
-    #     builcConfig = {}:{};
-    #   };
-    #   config = {  };
-    # };
 
   };
 
@@ -213,8 +219,6 @@ let
     };
 
   };
-
-  virtualizationType = { };
 
   filterType = raw; # TODO:custom function type? https://nixos.org/manual/nixos/stable/#sec-option-types-custom
 

@@ -5,12 +5,12 @@
 
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     disko = {
-      url = "github:nix-community/disko/v1.12.0";
+      url = "github:nix-community/disko/v1.13.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nixos-anywhere = {
-      url = "github:nix-community/nixos-anywhere/1.12.0";
+      url = "github:nix-community/nixos-anywhere/1.13.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.disko.follows = "disko";
     };
@@ -32,6 +32,11 @@
 
     flake-utils.url = "github:numtide/flake-utils";
 
+    microvm = {
+      url = "github:microvm-nix/microvm.nix/main"; # TODO: use a tag after v0.5.0 whare the options are fixed.
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # kubernetes
     nix-kube-generators = {
       url = "github:farcaller/nix-kube-generators";
@@ -47,6 +52,7 @@
   outputs =
     {
       self,
+      microvm,
       nixpkgs,
       nixos-anywhere,
       nixos-generators,
@@ -79,6 +85,7 @@
             self.clusterConfigModules.home-manager
             self.clusterConfigModules.nixos-anywhere
             self.clusterConfigModules.colmena
+            self.clusterConfigModules.vms
           ];
         };
 
@@ -122,6 +129,9 @@
 
         # Module to add scripts for vault initialization to the flake packages
         vault.imports = [ "${self}/src/services/vault/vaultClusterModule.nix" ];
+
+        # Module to add scripts for vault initialization to the flake packages
+        vms.imports = [ "${self}/src/modules/vms/clusterModule.nix" ];
       };
     };
 }

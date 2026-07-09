@@ -1,1 +1,1 @@
-nix run .#colmena apply
+nix run .#colmena apply -- --impure

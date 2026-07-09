@@ -2,7 +2,7 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # Import the ClusterConfig flake
     clusterConfigFlake = {
@@ -13,7 +13,7 @@
     # Import disko for declarative disk partitioning.
     # Required if you set `deployment.formatScript = "disko"` on any machine.
     disko = {
-      url = "github:nix-community/disko/v1.12.0";
+      url = "github:nix-community/disko/v1.13.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

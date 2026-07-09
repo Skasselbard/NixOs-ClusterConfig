@@ -53,7 +53,7 @@ let
 
     };
 
-    clusterMachine = {
+    nodes = {
 
       options = mkOption {
         description = ''
@@ -97,7 +97,7 @@ let
         default = { };
       };
 
-      # TODO: apps, modules
+      # TODO: apps
 
     };
 

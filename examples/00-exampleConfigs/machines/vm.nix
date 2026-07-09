@@ -16,12 +16,12 @@
 }:
 
 # Standard NixOS module function
-{ config, ... }:
+{ config, lib, ... }:
 {
 
   imports = [ ./vm-hardware-configuration.nix ];
 
-  system.stateVersion = "24.05";
+  system.stateVersion = "26.05";
 
   # --- Boot configuration ---
   boot.loader.efi.canTouchEfiVariables = true;
@@ -36,13 +36,16 @@
   networking.firewall.allowedTCPPorts = config.services.openssh.ports;
 
   # --- Networking ---
-  # We expect two interfaces on the VM connected to the same virtual network.
-  # Using predictable interface names can be unpredictable in VMs :p (PCI location varies),
-  # so we disable them. The interfaces will be named eth0, eth1, etc.
+  # The VM uses a single interface (eth0) with a static IP for cluster communication.
+  # This same interface also reaches the internet via NAT on the host.
+  # Using predictable interface names can be unpredictable in VMs (PCI location varies),
+  # so we disable them. The interface will be named eth0.
   networking.usePredictableInterfaceNames = true;
 
-  # eth0: static IP for predictable cluster communication.
-  # This is the address used in deployment.targetHost and in the DNS service.
+  # Single interface with a static IP.
+  # This address is used in deployment.targetHost and in the DNS service.
+  # Internet access for package downloads goes through the same interface
+  # via NAT configured on the host machine (see NAT hint below).
   networking.interfaces."eth0" = {
     ipv4.addresses = [
       {
@@ -51,10 +54,25 @@
       }
     ];
   };
+  networking.defaultGateway = "192.168.122.1";
 
-  # eth1: DHCP for internet access via NAT.
-  # This gives the VM internet access for downloading packages during deployment.
-  networking.interfaces."eth1".useDHCP = true;
+  # --- Host NAT Hint ---
+  # The VM needs internet access (e.g. to download packages during deployment).
+  # Since there is only one interface with a static IP, NAT must be set up on
+  # the host machine to forward traffic from the VM's network.
+  #
+  # On a NixOS host with libvirt, add something like this to your host config:
+  #
+  #   networking.nat = {
+  #     enable = true;
+  #     externalInterface = "enp0s3";    # your host's internet-facing interface
+  #     internalInterfaces = [ "virbr0" ]; # the libvirt default NAT network
+  #   };
+  #
+  # The exact interface names depend on your host setup. The key point is that
+  # traffic from VMs on the virtual network (192.168.122.0/24) is masqueraded
+  # through the host's external interface. If your host is not NixOS, configure
+  # iptables/nftables masquerading accordingly.
 
   # --- Disk partitioning (disko) ---
   # Disko is used for declarative partitioning.

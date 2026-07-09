@@ -12,9 +12,9 @@ Build a minimal functional cluster with three virtual machines, a cluster user, 
 
 - A Linux machine with Nix installed ([flakes enabled](https://wiki.nixos.org/wiki/Flakes))
 - Three virtual machines you can deploy to
-  - Each VM needs two network interfaces on the same virtual network:
-    - One interface (`eth0`) will be assigned a **static IP** for predictable connections
-    - One interface (`eth1`) will use **DHCP** for internet access (via NAT)
+  - Each VM needs one network interface on a virtual network (e.g. the libvirt default NAT network `virbr0`)
+  - The interface will be assigned a **static IP** for predictable cluster communication
+  - Internet access for the VMs is provided through NAT on the **host machine** — see the [Host NAT](#host-nat) section below
   - The VMs should boot from ISO images
   - You may need to adjust the disk device path in the [machine config](../00-exampleConfigs/machines/vm.nix) to match your hypervisor
 - The SSH private key from [secrets/sshKey](../00-exampleConfigs/secrets/sshKey) added to your SSH agent:
@@ -22,6 +22,24 @@ Build a minimal functional cluster with three virtual machines, a cluster user, 
   ```bash
   ssh-add ../00-exampleConfigs/secrets/sshKey
   ```
+
+### Host NAT
+
+The example VMs have only one network interface with a static IP. To give them internet access (required for downloading packages during `nixos-anywhere` deployment), the **host machine** must provide NAT / masquerading for the virtual network.
+
+If your host runs **NixOS** and you use libvirt, you may need to add this to your host configuration:
+
+```nix
+networking.nat = {
+  enable = true;
+  externalInterface = "enp0s3";    # Replace with your host's internet-facing interface
+  internalInterfaces = [ "virbr0" ]; # The libvirt NAT network bridge
+};
+```
+
+On other Linux distributions, configure iptables/nftables to masquerade traffic from `192.168.122.0/24` through your internet-facing interface.
+
+> **Tip:** If you are running these VMs on a laptop that changes networks (Wi-Fi / Ethernet), the `externalInterface` may vary. Consider using a routing tool or a dynamic firewall rule that adapts to the active connection.
 
 ## Result
 

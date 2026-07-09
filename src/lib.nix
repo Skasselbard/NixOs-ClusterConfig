@@ -6,9 +6,12 @@
 let
   # imports
   filters = import ./filters.nix { inherit lib; };
+  vmlib = import ./modules/vms/lib.nix { inherit lib; };
 
   attrsets = lib.attrsets;
   lists = lib.lists;
+  concatStringsSep = lib.concatStringsSep;
+  splitString = lib.splitString;
 
   mkOption = lib.mkOption;
   mkDefault = lib.mkDefault;
@@ -98,25 +101,24 @@ let
 
   add = {
 
-    # Evaluates the 'nixosModules' for each machine and adds the resulting nixosConfiguration to the machine config.
+    # Evaluates the 'nixosModules' for each node and adds the resulting nixosConfiguration to the node config.
     nixosConfigurations =
       config:
-      update.machines config (
-        clusterName: machineName: machineConfig: {
-          nixosConfiguration = nixpkgs.lib.nixosSystem { modules = machineConfig.nixosModules; };
+      update.nodes config (
+        clusterName: nodeName: nodeConfig: {
+          nixosConfiguration = nixpkgs.lib.nixosSystem { system = nodeConfig.system; modules = nodeConfig.nixosModules; };
         }
       );
 
-    # Adds a NixosModule build by 'moduleConfigFn' to each machine.
-    # The moduleConfigFn builds a nixos module from three input parameters (clusterName, machineName, machineConfig).
-    # clusterconfig -> ((clusterName -> machineName -> machineConfig) -> moduleAttr) -> clusterconfig
+    # Adds a NixosModule build by 'moduleConfigFn' to each node.
+    # The moduleConfigFn builds a nixos module from three input parameters (clusterName, nodeName, nodeConfig).
+    # clusterconfig -> ((clusterName -> nodeName -> nodeConfig) -> moduleAttr) -> clusterconfig
     nixosModule =
       config: moduleConfigFn:
-      update.machines config (
-        clusterName: machineName: machineConfig: {
+      update.nodes config (
+        clusterName: nodeName: nodeConfig: {
           nixosModules =
-            (lists.flatten [ (moduleConfigFn clusterName machineName machineConfig) ])
-            ++ machineConfig.nixosModules;
+            (lists.flatten [ (moduleConfigFn clusterName nodeName nodeConfig) ]) ++ nodeConfig.nixosModules;
         }
       );
 
@@ -133,7 +135,7 @@ let
             packages = forEachAttrIn config.domain.clusters (
               clusterName: clusterDefinition:
 
-              forEachAttrIn clusterDefinition.machines (
+              forEachAttrIn (clusterDefinition.machines) (
                 machineName: _machineDefinition: updatePackageFn clusterName machineName
               )
 
@@ -142,7 +144,35 @@ let
           })).packages;
       };
 
-    # Add a package that can be build with `nix build #machines.machineName.services.attrName` or run with `nix run #machines.machineName.services.attrName`
+    # Add a package that can be build with `nix build #clusterName.vmName.package` or run with `nix run #clusterName.vmName.package`
+    # updatePackageFn =  clusterName -> vmName -> {attrName = derivation;}
+    vmPackages =
+      config: updatePackageFn:
+      attrsets.recursiveUpdate config {
+
+        packages =
+          # The deployment options are generated for all system  configurations (by using flake utils)
+          (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
+
+            packages = forEachAttrIn config.domain.clusters (
+              clusterName: clusterDefinition:
+
+              forEachAttrIn (clusterDefinition.vms) (
+                machineName: _machineDefinition: updatePackageFn clusterName machineName
+              )
+
+            );
+
+          })).packages;
+      };
+
+    # Add a package that can be build with `nix build #clusterName.nodeName.package` or run with `nix run #clusterName.nodeName.package`
+    # updatePackageFn =  clusterName -> nodeName -> {attrName = derivation;}
+    nodePackages =
+      config: updatePackageFn:
+      add.vmPackages (add.machinePackages config updatePackageFn) updatePackageFn;
+
+    # Add a package that can be build with `nix build #clusterName.nodeName.services.attrName` or run with `nix run #clusterName.nodeName.services.attrName`
     # updatePackageFn =  clusterName -> {attrName = derivation;}
     servicePackages =
       config: serviceName: updatePackageFn:
@@ -190,21 +220,36 @@ let
       config:
       {
         clusterName ? null, # if given, a "this" cluster is added that points to the cluster with the given name
-        machineName ? null, # if given, a "this" machine is added that points to the machine with the given name in the "this" cluster
+        nodeName ? null, # if given, a "this" machine is added that points to the machine with the given name in the "this" cluster
       }:
-      if builtins.isString machineName && !builtins.isString clusterName then
-        throw "trying to evaluate clusterConfig with machineName but no clusterName"
+      if builtins.isString nodeName && !builtins.isString clusterName then
+        throw "trying to evaluate clusterConfig with nodeName but no clusterName"
       else if !builtins.isString clusterName && clusterName != null then
         throw "trying to evaluate clusterConfig with clusterName that is not a string"
-      else if !builtins.isString machineName && machineName != null then
-        throw "trying to evaluate clusterConfig with machineName that is not a string"
+      else if !builtins.isString nodeName && nodeName != null then
+        throw "trying to evaluate clusterConfig with nodeName that is not a string"
       else
         let
-          # Add cluster information including "this" pointer for the current cluster and machine.
-          clusterConfigMachineResolved = attrsets.recursiveUpdate clusterConfigBase {
-            clusters.this = attrsets.recursiveUpdate clusterConfigBase.clusters."${clusterName}" {
-              machines.this = clusterConfigBase.clusters."${clusterName}".machines."${machineName}";
-            };
+          # Add cluster information including "this" pointer for the current cluster and machine/vm and node.
+          clusterConfigNodeResolved = attrsets.recursiveUpdate clusterConfigBase {
+            clusters.this =
+              let
+                thisCluster = clusterConfigBase.clusters."${clusterName}";
+                thisMachine = thisCluster.machines."${nodeName}" or null;
+                thisVm = thisCluster.vms."${nodeName}" or null;
+                thisNode =
+                  if thisMachine != null then
+                    thisMachine
+                  else if thisVm != null then
+                    thisVm
+                  else
+                    throw "nodeName '${nodeName}' not found in cluster '${clusterName}' during clusterConfig evaluation";
+              in
+              attrsets.recursiveUpdate thisCluster {
+                machines.this = thisMachine;
+                vms.this = thisVm;
+                nodes.this = thisNode;
+              };
           };
 
           clusterConfigClusterResolved = attrsets.recursiveUpdate clusterConfigBase {
@@ -232,15 +277,12 @@ let
                       roles = (
                         forEachAttrIn serviceDefinition.roles (
                           roleName: role:
-                          lists.forEach (filters.resolveMachineName role clusterName config) (
-                            machineName: machines."${machineName}"
-                          )
+                          lists.forEach (filters.resolveNodeName role clusterName config) (nodeName: nodes."${nodeName}")
                         )
                       );
-                      selectors = lists.forEach (
-                        # comment to force linebreak in formatter
-                        filters.resolveMachineName serviceDefinition.selectors clusterName config
-                      ) (machineName: machines."${machineName}");
+                      selectors = lists.forEach (filters.resolveNodeName serviceDefinition.selectors clusterName config) (
+                        nodeName: nodes."${nodeName}"
+                      );
                     }
 
                     (
@@ -254,7 +296,7 @@ let
 
                 );
 
-                machines = forEachAttrIn clusterDefinition.machines (
+                machines = forEachAttrIn (clusterDefinition.machines) (
                   machineName: machineDefinition:
 
                   attrsets.recursiveUpdate
@@ -267,7 +309,7 @@ let
                       config = machineDefinition.nixosConfiguration.config;
                     }
                     (
-                      builtins.removeAttrs machineDefinition [
+                      removeAttrs machineDefinition [
                         "nixosConfiguration"
                         "nixosModules"
                         "services"
@@ -277,17 +319,44 @@ let
 
                 );
 
+                vms = forEachAttrIn (clusterDefinition.vms) (
+                  vmName: vmDefinition:
+
+                  attrsets.recursiveUpdate
+                    {
+                      name = vmName;
+                      ips = get.ips vmDefinition.nixosConfiguration.config;
+                      fqdn = vmDefinition.nixosConfiguration.config.networking.fqdn;
+                      serviceAddresses = lists.forEach vmDefinition.serviceAddresses (entry: entry.tag);
+                      services = lib.attrNames vmDefinition.services;
+                      config = vmDefinition.nixosConfiguration.config;
+                    }
+                    (
+                      removeAttrs vmDefinition [
+                        "backend"
+                        "nixosConfiguration"
+                        "nixosModules"
+                        "services"
+                        "users"
+                      ]
+                    )
+
+                );
+
+                nodes = machines // vms;
+
               }
               // (removeAttrs clusterDefinition [
                 "machines"
                 "services"
                 "users"
+                "vms"
               ])
             );
           };
         in
         if clusterName != null then
-          if machineName != null then clusterConfigMachineResolved else clusterConfigClusterResolved
+          if nodeName != null then clusterConfigNodeResolved else clusterConfigClusterResolved
         else
           clusterConfigBase;
 
@@ -306,7 +375,75 @@ let
         )
       );
 
+    vms =
+      config:
+      attrsets.mergeAttrsList (
+        lists.flatten (
+          attrsets.attrValues (
+            forEachAttrIn config.domain.clusters (clusterName: clusterValue: clusterValue.vms or { })
+          )
+        )
+      );
+
+    nodes = config: get.machines config // get.vms config;
+
     clusterMachines = config: clusterName: config.domain.clusters."${clusterName}".machines;
+    clusterVms = config: clusterName: config.domain.clusters."${clusterName}".vms or { };
+    clusterNodes =
+      config: clusterName: get.clusterMachines config clusterName // get.clusterVms config clusterName;
+
+    vmHost =
+      hostFqdn: config:
+      let
+        suffix = config.domain.suffix; # e.g. "com"
+  
+        # Strip the domain suffix if the FQDN ends with it
+        withoutSuffix =
+          let
+            suffixParts = splitString "." suffix;
+            suffixLen = builtins.length suffixParts;
+            parts = splitString "." hostFqdn;
+            trailing = concatStringsSep "." (lists.drop (builtins.length parts - suffixLen) parts);
+          in
+          if trailing == suffix then
+            concatStringsSep "." (lists.take (builtins.length parts - suffixLen) parts)
+          else
+            hostFqdn; # assume suffix was not included
+  
+        parts = splitString "." withoutSuffix;
+  
+        # Try all split points from left to right:
+        #   split at i means: machine = parts[0..i], cluster = parts[i+1..n-1]
+        candidates = lib.imap0 (
+          i: _:
+          let
+            machine = concatStringsSep "." (lists.take (i + 1) parts);
+            cluster = concatStringsSep "." (lists.drop (i + 1) parts);
+          in
+          if
+            config.domain.clusters ? "${cluster}" && config.domain.clusters."${cluster}".machines ? "${machine}"
+          then
+            {
+              inherit cluster machine;
+              valid = true;
+            }
+          else
+            { valid = false; }
+        ) parts;
+  
+        matches = builtins.filter (c: c.valid) candidates;
+      in
+      if matches == [ ] then
+        throw ''
+          Error: VM references host '${hostFqdn}' but no matching
+          <machine>.<cluster> pair was found in the cluster config.
+  
+          Searched for any path: domain.clusters.<cluster>.machines.<machine>
+          Available clusters: ${toString (builtins.attrNames config.domain.clusters)}
+        ''
+      else
+        # Take the first match (there should only be one)
+        (builtins.head matches);
 
     interface = {
       ips =
@@ -330,9 +467,9 @@ let
       definitions =
         config:
         lists.forEach (get.interface.names config) (interfaceName: {
-          "${interfaceName}" =
-            builtins.removeAttrs (builtins.getAttr interfaceName config.networking.interfaces)
-              [ "subnetMask" ];
+          "${interfaceName}" = removeAttrs (builtins.getAttr interfaceName config.networking.interfaces) [
+            "subnetMask"
+          ];
         });
 
       names = config: attrsets.attrNames config.networking.interfaces;
@@ -389,15 +526,32 @@ let
         }
       );
 
-    # updateMachinesFn = clusterName -> machineName -> machineConfig -> machineConfig
-    machines =
-      config: updateMachinesFn:
+    # updateNodeFn = clusterName -> nodeName -> nodeConfig -> nodeConfig
+    nodes =
+      config: updateNodeFn:
       update.clusters config (
         clusterName: clusterConfig: {
           machines = (
             forEachAttrIn clusterConfig.machines (
-              machineName: machineConfig:
-              machineConfig // (updateMachinesFn clusterName machineName machineConfig)
+              machineName: machineConfig: machineConfig // (updateNodeFn clusterName machineName machineConfig)
+            )
+          );
+          vms = (
+            forEachAttrIn clusterConfig.vms (
+              vmName: vmConfig: vmConfig // (updateNodeFn clusterName vmName vmConfig)
+            )
+          );
+        }
+      );
+
+    # updateNodeFn = clusterName -> nodeName -> nodeConfig -> nodeConfig
+    machines =
+      config: updateNodeFn:
+      update.clusters config (
+        clusterName: clusterConfig: {
+          machines = (
+            forEachAttrIn clusterConfig.machines (
+              machineName: machineConfig: machineConfig // (updateNodeFn clusterName machineName machineConfig)
             )
           );
         }
@@ -457,9 +611,6 @@ let
   machineType =
     {
       userType ? {
-        options = { };
-      },
-      virtualizationType ? {
         options = { };
       },
     }:

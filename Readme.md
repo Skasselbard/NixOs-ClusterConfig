@@ -13,6 +13,7 @@ The cluster configuration is evaluated through a multi-stage pipeline and produc
 
 - **Cluster-wide machine configuration** — define services, and users once and have them applied to all (or selected) machines
 - **Cluster services** — NixOS modules that are distributed to machines based on filter expressions, with role-based configuration
+- **Virtual Machines** — define VMs alongside machines at the cluster level; VMs are injected into host configurations and participate in all cluster features (services, users, scripts)
 - **Automated deployment scripts** — generated `nix build` and `nix run` commands for ISO creation, initial setup with [nixos-anywhere](https://github.com/nix-community/nixos-anywhere), and updates with [colmena](https://github.com/zhaofengli/colmena) or `nixos-rebuild`
 - **Extensible with modules** — add new cluster-level services, and deployment scripts using the NixOS module system
 
@@ -33,9 +34,10 @@ Larger deployments are still possible but massive scaling is not considered in t
 | --- | --- |
 | [Getting Started](doc/GettingStarted.md) | Prerequisites, first cluster setup, and deployment workflow |
 | [Concepts](doc/Concepts.md) | Core concepts: domain hierarchy, filters, services, and the evaluation pipeline |
-| [Cluster Services](doc/ClusterServices.md) | How to use and write cluster services |
-| [Extending ClusterConfig](doc/Extensions.md) | How to write cluster modules and extend the configuration |
 | [Contexts](doc/Contexts.md) | Build, Machine, and Scripting contexts explained |
+| [Cluster Services](doc/ClusterServices.md) | How to use and write cluster services |
+| [Virtual Machines](doc/VirtualMachines.md) | Defining and managing VMs with the microvm.nix backend |
+| [Extending ClusterConfig](doc/Extensions.md) | How to write cluster modules and extend the configuration |
 | [Command Reference](doc/CommandReference.md) | All generated `nix build` and `nix run` commands |
 | [Examples](examples/readme.md) | Walkthrough examples from a minimal cluster to the different built in cluster services |
 
@@ -119,6 +121,7 @@ The flake provides these cluster config modules under `clusterConfigFlake.cluste
 | `nixos-anywhere` | Adds `create` and `format` deployment scripts per machine |
 | `colmena` | Generates a colmena hive definition and adds the `colmena` app to the flake |
 | `simple-dns` | Populates `/etc/hosts` on selected machines with static IPs from the cluster |
+| `vms` | First-class virtual machine definitions; VMs are injected into their host's NixOS configuration using [microvm.nix](https://github.com/microvm-nix/microvm.nix) |
 | `secret-service` | Encrypted secret deployment with per-user, per-machine secret definitions |
 | `certificates` | TLS certificate generation scripts |
 | `kubernetes` | Kubernetes control plane as systemd units (experimental) |

@@ -39,8 +39,28 @@ let
     machines = mkOption {
       description = ''
         A list of machines that are part of the cluster with their cluster config level configuration.
-        A machine called "this" will be included to the list of the "this" cluster.
+        A machine called "this" will be included to the list of the "this" cluster if the current node is a machine.
         This will point to the current machine that is evaluated by Cluster Config.
+      '';
+      type = attrsOf (submodule machineType);
+      default = { };
+    };
+
+    vms = mkOption {
+      description = ''
+        A list of vms that are part of the cluster with their cluster config level configuration.
+        A vm called "this" will be included to the list of the "this" cluster if the current node is a vm.
+        This will point to the current vm that is evaluated by Cluster Config.
+      '';
+      type = attrsOf (submodule machineType);
+      default = { };
+    };
+
+    nodes = mkOption {
+      description = ''
+        A list of nodes (machine or vm) that are part of the cluster with their cluster config level configuration.
+        A node called "this" will be included to the list of the "this" cluster.
+        This will point to the current node that is evaluated by Cluster Config.
       '';
       type = attrsOf (submodule machineType);
       default = { };
@@ -79,7 +99,7 @@ let
     );
   };
 
-  machineType.options = config.extensions.clusterMachine.options // {
+  machineType.options = config.extensions.nodes.options // {
 
     config = mkOption {
       description = ''

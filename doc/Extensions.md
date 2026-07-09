@@ -64,40 +64,42 @@ Add options, late-evaluated config, and packages at the cluster level.
 }
 ```
 
-### 2. Machine-Level Extensions (`extensions.clusterMachine`)
+### 2. Node-Level Extensions (`extensions.clusterNode`)
 
-Add options, NixOS modules, and packages at the per-machine level.
+Add options, NixOS modules, and packages at the per-node level (applies to **both machines and VMs**).
 
 ```nix
 {
-  config.extensions.clusterMachine = {
+  config.extensions.clusterNode = {
 
-    # New options available under domain.clusters.<name>.machines.<name>
-    options.myMachineOption = lib.mkOption {
+    # New options available under domain.clusters.<name>.<nodes>.machines.<name> AND domain.clusters.<name>.<nodes>.vms.<name>
+    options.myNodeOption = lib.mkOption {
       type = lib.types.str;
       default = "";
     };
 
-    # NixOS modules added to EVERY machine's configuration
+    # NixOS modules added to EVERY node's configuration (machines + VMs)
     nixosModules = [
-      { environment.systemPackages = [ pkgs.vim ]; }
+      { environment.systemPackages = [ pkgs.htop ]; }
     ];
 
-    # Config values set after final machine evaluation
+    # Config values set after final node evaluation
     late.config.myValue = { clusterConfig }:
-      clusterConfig.clusters.this.machines.this.fqdn;
+      clusterConfig.clusters.this.nodes.this.fqdn;
 
-    # Packages available as: nix run .#<clusterName>.<machineName>.<packageName>
-    packages.myMachineScript = { clusterConfig }:
+    # Packages available as: nix run .#<clusterName>.<nodeName>.<packageName>
+    packages.myNodeScript = { clusterConfig }:
       let
-        machineName = clusterConfig.clusters.this.machines.this.name;
+        nodeName = clusterConfig.clusters.this.nodes.this.name;
       in
-      pkgs.writeShellScriptBin "info-${machineName}" ''
-        echo "Machine: ${machineName}"
+      pkgs.writeShellScriptBin "info-${nodeName}" ''
+        echo "Node: ${nodeName}"
       '';
   };
 }
 ```
+
+> **Tip:** Use `extensions.clusterNode` when you want options/modules/packages that apply to both machines and VMs (e.g., monitoring agents, logging, DNS). Use `extensions.clusterMachine` when the extension only makes sense for physical/standalone machines (e.g., hardware configuration scripts, ISO building).
 
 ### 3. Service Definitions (`extensions.clusterServices`)
 
@@ -146,11 +148,15 @@ Many extension closures (packages, late config) receive a `{ clusterConfig }` ar
 - `clusterConfig.clusters.<name>.name` — cluster name
 - `clusterConfig.clusters.<name>.fqdn` — cluster FQDN
 - `clusterConfig.clusters.<name>.machines.<name>` — machine info (name, fqdn, ips, config, services, etc.)
+- `clusterConfig.clusters.<name>.vms.<name>` — VM info (name, fqdn, ips, config, services, host, backend, etc.)
+- `clusterConfig.clusters.<name>.nodes.<name>` — unified node info — contains **both** machines and VMs
 - `clusterConfig.clusters.<name>.services.<name>` — service info with resolved selectors and roles
-- `clusterConfig.clusters.this` — points to the current cluster (in machine/service contexts)
+- `clusterConfig.clusters.this` — points to the current cluster (in node/service contexts)
 - `clusterConfig.clusters.this.machines.this` — points to the current machine (in machine contexts)
+- `clusterConfig.clusters.this.vms.this` — points to the current VM (in VM contexts)
+- `clusterConfig.clusters.this.nodes.this` — points to the current node — works in **both** machine and VM contexts
 
-The `this` pointers are automatically injected when the closure is evaluated for a specific machine or cluster context.
+The `this` pointers are automatically injected when the closure is evaluated for a specific node or cluster context.
 
 ## Helper Library (`clusterlib`)
 
@@ -159,17 +165,22 @@ ClusterConfig provides helper functions through `clusterlib`:
 | Function | Description |
 | --- | --- |
 | `forEachAttrIn attrSet fn` | Maps a function over an attribute set. Like `mapAttrs` but with reversed attributes for better readability |
-| `add.nixosModule config fn` | Adds NixOS modules to each machine via a function `clusterName -> machineName -> machineConfig -> modules` |
-| `add.nixosConfigurations config` | Evaluates `nixosModules` and adds `nixosConfiguration` to each machine |
+| `add.nixosModule config fn` | Adds NixOS modules to each node via a function `clusterName -> nodeName -> nodeConfig -> modules` |
+| `add.nixosConfigurations config` | Evaluates `nixosModules` and adds `nixosConfiguration` to each node |
 | `add.machinePackages config fn` | Adds flake packages to each machine |
+| `add.vmPackages config fn` | Adds flake packages to each VM |
+| `add.nodePackages config fn` | Adds flake packages to each node (machines + VMs) |
 | `add.clusterPackage config fn` | Adds flake packages at the cluster level |
 | `add.servicePackages config serviceName fn` | Adds flake packages for a service |
 | `update.machines config fn` | Updates machine attributes via `clusterName -> machineName -> machineConfig -> attrs` |
+| `update.vms config fn` | Updates VM attributes |
+| `update.nodes config fn` | Updates both machine and VM attributes simultaneously |
 | `update.clusters config fn` | Updates cluster attributes |
 | `update.services config fn` | Updates service attributes |
-| `eval.clusterConfig config { clusterName; machineName; }` | Builds the clusterConfig representation with `this` pointers |
 | `get.machines config` | Returns all machines across all clusters |
-| `get.ips machineNixosConfig` | Extracts static IPs from a NixOS config |
+| `get.vms config` | Returns all VMs across all clusters |
+| `get.nodes config` | Returns all nodes (machines + VMs) across all clusters |
+| `get.ips nodeNixosConfig` | Extracts static IPs from a NixOS config |
 <!-- | `ip.tag`, `ip.openTcp`, `ip.staticIpV4OpenTcp` | Helpers for defining service address entries | -->
 
 ## Important Limitations
@@ -180,7 +191,7 @@ ClusterConfig provides helper functions through `clusterlib`:
 
 ## Example: A Complete Module
 
-Here is a module that adds a `monitoring.enable` option to each machine and generates a script to check the status of all machines:
+Here is a module that adds a `monitoring.enable` option to each node (machine or VM) and generates a script to check the status of all nodes:
 
 ```nix
 # monitoring-module.nix
@@ -188,19 +199,19 @@ Here is a module that adds a `monitoring.enable` option to each machine and gene
 {
   config.extensions = {
 
-    clusterMachine.options.monitoring.enable = lib.mkOption {
+    clusterNode.options.monitoring.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Whether to enable monitoring on this machine.";
+      description = "Whether to enable monitoring on this node.";
     };
 
     cluster.packages.check-status = { clusterConfig }:
       let
-        machines = lib.attrValues clusterConfig.clusters.this.machines;
-        checks = map (m: ''
-          echo "Checking ${m.name} (${m.fqdn})..."
-          ssh root@${(builtins.head (builtins.attrValues m.ips))} "echo OK" 2>/dev/null || echo "  FAILED"
-        '') machines;
+        nodes = lib.attrValues clusterConfig.clusters.this.nodes;
+        checks = map (n: ''
+          echo "Checking ${n.name} (${n.fqdn})..."
+          ssh root@${(builtins.head (builtins.attrValues n.ips))} "echo OK" 2>/dev/null || echo "  FAILED"
+        '') nodes;
       in
       pkgs.writeShellScriptBin "check-status" (lib.concatStringsSep "\n" checks);
   };

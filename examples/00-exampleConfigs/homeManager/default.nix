@@ -10,7 +10,7 @@
   _class = "homeManager";
 
   # Must match or be older than your NixOS system.stateVersion.
-  home.stateVersion = "24.05";
+  home.stateVersion = "26.05";
 
   # Disable Home Manager's self-management — NixOS handles activation.
   programs.home-manager.enable = false;

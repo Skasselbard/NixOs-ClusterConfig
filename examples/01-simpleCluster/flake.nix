@@ -4,7 +4,7 @@
     # Import nixpkgs - the NixOS package collection.
     # This defines the base set of packages and NixOS modules available.
     # Use the same major version across all inputs to avoid compatibility issues.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # Import the ClusterConfig flake.
     # This is the framework that turns your cluster definition into
@@ -19,7 +19,7 @@
     # Disko lets you define partition layouts in Nix and generates format scripts.
     # Required if you set `deployment.formatScript = "disko"` on any machine.
     disko = {
-      url = "github:nix-community/disko/v1.12.0";
+      url = "github:nix-community/disko/v1.13.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -108,11 +108,11 @@
                 dns = {
                   # The "hosts" role: all machines matching these filters contribute
                   # their static IPs to the DNS hosts file.
-                  roles.hosts = [ filters.clusterMachines ];
+                  roles.hosts = [ filters.clusterNodes ];
 
                   # Selectors: machines matching these filters get the DNS service
                   # NixOS module injected (i.e., they receive the /etc/hosts entries).
-                  selectors = [ filters.clusterMachines ];
+                  selectors = [ filters.clusterNodes ];
                 };
               };
 

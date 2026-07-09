@@ -18,11 +18,11 @@ let
     filter:
     asserts.assertMsg (strings.hasPrefix "domain" filter) "Filter '${filter}' does not start with 'domain'. Filters need to be a path in the clusterConfig in the form like 'domain.clusterName.machineName'";
 
-  # Copies all services to the cluster machine attributes for machines in the 'selectors' of the service.
-  clusterServiceToMachineServices =
+  # Copies all services to the cluster node attributes for nodes in the 'selectors' of the service.
+  clusterServiceToNodeServices =
     config:
-    update.machines config (
-      clusterName: machineName: machineConfig:
+    update.nodes config (
+      clusterName: nodeName: nodeConfig:
       let
 
         services = config.domain.clusters."${clusterName}".services;
@@ -36,11 +36,12 @@ let
           (lists.any (
             filter:
             assert filterFormatIsOk filter;
-            filter == "domain.clusters.${clusterName}.machines.${machineName}"
+            filter == "domain.clusters.${clusterName}.machines.${nodeName}"
+            || filter == "domain.clusters.${clusterName}.vms.${nodeName}"
           ) selectors)
         ) services;
 
-        # resolve the filters in the selectors and roles to the machine names
+        # resolve the filters in the selectors and roles to the node names
         resolvedServices = forEachAttrIn filteredServices (
           serviceName: serviceDefinition:
           serviceDefinition
@@ -48,10 +49,10 @@ let
             name = serviceName;
             roles = (
               forEachAttrIn serviceDefinition.roles (
-                roleName: role: (filters.resolveMachineName role clusterName config)
+                roleName: role: (filters.resolveNodeName role clusterName config)
               )
             );
-            selectors = filters.resolveMachineName serviceDefinition.selectors clusterName config;
+            selectors = filters.resolveNoedName serviceDefinition.selectors clusterName config;
           }
         );
 
@@ -62,12 +63,12 @@ let
     );
 
   # Takes all services defined on a __machine__ level, and adds the associated NixOs modules to the machines nixosModules (used to build the machine).
-  machineServiceToNixOsConfiguration =
+  nodeServiceToNixOsConfiguration =
     config:
     add.nixosModule config (
-      _clusterName: _machineName: machineConfig:
+      _clusterName: _nodeName: nodeConfig:
       let
-        serviceModules = forEachAttrIn machineConfig.services (
+        serviceModules = forEachAttrIn nodeConfig.services (
           _serviceName: serviceDefinition: [
             serviceDefinition.definition
             serviceDefinition.extraConfig
@@ -80,8 +81,8 @@ let
 in
 {
   config.extensions.transformations = {
-    clusterTransformations = [ clusterServiceToMachineServices ];
-    moduleTransformations = [ machineServiceToNixOsConfiguration ];
+    clusterTransformations = [ clusterServiceToNodeServices ];
+    moduleTransformations = [ nodeServiceToNixOsConfiguration ];
   };
 
 }

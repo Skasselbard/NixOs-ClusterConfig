@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # Import Home Manager (override ClusterConfig's bundled version)
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.11";
+      url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -170,6 +170,7 @@
                   nixosModules = [
                     machines.vm0
                     inputs.disko.nixosModules.default
+                    ../00-exampleConfigs/machines/hm-bug-workaround.nix
                     # The "testService" user referenced in secrets above must exist.
                     # We define it inline here as a simple system user.
                     {
@@ -231,6 +232,7 @@
                   nixosModules = [
                     machines.vm1
                     inputs.disko.nixosModules.default
+                    ../00-exampleConfigs/machines/hm-bug-workaround.nix
                   ];
                 };
 
@@ -244,6 +246,7 @@
                   nixosModules = [
                     machines.vm2
                     inputs.disko.nixosModules.default
+                    ../00-exampleConfigs/machines/hm-bug-workaround.nix
                   ];
                 };
 

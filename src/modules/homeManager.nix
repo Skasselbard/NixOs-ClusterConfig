@@ -35,7 +35,7 @@ let
       However, the form of home manager modules is identical to NixOs modules.
 
       This list will not be evaluated by the cluster configuration.
-      It will be directly forwarded to home manager on the corresponding machines in the cluster.
+      It will be directly forwarded to home manager on the corresponding nodes in the cluster.
     '';
     type = listOf raw;
     default = [ ];
@@ -45,24 +45,22 @@ let
   homeManagerAnnotation =
     config:
 
-    # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
+    # Add NixOs modules inferred by the cluster config to each nodes NixOs modules
     add.nixosModule config (
-      clusterName: machineName: machineConfig:
+      clusterName: nodeName: nodeConfig:
       let
 
         clusterUsers = config.domain.clusters."${clusterName}".users;
-        machineUsers = machineConfig.users;
+        nodeUsers = nodeConfig.users;
 
         clusterHomeManagerModules = forEachAttrIn clusterUsers (
           n: userConfig: userConfig.homeManagerModules
         );
-        machineHomeManagerModules = forEachAttrIn machineUsers (
-          n: userConfig: userConfig.homeManagerModules
-        );
+        nodeHomeManagerModules = forEachAttrIn nodeUsers (n: userConfig: userConfig.homeManagerModules);
 
         mergedHomeManagerModules = lists.flatten [
           (attrsets.attrValues clusterHomeManagerModules)
-          (attrsets.attrValues machineHomeManagerModules)
+          (attrsets.attrValues nodeHomeManagerModules)
         ];
         activateHomeManager = mergedHomeManagerModules != [ ];
 
@@ -79,16 +77,15 @@ let
 
               # Use a set of all users to acces the homeManager module list for each user.
               # Ignore the actual definition for the user and access the module list directly.
-              home-manager.users = forEachAttrIn (clusterUsers // machineUsers) (
+              home-manager.users = forEachAttrIn (clusterUsers // nodeUsers) (
                 user: _ignore:
                 let
                   clusterModules =
                     if clusterHomeManagerModules ? "${user}" then clusterHomeManagerModules."${user}" else [ ];
-                  machineModules =
-                    if machineHomeManagerModules ? "${user}" then machineHomeManagerModules."${user}" else [ ];
+                  nodeModules = if nodeHomeManagerModules ? "${user}" then nodeHomeManagerModules."${user}" else [ ];
                 in
                 {
-                  imports = (clusterModules ++ machineModules);
+                  imports = (clusterModules ++ nodeModules);
                 }
               );
             }

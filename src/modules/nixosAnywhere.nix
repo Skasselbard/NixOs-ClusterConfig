@@ -18,21 +18,21 @@ let # imports
   getFormatScript =
     { clusterConfig }:
     let
-      this = clusterConfig.clusters.this.machines.this;
+      this = clusterConfig.clusters.this.nodes.this;
       deploymentConfig = this.deployment;
-      machineConfig = this.config;
+      nodeConfig = this.config;
     in
     if deploymentConfig.formatScript == null then
       (pkgs.writeScript "formatScript" ''echo "skip formatting"'')
     else if deploymentConfig.formatScript == "disko" then
-      (pkgs.writeScript "formatScript" machineConfig.disko.devices._disko)
+      (pkgs.writeScript "formatScript" nodeConfig.disko.devices._disko)
     else
       deploymentConfig.formatScript;
 in
 {
   config.extensions = {
 
-    clusterMachine = {
+    nodes = {
 
       options.deployment.formatScript = mkOption {
         description = ''
@@ -54,33 +54,33 @@ in
         create =
           { clusterConfig }:
           let
-            this = clusterConfig.clusters.this.machines.this;
-            machineName = this.name;
+            this = clusterConfig.clusters.this.nodes.this;
+            nodeName = this.name;
             deploymentConfig = this.deployment;
             nixosConfig = this.config.system.build.toplevel.outPath;
             formatScript = getFormatScript { inherit clusterConfig; };
           in
-          pkgs.writeShellScriptBin "create-${machineName}" ''
+          pkgs.writeShellScriptBin "create-${nodeName}" ''
             ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${deploymentConfig.targetUser}@${deploymentConfig.targetHost}
           '';
 
         format =
           { clusterConfig }:
           let
-            this = clusterConfig.clusters.this.machines.this;
-            machineName = this.name;
+            this = clusterConfig.clusters.this.nodes.this;
+            nodeName = this.name;
             formatScript = getFormatScript { inherit clusterConfig; };
             ip = this.deployment.targetHost;
             sshArgs = [ "-t" ];
           in
           if this.deployment.formatScript == null then
-            pkgs.writeShellScriptBin "format-${machineName}" "echo no format script configured"
+            pkgs.writeShellScriptBin "format-${nodeName}" "echo no format script configured"
           else
             pkgs.writeShellScriptBin "deploy" ''
-              echo "Run format script on host ${machineName}?"
+              echo "Run format script on host ${nodeName}?"
               echo "WARNING: disk content will be erased if you select yes!"
               [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit
-              echo "Formatting ${machineName}."
+              echo "Formatting ${nodeName}."
               script=$(${pkgs.nix}/bin/nix build ${formatScript} --print-out-paths)
 
               ${pkgs.nix}/bin/nix copy --to "ssh://root@${ip}" "$script"

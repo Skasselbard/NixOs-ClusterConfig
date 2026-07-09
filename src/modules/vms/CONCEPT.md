@@ -1,5 +1,8 @@
 # VM Module for NixOsClusterConfig — Concept Document
 
+> **⚠️ Outdated.** This document captures the original design thinking and planning.
+> The implementation may differ. For accurate, up-to-date documentation, see [`doc/VirtualMachines.md`](../../doc/VirtualMachines.md).
+
 ## 1. Motivation & Vision
 
 NixOsClusterConfig today models **physical (or standalone virtual) NixOS machines**. A machine has a `nixosConfiguration`, deployment scripts (`iso`, `create`, `deploy`), and appears in the colmena hive. This works well for machines that exist independently on the network.
@@ -933,16 +936,14 @@ clusterConfig = clusterConfigFlake.lib.buildCluster {
 
 ```
 src/modules/vms/
-├── CONCEPT.md                ← This document
+├── CONCEPT.md                ← This document (outdated)
 ├── clusterModule.nix         ← Top-level cluster module (entry point)
 ├── options.nix               ← vmType, backendType option definitions
-├── lib.nix                   ← resolveVmHost, mapBackendToMicrovmConfig, etc.
-├── microvm/
-│   ├── backend.nix           ← microvm submodule options (imports from microvm flake)
-│   ├── transformation.nix    ← Injects VM config into host; auto host.enable
-│   ├── validation.nix        ← NixOS module that errors on disallowed option overrides
-│   └── convenience.nix       ← shareNixStore → shares translation
+└── microvm/
+    └── transformation.nix    ← Injects VM config into host; auto host.enable
 ```
+
+For the actual module structure, see [`doc/VirtualMachines.md`](../../doc/VirtualMachines.md).
 
 ## 12. Flake Registration
 
@@ -954,7 +955,7 @@ inputs.microvm = {
   inputs.nixpkgs.follows = "nixpkgs";
 };
 
-clusterConfigModules.microvm-vms = {
+clusterConfigModules.vms = {
   imports = [ "${self}/src/modules/vms/clusterModule.nix" ];
 };
 ```

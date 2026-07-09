@@ -28,15 +28,15 @@
 ## Scripts
 - create etcd certificates
   - certificates are security relevant, use the script at your own risk
-  - run with ``nix run .#cluster.<clusterName>.kubernetes.createEtcdCertificates``
+  - run with ``nix run .#<clusterName>.kubernetes.createEtcdCertificates``
 - create a Certificate Authority for kubernetes
-  - ``nix run .#cluster.example.kubernetes.createK8sCA``
+  - ``nix run .#<clusterName>.kubernetes.createK8sCA``
 - create certificates for all configured kubernetes roles
-  - ``.#cluster.example.kubernetes.createK8sCerts``
+  - ``nix run .#<clusterName>.kubernetes.createK8sCerts``
 - create a service account for kubernetes
-  - ``nix run .#cluster.example.kubernetes.createServiceAccount``
+  - ``nix run .#<clusterName>.kubernetes.createServiceAccount``
 - create kube configs for administration
-  - ``.#cluster.example.kubernetes.createKubeConfigs``
+  - ``nix run .#<clusterName>.kubernetes.createKubeConfigs``
 - TODO: script to generate all of the above at once
 
 ## Service Roles

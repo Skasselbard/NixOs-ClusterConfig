@@ -2,14 +2,14 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # Import Home Manager.
     # By declaring it here and using `follows`, we override the version
     # bundled with ClusterConfig to ensure all inputs use the same nixpkgs.
     # The Home Manager version should match your nixpkgs channel (25.05 → release-25.05).
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -24,7 +24,7 @@
 
     # Import disko for declarative disk partitioning
     disko = {
-      url = "github:nix-community/disko/v1.12.0";
+      url = "github:nix-community/disko/v1.13.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -132,6 +132,7 @@
                   nixosModules = [
                     machines.vm0
                     inputs.disko.nixosModules.default
+                    ../00-exampleConfigs/machines/hm-bug-workaround.nix
                   ];
                 };
 
@@ -143,6 +144,7 @@
                   nixosModules = [
                     machines.vm1
                     inputs.disko.nixosModules.default
+                    ../00-exampleConfigs/machines/hm-bug-workaround.nix
                   ];
                 };
 
@@ -154,6 +156,7 @@
                   nixosModules = [
                     machines.vm2
                     inputs.disko.nixosModules.default
+                    ../00-exampleConfigs/machines/hm-bug-workaround.nix
                   ];
                 };
 

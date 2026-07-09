@@ -40,26 +40,26 @@ let # imports
     else
       throw "ERROR: Value '${toString node}' is not a function expecting { clusterConfig, ... }.";
 
-  # Add NixOs modules inferred by the cluster config to each Machines NixOs modules
+  # Add NixOs modules inferred by the cluster config to each nodes NixOs modules
   # This includes:
-  # - HostNames: networking.hostname is set to the name of the machine definition
+  # - HostNames: networking.hostname is set to the name of the node definition
   # - DomainName: networking.domain is set to clusterName.domainSuffix
-  # - HostPlatform: pkgs.hostPlatform is set to the configured system in the machine configuration
-  # - UserDefinitions: users.users is set with information from cluster-users and machine-users
+  # - HostPlatform: pkgs.hostPlatform is set to the configured system in the node configuration
+  # - UserDefinitions: users.users is set with information from cluster-users and node-users
   clusterTransformation =
     config:
 
     add.nixosModule config (
-      clusterName: machineName: machineConfig:
+      clusterName: nodeName: nodeConfig:
       let
 
         clusterUsers = config.domain.clusters."${clusterName}".users;
-        machineUsers = machineConfig.users;
+        nodeUsers = nodeConfig.users;
 
       in
       [
         {
-          # make clusterlib available for machine and service configs
+          # make clusterlib available for node and service configs
           _module.args = {
             inherit clusterlib;
           };
@@ -71,10 +71,10 @@ let # imports
         }
 
         {
-          # machine config
-          networking.hostName = machineName;
+          # node config
+          networking.hostName = nodeName;
           networking.domain = clusterName + "." + config.domain.suffix;
-          nixpkgs.hostPlatform = mkDefault machineConfig.system;
+          nixpkgs.hostPlatform = mkDefault nodeConfig.system;
         }
 
         # make different modules for cluster and user definitions so that the NixOs
@@ -87,8 +87,8 @@ let # imports
         }
 
         {
-          # machine users
-          users.users = forEachAttrIn machineUsers (n: userConfig: userConfig.systemConfig);
+          # node users
+          users.users = forEachAttrIn nodeUsers (n: userConfig: userConfig.systemConfig);
         }
 
       ]
@@ -98,10 +98,10 @@ let # imports
     config:
 
     add.nixosModule config (
-      clusterName: machineName: machineConfig: [
+      clusterName: nodeName: nodeConfig: [
         {
-          # make the cluster config available in in the ``config`` attribute during machine evaluation
-          clusterConfig = (eval.clusterConfig config { inherit clusterName machineName; });
+          # make the cluster config available in in the ``config`` attribute during node evaluation
+          clusterConfig = (eval.clusterConfig config { inherit clusterName nodeName; });
         }
       ]
     );
@@ -139,16 +139,16 @@ let # imports
         )
       ))
 
-      (update.machines config (
-        clusterName: machineName: machineConfig:
+      (update.nodes config (
+        clusterName: nodeName: nodeConfig:
 
-        forEachAttrIn config.extensions.clusterMachine.late.config (
+        forEachAttrIn config.extensions.nodes.late.config (
           configName: configClosure:
 
           # call the closure with the evaluated cluster config representation
           callLeafFunctions {
             node = configClosure;
-            clusterConfig = (eval.clusterConfig config { inherit clusterName machineName; });
+            clusterConfig = (eval.clusterConfig config { inherit clusterName nodeName; });
           }
         )
       ))
@@ -177,18 +177,18 @@ let # imports
           )
         ))
 
-        # Add a package for each machine to the flake output
-        (add.machinePackages config (
-          clusterName: machineName:
+        # Add a package for each node to the flake output
+        (add.nodePackages config (
+          clusterName: nodeName:
 
           # For each script a package is added
-          forEachAttrIn config.extensions.clusterMachine.packages (
+          forEachAttrIn config.extensions.nodes.packages (
             scriptName: scriptClosure:
 
             # call the script closure with the evaluated cluster config representation
             callLeafFunctions {
               node = scriptClosure;
-              clusterConfig = (eval.clusterConfig config { inherit clusterName machineName; });
+              clusterConfig = (eval.clusterConfig config { inherit clusterName nodeName; });
             }
 
           )
@@ -222,7 +222,7 @@ let # imports
     config:
     add.nixosModule config (
       _: _: _:
-      config.extensions.clusterMachine.nixosModules
+      config.extensions.nodes.nixosModules
     );
 
 in

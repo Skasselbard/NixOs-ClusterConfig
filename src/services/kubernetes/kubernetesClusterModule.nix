@@ -23,7 +23,7 @@ let
 
 in
 {
-  config.extensions.clusterMachine.nixosModules = [
+  config.extensions.nodes.nixosModules = [
     {
       _module.args = {
         inherit # flake inputs needed for the kubeLib of the kubernetesService
@@ -199,7 +199,7 @@ in
 
   };
 
-  config.extensions.clusterMachine.options.kubernetes = {
+  config.extensions.nodes.options.kubernetes = {
 
     certificates = certOptions.machineOptions;
 

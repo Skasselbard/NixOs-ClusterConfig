@@ -2,11 +2,11 @@
   inputs = {
 
     # Import nixpkgs
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     # HomeManager to overwrite the version used in cluster-config
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.11";
+      url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -22,7 +22,7 @@
     # Import disko to configure partitioning
     # If you want to use disko for formatting or device definitions, this option is required
     disko = {
-      url = "github:nix-community/disko/v1.12.0";
+      url = "github:nix-community/disko/v1.13.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -283,6 +283,7 @@
                       machines.vm0
                       # since the vms use disko for mounting, we still need to include the NixOs module
                       inputs.disko.nixosModules.default
+                      ../00-exampleConfigs/machines/hm-bug-workaround.nix
                     ];
                   };
 
@@ -314,6 +315,7 @@
                     nixosModules = [
                       machines.vm1
                       inputs.disko.nixosModules.default
+                      ../00-exampleConfigs/machines/hm-bug-workaround.nix
                     ];
                   };
 
@@ -341,6 +343,7 @@
                     nixosModules = [
                       machines.vm2
                       inputs.disko.nixosModules.default
+                      ../00-exampleConfigs/machines/hm-bug-workaround.nix
                     ];
                   };
 
