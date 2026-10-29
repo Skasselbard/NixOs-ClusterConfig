@@ -1,6 +1,8 @@
 # Secret Service KeePass CLI
 
-Small helper used by the secret-service deployment backend to read secrets from a local KeePass database.
+> **Legacy note:** the target sops-nix design uses KeePass only as age-key escrow. It does not use this helper as a data backend. The helper remains for reference and for the old implementation until the migration removes it. For the new design, `keepassxc-cli` is sufficient because only a small number of age keys need to be extracted.
+
+Small helper used by the previous secret-service deployment backend to read secrets from a local KeePass database.
 
 ## Features
 
