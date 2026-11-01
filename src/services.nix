@@ -52,7 +52,7 @@ let
                 roleName: role: (filters.resolveNodeName role clusterName config)
               )
             );
-            selectors = filters.resolveNoedName serviceDefinition.selectors clusterName config;
+            selectors = filters.resolveNodeName serviceDefinition.selectors clusterName config;
           }
         );
 

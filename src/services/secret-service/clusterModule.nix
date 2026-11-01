@@ -1,590 +1,575 @@
 {
+  config,
   pkgs,
   lib,
+  flakeInputs,
+  clusterlib,
+  filters,
   ...
 }:
+
 let
+  inherit (lib)
+    mkOption
+    types
+    ;
 
-  attrsOf = lib.types.attrsOf;
-  enum = lib.types.enum;
-  nullOr = lib.types.nullOr;
-  rawType = lib.types.raw;
-  str = lib.types.str;
-  path = lib.types.path;
-  oneOf = lib.types.oneOf;
-  submodule = lib.types.submodule;
+  secretLib = import ./lib.nix { inherit lib pkgs; };
+  scripts = import ./scripts.nix {
+    inherit lib pkgs secretLib;
+  };
 
-  mkOption = lib.mkOption;
-
-  attrNames = lib.attrNames;
-  concatMap = lib.concatMap;
-  concatStringsSep = lib.concatStringsSep;
-  escapeShellArg = lib.escapeShellArg;
-  filterAttrs = lib.filterAttrs;
-  mapAttrs = lib.mapAttrs;
-  optionalString = lib.optionalString;
-  optionals = lib.optionals;
-  unique = lib.unique;
-
-  keepassCli = pkgs.rustPlatform.buildRustPackage {
-    pname = "secret-service-keepass-cli";
-    version = "0.1.0";
-    src = ./keepass-cli;
-    # Workaround until keepass 4.x databases are fully supported by keepass-rs
-    cargoLock = {
-      lockFile = ./keepass-cli/Cargo.lock;
-      outputHashes = {
-        "keepass-0.0.0-placeholder-version" = "sha256-N7ZNLgNCUwQxpHurZLqw+GR0SF2hFnjAnwrq17lvUn0=";
+  keySourceType = types.submodule {
+    options = {
+      type = mkOption {
+        type = types.enum [
+          "age"
+          "keepass"
+          "ssh"
+          "native"
+        ];
+        default = "native";
+        description = "How the node obtains its sops identity.";
+      };
+      targetKeyFile = mkOption {
+        type = types.str;
+        default = "/var/lib/sops-nix/key.txt";
+        description = "Target-side age key file for managed age and Keepass sources.";
+      };
+      age.sourceKeyFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Build-host age private key used to provision type age. Kept as a string so it is not copied into the Nix store.";
+      };
+      keepass.databasePath = mkOption {
+        type = types.nullOr (types.either types.str types.path);
+        default = null;
+        description = "KeePass database used to escrow the age key.";
+      };
+      keepass.entry = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "KeePass entry containing the age key in its password field.";
+      };
+      keepass.passwordFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = "File containing the KeePass database password.";
+      };
+      keepass.passwordCommand = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Command that prints the KeePass database password.";
+      };
+      keepass.keyFilePath = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        description = "Optional KeePass key file.";
+      };
+      native.publicKey = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Public age recipient for type native.";
+      };
+      native.publicKeyFile = mkOption {
+        type = types.nullOr (types.either types.str types.path);
+        default = null;
+        description = "File containing the public age recipient for type native.";
+      };
+      ssh.keyPaths = mkOption {
+        type = types.listOf types.path;
+        default = [ "/etc/ssh/ssh_host_ed25519_key" ];
+        description = "SSH host keys used as age identities for type = \"ssh\".";
       };
     };
   };
 
-  commonSecretOptions = {
-    backendPath = mkOption {
-      type = str;
-      description = "Path to the secret as expected by the backend. E.g. a file path for the `file` backend or an entry path like `group/subgroup/entry` for the `keepass` backend.";
-    };
-    linkPath = mkOption {
-      type = nullOr str;
-      description = "Path on the remote machine. The mounted secret will be linked to this path (read only) with the corresponding user permission.";
-      default = null;
-    };
-    permissions = mkOption {
-      type = str;
-      default = "400";
-      description = "Permissions of the file. By default only readable by the owner.";
-    };
-  };
-
-  keepassCommonArgs =
-    backendConfig:
-    concatStringsSep " " (
-      [
-        "--database"
-        (escapeShellArg backendConfig.databasePath)
-      ]
-      ++ optionals (backendConfig.passwordFile != null) [
-        "--password-file"
-        (escapeShellArg backendConfig.passwordFile)
-      ]
-      ++ optionals (backendConfig.keyFilePath != null) [
-        "--keyfile"
-        (escapeShellArg backendConfig.keyFilePath)
-      ]
-    );
-
-  keepassBatchPayload =
-    requests:
-    builtins.toJSON (
-      map (request: {
-        label = request.label;
-        entryPath = request.secretConfig.backendPath;
-        content = request.secretConfig.content;
-        attachmentName = request.secretConfig.attachmentName;
-      }) requests
-    );
-
-  backendDefinitions = {
-    file = {
-      secretOptions = { };
-      serviceOptions = {
-        prepareCommand = mkOption {
-          type = rawType;
-          default = _backendConfig: "";
-          description = ''
-            A function that takes the backend configuration and returns a shell snippet to prepare
-            the backend before validation and retrieval.
-          '';
-        };
-        retrieveSecretCommand = mkOption {
-          type = rawType;
-          default =
-            requests: _backendConfig:
-            pkgs.writeScript "retrieve-files.sh" (
-              concatStringsSep "\n" (
-                map (request: ''
-                  echo "retrieving secret ${request.secretName}"
-                  mkdir -p "$(dirname ${request.targetPath})"
-                  cat ${request.secretConfig.backendPath} > ${request.targetPath}
-                  chmod 700 ${request.targetPath}
-                '') requests
-              )
-            );
-          description = ''
-            A function that takes all secret requests for a backend and the backend configuration,
-            then returns a shell command string to retrieve them in one batch.
-          '';
-        };
-        validateSecretCommand = mkOption {
-          type = rawType;
-          default =
-            requests: _backendConfig:
-            pkgs.writeScript "validate-files.sh" (
-              concatStringsSep "\n" (
-                map (request: ''
-                  [[ -f ${request.secretConfig.backendPath} ]] || {
-                    echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
-                    echo "File '${request.secretConfig.backendPath}' does not exist."
-                    exit 1
-                  }
-                  [[ -r ${request.secretConfig.backendPath} ]] || {
-                    echo "Validation failed for secret '${request.secretName}' from user '${request.user}' at '${request.secretConfig.backendPath}'."
-                    echo "File '${request.secretConfig.backendPath}' is not readable."
-                    exit 1
-                  }
-                '') requests
-              )
-            );
-          description = ''
-            A function that takes all secret requests for a backend and the backend configuration,
-            then returns a shell command string to validate them in one batch.
-          '';
-        };
+  secretType = types.submodule {
+    options = {
+      sopsFile = mkOption {
+        type = types.nullOr (types.either types.str types.path);
+        default = null;
+        description = "Sops file containing this secret. Defaults to the scope file.";
       };
-    };
-
-    keepass = {
-      secretOptions = {
-        content = mkOption {
-          type = enum [
-            "attachment"
-            "password"
-          ];
-          default = "attachment";
-          description = "Which part of the KeePass entry should be deployed. Defaults to `attachment` so file-like secrets such as certificates work out of the box.";
-        };
-        attachmentName = mkOption {
-          type = nullOr str;
-          default = null;
-          description = "Optional attachment name inside the KeePass entry. Leave unset to use the only attachment on the entry.";
-        };
+      key = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Key path inside the sops file. Defaults to <user>/<secret>.";
       };
-      serviceOptions = {
-        prepareCommand = mkOption {
-          type = rawType;
-          default = backendConfig: ''
-            ${optionalString (backendConfig.databasePath == "") ''
-              echo "ERROR: services.secrets.backends.keepass.databasePath must be configured when KeePass secrets are used."
-              exit 1
-            ''}
-            ${optionalString (backendConfig.passwordCommand != null) ''
-              if [ -z "''${SECRET_SERVICE_KEEPASS_PASSWORD:-}" ]; then
-                export SECRET_SERVICE_KEEPASS_PASSWORD="$(${backendConfig.passwordCommand})"
-              fi
-            ''}
-          '';
-          description = ''
-            A function that takes the backend configuration and returns a shell snippet to prepare
-            the backend before validation and retrieval.
-          '';
-        };
-        databasePath = mkOption {
-          type = oneOf [
-            str
-            path
-          ];
-          default = "";
-          description = "Path to the local KeePass `.kdbx` database that should be queried during secret deployment.";
-        };
-        passwordFile = mkOption {
-          type = nullOr str;
-          default = null;
-          description = "Optional local file containing the KeePass database password.";
-        };
-        passwordCommand = mkOption {
-          type = nullOr str;
-          default = null;
-          description = "Optional shell command that prints the KeePass database password during deployment. The password is exported as `SECRET_SERVICE_KEEPASS_PASSWORD` for the helper CLI.";
-        };
-        keyFilePath = mkOption {
-          type = nullOr str;
-          default = null;
-          description = "Optional KeePass key file used in addition to or instead of a password.";
-        };
-        retrieveSecretCommand = mkOption {
-          type = rawType;
-          default =
-            requests: backendConfig:
-            let
-              requestPayload = keepassBatchPayload requests;
-            in
-            pkgs.writeScript "retrieve-keepass.sh" ''
-              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass-cli batch-read ${keepassCommonArgs backendConfig} > "$KEEPASS_BATCH_RESPONSE_PATH"
-              ${requestPayload}
-              EOF_KEEPASS_BATCH
-
-              ${pkgs.jq}/bin/jq -r '.[] | [.label, .dataBase64] | @tsv' "$KEEPASS_BATCH_RESPONSE_PATH" | while IFS=$'\t' read -r label dataBase64; do
-                targetPath="$TMP_SECRET_ROOT/$label"
-                mkdir -p "$(dirname "$targetPath")"
-                printf '%s' "$dataBase64" | ${pkgs.coreutils}/bin/base64 --decode > "$targetPath"
-                chmod 700 "$targetPath"
-              done
-            '';
-          description = ''
-            Reads all requested KeePass secrets in one batch and writes them into the deployment staging directory.
-          '';
-        };
-        validateSecretCommand = mkOption {
-          type = rawType;
-          default =
-            requests: backendConfig:
-            let
-              requestPayload = keepassBatchPayload requests;
-            in
-            pkgs.writeScript "validate-keepass.sh" ''
-              cat <<'EOF_KEEPASS_BATCH' | ${keepassCli}/bin/secret-service-keepass-cli batch-validate ${keepassCommonArgs backendConfig}
-              ${requestPayload}
-              EOF_KEEPASS_BATCH
-            '';
-          description = ''
-            Validates that the KeePass database can be unlocked and that all configured entry content exists.
-          '';
-        };
+      name = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Runtime file name. Defaults to <user>/<secret>.";
+      };
+      path = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Runtime symlink path. Defaults to /run/secrets/<name>.";
+      };
+      owner = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Runtime owner. Defaults to the user attribute name.";
+      };
+      group = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Runtime group.";
+      };
+      mode = mkOption {
+        type = types.str;
+        default = "0400";
+        description = "Runtime mode in octal.";
+      };
+      format = mkOption {
+        type = types.nullOr (
+          types.enum [
+            "yaml"
+            "json"
+            "binary"
+            "dotenv"
+            "ini"
+          ]
+        );
+        default = null;
+        description = "Sops format. All secrets in one file must use the same format.";
+      };
+      restartUnits = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Units restarted when the secret changes.";
+      };
+      reloadUnits = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Units reloaded when the secret changes.";
+      };
+      neededForUsers = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Install before users are created. Forces root ownership.";
       };
     };
   };
 
-  backends = mapAttrs (_: backendDefinition: backendDefinition.serviceOptions) backendDefinitions;
+  templateType = types.submodule {
+    options = {
+      content = mkOption {
+        type = types.raw;
+        description = "Template content string or function of { config, lib, pkgs }.";
+      };
+      path = mkOption {
+        type = types.str;
+        description = "Runtime path for the rendered template.";
+      };
+      owner = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Runtime owner.";
+      };
+      group = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Runtime group.";
+      };
+      mode = mkOption {
+        type = types.str;
+        default = "0400";
+        description = "Runtime mode in octal.";
+      };
+      restartUnits = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Units restarted when the template changes.";
+      };
+      reloadUnits = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        description = "Units reloaded when the template changes.";
+      };
+    };
+  };
 
-  secretDeploymentScript =
-    deploymentUser: deploymentHost: clusterConfig:
-    let
-      this = clusterConfig.clusters.this.machines.this;
-      secretServiceName = this.config.systemd.services.secret-service.name;
-
-      tmpPath = "${this.deployment.secrets.path.deployment}";
-      persistentPath = this.deployment.secrets.path.persistent;
-      databaseFileName = this.deployment.secrets.database.fileName;
-      metadataFileName = this.deployment.secrets.metadata.fileName;
-      generateSecretPath = account: secret: "${tmpPath}/secrets/${account}/${secret}";
-
-      backends = clusterConfig.clusters.this.services.secrets.backends;
-      # Get the list of users with secrets configured, along with their backends and secrets
-      # Filter out users with empty configs, then filter out backends that are not configured, and finally filter out secrets that are not configured
-      userSecrets = filterAttrs (_: userConfig: userConfig != { }) (
-        mapAttrs (
-          user: userConfig:
-          filterAttrs (_: backendSecrets: builtins.isAttrs backendSecrets) (
-            if builtins.isAttrs userConfig then userConfig else { }
-          )
-        ) (if builtins.isAttrs this.secrets then this.secrets else { })
-      );
-      usedBackends = unique (concatMap (user: attrNames userSecrets."${user}") (attrNames userSecrets));
-      keepassBatchResponsePath = "${tmpPath}/keepass-batch-response.json";
-      backendSecretRequests =
-        backend:
-        concatMap (
-          user:
-          if builtins.hasAttr backend userSecrets."${user}" then
-            concatMap (
-              secretName:
-              let
-                secretConfig = userSecrets."${user}"."${backend}"."${secretName}";
-              in
-              [
-                {
-                  inherit user secretName secretConfig;
-                  label = "${user}/${secretName}";
-                  targetPath = generateSecretPath user secretName;
-                }
-              ]
-            ) (attrNames userSecrets."${user}"."${backend}")
-          else
+  secretServiceNodes =
+    config:
+    clusterlib.update.nodes config (
+      clusterName: nodeName: nodeConfig:
+      let
+        service = config.domain.clusters.${clusterName}.services.secrets or null;
+        selected =
+          if service == null then
             [ ]
-        ) (attrNames userSecrets);
-    in
-    pkgs.writeScript "deploy-secrets.sh" ''
-      #!/usr/bin/env bash
-      set -eE
+          else
+            filters.resolveNodeName (service.selectors or [ ]) clusterName config;
+      in
+      if service == null || !(builtins.elem nodeName selected) then
+        { }
+      else
+        {
+          nixosModules = [
+            flakeInputs.sops-nix.nixosModules.sops
+            (import ./secretService.nix {
+              inherit
+                service
+                clusterName
+                ;
+              machine = nodeConfig;
+              machineName = nodeName;
+            })
+          ] ++ (nodeConfig.nixosModules or [ ]);
+        }
+    );
 
-      cleanup() {
-        trap - EXIT ERR
-        echo "Deleting temp folder..."
-        # Weird Workaround to get the path to fusermount
-        # If we use the path from a pkg we get permission issues
-        if [ -d ${tmpPath}/secrets ]; then
-          $(nix-shell -p gocryptfs --run 'which fusermount') -u ${tmpPath}/secrets || true
-        fi
-        rm -rf ${tmpPath}
-        unset SECRET_SERVICE_KEEPASS_PASSWORD || true
-      }
-      trap cleanup EXIT ERR
+  secretServiceExtraFiles =
+    config:
+    clusterlib.update.nodes config (
+      _clusterName: _nodeName: nodeConfig:
+      let
+        keySource = nodeConfig.deployment.secrets.keySource;
+        keepass = keySource.keepass;
+        keepassPassword =
+          if keepass.passwordFile != null then
+            "cat ${lib.escapeShellArg (toString keepass.passwordFile)}"
+          else if keepass.passwordCommand != null then
+            keepass.passwordCommand
+          else
+            "";
+        keepassArgs = lib.optionalString (keepass.keyFilePath != null) (
+          "--key-file ${lib.escapeShellArg (toString keepass.keyFilePath)}"
+        );
+        keepassCommand =
+          if keepassPassword == "" then
+            "${pkgs.keepassxc}/bin/keepassxc-cli show -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg (keepass.entry or "")}"
+          else
+            "printf '%s\\n' \"$(${keepassPassword})\" | ${pkgs.keepassxc}/bin/keepassxc-cli show -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg (keepass.entry or "")}";
+        extraFiles =
+          if keySource.type == "age" then
+            {
+              ${keySource.targetKeyFile} = {
+                source = keySource.age.sourceKeyFile;
+                mode = "0400";
+              };
+            }
+          else if keySource.type == "keepass" then
+            {
+              ${keySource.targetKeyFile} = {
+                command = keepassCommand;
+                mode = "0400";
+              };
+            }
+          else
+            { };
+      in
+      if extraFiles == { } then
+        { }
+      else
+        {
+          deployment = (nodeConfig.deployment or { }) // {
+            extraFiles = (nodeConfig.deployment.extraFiles or { }) // extraFiles;
+          };
+        }
+    );
 
-      export TMP_SECRET_ROOT=${escapeShellArg "${tmpPath}/secrets"}
-      export KEEPASS_BATCH_RESPONSE_PATH=${escapeShellArg keepassBatchResponsePath}
+  machineSecretsType = types.submodule {
+    freeformType = types.attrsOf (types.attrsOf secretType);
+    options.templates = mkOption {
+      type = types.attrsOf templateType;
+      default = { };
+      description = "Machine-scoped sops templates.";
+    };
+  };
 
-      echo "Preparing backends..."
-      ${concatStringsSep "\n" (
-        map (
-          backend:
-          let
-            backendConfig = backends.${backend};
-            prepareCommand = backendConfig.prepareCommand backendConfig;
-          in
-          ''
-            echo "Preparing backend: ${backend}..."
-            ${prepareCommand}
-          ''
-        ) usedBackends
-      )}
-      # End Preparing backends
+  capitalize =
+    name:
+    if name == "" then
+      name
+    else
+      lib.toUpper (builtins.substring 0 1 name) + builtins.substring 1 (builtins.stringLength name) name;
 
-      mkdir -p ${tmpPath}
-      chmod 700 ${tmpPath}
+  groupPackageName =
+    suffix: group:
+    "secret${capitalize (builtins.replaceStrings [ "-" ] [ "_" ] group)}${suffix}";
 
-      echo "Validating secrets..."
-      ${concatStringsSep "\n" (
-        map (
-          backend:
-          let
-            backendConfig = backends.${backend};
-            backendRequests = backendSecretRequests backend;
-            validateCommand = backendConfig.validateSecretCommand backendRequests backendConfig;
-          in
-          ''
-            echo "Validating backend: ${backend}"
-            if ! ${pkgs.bash}/bin/bash "${validateCommand}"; then
-              echo "Validation failed for backend '${backend}'."
-              echo "Validation command: ${validateCommand}"
-              echo "Aborting"
-              exit 1
-            fi
-          ''
-        ) usedBackends
-      )}
-      # End Validating secrets
+  groupNames = lib.unique (
+    builtins.concatMap (
+      cluster: builtins.attrNames ((cluster.services.secrets or { }).groups or { })
+    ) (builtins.attrValues config.domain.clusters)
+  );
 
-      mkdir -p ${tmpPath}/secrets # Store unencrypted secrets here
-      mkdir -p ${tmpPath}/${databaseFileName} # Encrypted folder
+  groupPackages = builtins.listToAttrs (
+    builtins.concatMap (
+      group:
+      [
+        {
+          name = groupPackageName "Edit" group;
+          value =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin (groupPackageName "Edit" group) (
+              scripts.mkSecretEditScript {
+                inherit clusterConfig group;
+                scope = "cluster";
+              }
+            );
+        }
+        {
+          name = groupPackageName "Set" group;
+          value =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin (groupPackageName "Set" group) (
+              scripts.mkSecretSetScript {
+                inherit clusterConfig group;
+                scope = "cluster";
+              }
+            );
+        }
+        {
+          name = groupPackageName "UpdateKeys" group;
+          value =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin (groupPackageName "UpdateKeys" group) (
+              scripts.mkUpdateKeysScript {
+                inherit clusterConfig group;
+                rotate = false;
+              }
+            );
+        }
+        {
+          name = groupPackageName "Rotate" group;
+          value =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin (groupPackageName "Rotate" group) (
+              scripts.mkUpdateKeysScript {
+                inherit clusterConfig group;
+                rotate = true;
+              }
+            );
+        }
+      ]
+    ) groupNames
+  );
 
-      echo "Generating metadata"
-      DATE=$(date --iso-8601=seconds)
-      CONFIG_HASH=${builtins.hashString "sha256" (builtins.toJSON userSecrets)}
-      METADATA="{\"date\": \"$DATE\", \"configHash\": \"$CONFIG_HASH\"}" 
-      ENCRYPTION_KEY=$(echo $METADATA | ${clusterConfig.clusters.this.services.secrets.deriveEncryptionKey})
-
-      echo "Initializing encrypted folder..."
-      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -init -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName}
-      ${pkgs.gocryptfs}/bin/gocryptfs -quiet -extpass "echo $ENCRYPTION_KEY" ${tmpPath}/${databaseFileName} ${tmpPath}/secrets
-
-      echo "Retrieving secrets..."
-      ${concatStringsSep "\n" (
-        map (
-          backend:
-          let
-            backendConfig = backends.${backend};
-            backendRequests = backendSecretRequests backend;
-            retrieveCommand = backendConfig.retrieveSecretCommand backendRequests backendConfig;
-          in
-          ''
-            echo "Retrieving backend: ${backend}"
-            if ! ${pkgs.bash}/bin/bash "${retrieveCommand}"; then
-              echo "Retrieval failed for backend '${backend}'."
-              echo "Retrieval command: ${retrieveCommand}"
-              echo "Aborting"
-              exit 1
-            fi
-          ''
-        ) usedBackends
-      )}
-      # End Retrieving secrets
-
-      echo "Writing deployment metadata..."
-      ssh "${deploymentUser}@${deploymentHost}" "mkdir -p '${persistentPath}'"
-      echo $METADATA | ssh "${deploymentUser}@${deploymentHost}" "cat > '${persistentPath}/${metadataFileName}'"
-      ssh "${deploymentUser}@${deploymentHost}" chown secret-service '${persistentPath}/${metadataFileName}'
-
-      echo "Copying archive to remote..."
-      ${pkgs.rsync}/bin/rsync \
-        -avz \
-        --progress \
-        --rsync-path="$(nix build nixpkgs#rsync --no-link --print-out-paths)/bin/rsync" \
-        ${tmpPath}/${databaseFileName} "${deploymentUser}@${deploymentHost}:${persistentPath}"
-      ssh "${deploymentUser}@${deploymentHost}" chown -R secret-service '${persistentPath}/${databaseFileName}'
-
-      echo "Restarting ${secretServiceName}"
-      ssh "${deploymentUser}@${deploymentHost}" systemctl restart ${secretServiceName}
-
-      echo "Deployment completed."
-    '';
-
-  # Secrets can be defined for a machine user for each backend
-  secretUserType = attrsOf (submodule backendTypeSubmodule);
-
-  # generate secret options for each backend
-  backendTypeSubmodule.options = mapAttrs (
-    _: backendDefinition:
-    mkOption {
-      # Multiple secrets can be defined in each backend
-      type = nullOr (
-        attrsOf (submodule {
-          options = commonSecretOptions // backendDefinition.secretOptions;
-        })
+  serviceOptions = {
+    sopsRoot = mkOption {
+      type = types.path;
+      description = "Root directory for sops files, conventionally <flakeRoot>/secrets.";
+    };
+    machinesSubDir = mkOption {
+      type = types.str;
+      default = "machines";
+      description = "Subdirectory for per-machine sops files.";
+    };
+    clusterSubDir = mkOption {
+      type = types.str;
+      default = "cluster";
+      description = "Subdirectory for group sops files.";
+    };
+    clusterSopsFile = mkOption {
+      type = types.nullOr (types.either types.str types.path);
+      default = null;
+      description = "Explicit cluster-wide sops file. Defaults to <sopsRoot>/<cluster>/cluster.yaml.";
+    };
+    secrets = mkOption {
+      type = types.attrsOf (types.attrsOf secretType);
+      default = { };
+      description = "Cluster-scoped secrets.";
+    };
+    templates = mkOption {
+      type = types.attrsOf templateType;
+      default = { };
+      description = "Cluster-scoped templates.";
+    };
+    adminKeySource = mkOption {
+      type = types.nullOr keySourceType;
+      default = null;
+      description = "Identity used by recipient-management commands.";
+    };
+    groups = mkOption {
+      type = types.attrsOf (types.listOf types.str);
+      default = { };
+      description = "Shared group membership. A group named monitoring with members [ \"vm1\" \"vm2\" ] maps to cluster/monitoring.";
+    };
+    keepGenerations = mkOption {
+      type = types.nullOr types.ints.unsigned;
+      default = null;
+      description = "Projected to sops.keepGenerations when non-null.";
+    };
+    useTmpfs = mkOption {
+      type = types.nullOr types.bool;
+      default = null;
+      description = "Projected to sops.useTmpfs when non-null.";
+    };
+    log = mkOption {
+      type = types.nullOr (
+        types.listOf (
+          types.enum [
+            "trace"
+            "debug"
+            "info"
+            "warn"
+            "error"
+          ]
+        )
       );
       default = null;
-    }
-  ) backendDefinitions;
+      description = "Projected to sops.log when non-null.";
+    };
+    validateSopsFiles = mkOption {
+      type = types.nullOr types.bool;
+      default = null;
+      description = "Projected to sops.validateSopsFiles when non-null.";
+    };
+    useSystemdActivation = mkOption {
+      type = types.nullOr types.bool;
+      default = null;
+      description = "Projected to sops.useSystemdActivation when non-null.";
+    };
+    environment = mkOption {
+      type = types.attrsOf (types.either types.str types.path);
+      default = { };
+      description = "Projected to sops.environment. Never put secret values here.";
+    };
+  };
+
 
 in
-
 {
   config.extensions = {
+    transformations.clusterTransformations = [
+      secretServiceNodes
+      secretServiceExtraFiles
+    ];
 
     clusterServices.secrets = {
+      defaultModule = { ... }: { };
 
-      defaultModule = import ./secretService.nix;
+      options = serviceOptions;
 
-      options = {
+      packages = {
+        secretsSyncKeyHolders =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretsSyncKeyHolders" (
+            scripts.mkSyncKeyHoldersScript { inherit clusterConfig; }
+          );
 
-        inherit backends;
+        secretEdit =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretEdit" (
+            scripts.mkSecretEditScript {
+              inherit clusterConfig;
+              scope = "cluster";
+            }
+          );
 
-        deriveEncryptionKey = mkOption {
-          type = str;
-          default = "${pkgs.jq}/bin/jq .configHash | sha256sum | ${pkgs.gawk}/bin/awk '{print $1}' ";
-          description = ''
-            A shell command that generates a deterministic encryption key. The default uses SHA-256.
-          '';
-        };
-      };
+        secretSet =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretSet" (
+            scripts.mkSecretSetScript {
+              inherit clusterConfig;
+              scope = "cluster";
+            }
+          );
 
+        secretUpdateKeys =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretUpdateKeys" (
+            scripts.mkUpdateKeysScript {
+              inherit clusterConfig;
+              rotate = false;
+            }
+          );
+
+        secretRotate =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretRotate" (
+            scripts.mkUpdateKeysScript {
+              inherit clusterConfig;
+              rotate = true;
+            }
+          );
+      } // groupPackages;
     };
 
     nodes = {
-
       options = {
-        deployment = {
-          secrets = {
-
-            path = {
-              persistent = mkOption {
-                type = str;
-                default = "/var/lib/nixos-secret-service";
-                description = ''
-                  Working directory for persisting encrypted files.
-                '';
-              };
-              temp = mkOption {
-                type = str;
-                default = "/dev/shm/nixos-secret-service";
-                description = ''
-                  Working directory for unencrypted files.
-                '';
-              };
-              deployment = mkOption {
-                type = str;
-                default = "/tmp/nixos-secret-service";
-                description = ''
-                  Working directory for deployment files on the deployment host.
-                '';
-              };
-            };
-            metadata.fileName = mkOption {
-              type = str;
-              default = "deployment-info.json";
-              description = ''
-                Deployment location for the metadata file about the deployment.
-              '';
-            };
-            database.fileName = mkOption {
-              type = str;
-              default = "secrets.enc";
-              description = ''
-                Deployment location for the encrypted archive containing the secrets.
-              '';
-            };
-
-          };
+        deployment.secrets.keySource = mkOption {
+          type = keySourceType;
+          default = { };
+          description = "How this node obtains its sops identity.";
         };
 
         secrets = mkOption {
-          description = ''
-            Defines the secrets.
-
-            Each secret is defined for a user and a backend.
-            The In the example, secrets are defined for etcd and kubernetes user using the file backend.
-          '';
-          type = secretUserType;
+          type = machineSecretsType;
           default = { };
-          example = {
-            etcd.file = {
-              ca-cert = {
-                backendPath = "./path/to/ca/etcd.crt";
-                linkPath = "/path/on/remote/etcd.crt";
-                permissions = "555";
-              };
-              ca-key = {
-                backendPath = "./path/to/ca/etcd.key";
-                linkPath = "/path/on/remote/etcd.key";
-              };
-            };
-            kubernetes.file = {
-              ca-cert = {
-                backendPath = "./path/to/ca/kubernetes.crt";
-                linkPath = "/path/on/remote/kubernetes.crt";
-                permissions = "555";
-              };
-              ca-key = {
-                backendPath = "./path/to/ca/kubernetes.key";
-                linkPath = "/path/on/remote/kubernetes.key";
-              };
-            };
-          };
-
+          description = "Machine-scoped secrets and templates.";
         };
       };
 
       packages = {
-        deploySecrets =
+        secretsCheck =
           { clusterConfig }:
           let
-            this = clusterConfig.clusters.this.machines.this;
-            deploymentConfig = this.deployment;
-            nixosConfig = this.config;
-            host = deploymentConfig.targetHost;
-            secretServiceUser = nixosConfig.users.users.secret-service.name;
-            deploymentUser =
-              if deploymentConfig ? targetUser && deploymentConfig.targetUser != null then
-                deploymentConfig.targetUser
-              else
-                "";
-            rootUser = nixosConfig.users.users.root.name;
-            deployCmd = user: host: "bash ${(secretDeploymentScript user host clusterConfig)}";
+            machineName = secretLib.machineNameOf clusterConfig;
           in
-          pkgs.writeScriptBin "connect-secrets.sh" ''
-            #!/usr/bin/env bash
-            set -e
-            echo "Deploying Secrets to host: ${host}"
+          scripts.mkCheckScript {
+            inherit clusterConfig machineName;
+          };
 
-            # echo
-            # echo "Trying to connect as user: ${secretServiceUser}"
-            # if ssh -o 'NumberOfPasswordPrompts 1' "${secretServiceUser}@${host}" "echo successfully connected"; then
-            #   echo "deployment scritp: ${(deployCmd secretServiceUser host)}"
-            #   ${(deployCmd secretServiceUser host)}
-            #   exit 0
-            # fi
+        secretsInstallKey =
+          { clusterConfig }:
+          let
+            machineName = secretLib.machineNameOf clusterConfig;
+          in
+          pkgs.writeShellScriptBin "secretsInstallKey" (
+            scripts.mkInstallKeyScript {
+              inherit clusterConfig machineName;
+            }
+          );
 
-            echo
-            echo "Connection failed with user: ${secretServiceUser}. Trying deployment user: ${deploymentUser}"
-            if ssh -o 'NumberOfPasswordPrompts 1' "${
-              if deploymentUser != "" then deploymentUser + "@" else ""
-            }${host}" "echo successfully connected"; then
-               echo "deployment scritp: ${(deployCmd deploymentUser host)}"
-               ${(deployCmd deploymentUser host)}
-              exit 0
-            fi
+        secretsRemoveOld =
+          { clusterConfig }:
+          let
+            machineName = secretLib.machineNameOf clusterConfig;
+          in
+          pkgs.writeShellScriptBin "secretsRemoveOld" (
+            scripts.mkRemoveOldScript {
+              inherit clusterConfig machineName;
+            }
+          );
 
-            echo
-            echo "Connection failed with deployment user: ${deploymentUser}. Trying root user: ${rootUser}"
-            if ssh -o 'NumberOfPasswordPrompts 1' "${rootUser}@${host}" "echo successfully connected"; then
-            echo "deployment scritp: ${(deployCmd rootUser host)}"
-            ${(deployCmd rootUser host)}
-              exit 0
-            fi
+        secretKeyGenerate =
+          { clusterConfig }:
+          let
+            machineName = secretLib.machineNameOf clusterConfig;
+          in
+          pkgs.writeShellScriptBin "secretKeyGenerate" (
+            scripts.mkSecretKeyGenerateScript {
+              inherit clusterConfig machineName;
+            }
+          );
 
-            echo
-            echo "Failed to deploy secrets. All connection attempts failed."
-            exit 1
-          '';
+        secretEdit =
+          { clusterConfig }:
+          let
+            machineName = secretLib.machineNameOf clusterConfig;
+          in
+          pkgs.writeShellScriptBin "secretEdit" (
+            scripts.mkSecretEditScript {
+              inherit clusterConfig machineName;
+              scope = "machine";
+            }
+          );
+
+        secretSet =
+          { clusterConfig }:
+          let
+            machineName = secretLib.machineNameOf clusterConfig;
+          in
+          pkgs.writeShellScriptBin "secretSet" (
+            scripts.mkSecretSetScript {
+              inherit clusterConfig machineName;
+              scope = "machine";
+            }
+          );
       };
     };
   };

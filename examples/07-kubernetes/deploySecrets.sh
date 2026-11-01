@@ -1,3 +1,3 @@
-nix run .#example.vm0.deploySecrets
-nix run .#example.vm1.deploySecrets
-nix run .#example.vm2.deploySecrets
+nix run .#example.vm0.secretsInstallKey
+nix run .#example.vm1.secretsInstallKey
+nix run .#example.vm2.secretsInstallKey

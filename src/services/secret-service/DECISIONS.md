@@ -161,21 +161,9 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 **Reference:** <https://getsops.io/docs/usage/key-management/>
 
-### D14 — Fail on dirty secrets by default
-
-**Decision:** `secretsUpdate` refuses to run when sops files are untracked or dirty. A script-level `--impure` escape hatch is allowed for development.
-
-**Reasoning:**
-
-- Deploying uncommitted secrets risks losing the only copy if the machine or repository is damaged.
-- Nix includes tracked dirty changes but not untracked files, so “it seems to work locally” can be misleading.
-- `--impure` is explicitly a development convenience, not a production mode.
-
-**Important:** `nix run .#... --impure` is consumed by Nix, not by the script. To pass the flag to the script, use `nix run .#... -- --impure`. Nix's `--impure` does not include untracked files in a Git-backed flake.
-
 ### D15 — Parameterless commands
 
-**Decision:** commands are generated per machine/cluster with all parameters embedded. Use separate commands for separate operations: `secretsCheck`, `secretsUpdate`, `secretsSyncRecipients`, `secretsRemoveOld`, plus the `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` helpers.
+**Decision:** commands are generated per machine/cluster with all parameters embedded. Use separate commands for separate operations: `secretsCheck`, `secretsInstallKey`, `secretsSyncKeyHolders`, `secretsRemoveOld`, plus the `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` helpers.
 
 **Reasoning:**
 
@@ -237,13 +225,23 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D21 — `secret*` helper packages
 
-**Decision:** provide `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` packages that operate on the resolved default sops files. Use `secret*` naming, not `sops*`.
+**Decision:** provide `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` packages that operate on the resolved default sops files, plus `secret<Group>Edit`, `secret<Group>Set`, `secret<Group>UpdateKeys` and `secret<Group>Rotate` for each configured group. Use `secret*` naming, not `sops*`.
 
 **Reasoning:**
 
 - Editing the correct sops file is easy to get wrong, especially when machine and cluster files are both in play.
 - Embedding the resolved file path in the package removes a class of operator mistakes.
 - Thin wrappers keep the normal sops workflow without hiding the underlying commands.
+
+### D22 — No Git status checks
+
+**Decision:** the service does not check whether sops files are tracked or dirty. sops works on file paths and does not require Git state; the helper commands only report changed files.
+
+**Reasoning:**
+
+- sops-nix itself does not perform Git checks.
+- The checks added complexity and depended on how the helper command was launched.
+- Git-backed flakes still require files to be tracked to be visible to Nix; that is a Nix constraint, not a service feature.
 
 ## Rejected alternatives
 
@@ -255,7 +253,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 | Custom age plugin backed by KeePass | Only manages keys, not values; target boot would need KeePass DB/password; circular and complex. |
 | One cluster-wide sops file | Gives every machine access to every secret. |
 | Per-secret recipients inside one file | Not supported by sops; the file is the isolation boundary. |
-| Auto-commit sops changes in `secretsUpdate` | Too easy to commit unintended secrets; explicit commit is safer. |
+| Auto-commit sops changes after key-holder synchronization | Too easy to commit unintended secrets; explicit commit is safer. |
 
 ## Open items and future work
 
@@ -268,7 +266,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ## Security notes
 
-- Every sops file should include an admin recovery recipient.
+- Every sops file should include an admin recovery key holder.
 - Protect and back up the admin key; its compromise compromises all files.
 - Machine-private files must not contain other machines' public keys.
 - Old keys on hosts are a bounded rollback convenience, not a permanent design.

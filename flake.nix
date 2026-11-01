@@ -32,6 +32,11 @@
 
     flake-utils.url = "github:numtide/flake-utils";
 
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     microvm = {
       url = "github:microvm-nix/microvm.nix/main"; # TODO: use a tag after v0.5.0 whare the options are fixed.
       inputs.nixpkgs.follows = "nixpkgs";

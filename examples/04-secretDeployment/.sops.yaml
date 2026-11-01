@@ -1,0 +1,30 @@
+creation_rules:
+  - path_regex: ^secrets/example/machines/vm0\.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age1nf4t8rcklty8c0uyxz0futvut4j2yuk27c2kmycjqrvp7pxd2clqg7e0fu
+  - path_regex: ^secrets/example/machines/vm1\.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age1del0jdmgeu22etdyafuh7dwgg5a2mdrv4sprg5g5axgpzmxxgu2szv34wl
+  - path_regex: ^secrets/example/machines/vm2\.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf
+  - path_regex: ^secrets/example/cluster/monitoring\.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age1nf4t8rcklty8c0uyxz0futvut4j2yuk27c2kmycjqrvp7pxd2clqg7e0fu
+          - age1del0jdmgeu22etdyafuh7dwgg5a2mdrv4sprg5g5axgpzmxxgu2szv34wl
+          - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf
+  - path_regex: ^secrets/example/cluster\.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age1nf4t8rcklty8c0uyxz0futvut4j2yuk27c2kmycjqrvp7pxd2clqg7e0fu
+          - age1del0jdmgeu22etdyafuh7dwgg5a2mdrv4sprg5g5axgpzmxxgu2szv34wl
+          - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf

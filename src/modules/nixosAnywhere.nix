@@ -59,9 +59,46 @@ in
             deploymentConfig = this.deployment;
             nixosConfig = this.config.system.build.toplevel.outPath;
             formatScript = getFormatScript { inherit clusterConfig; };
+            extraFiles = this.deployment.extraFiles;
+            extraFileSetup = lib.concatStringsSep "\n" (
+              lib.mapAttrsToList (
+                target: entry:
+                let
+                  hasSource = (entry.source or null) != null;
+                  hasCommand = (entry.command or null) != null;
+                  sourceCommand =
+                    if hasSource == hasCommand then
+                      throw "deployment.extraFiles.${target} must set exactly one of source or command"
+                    else if hasSource then
+                      "cp ${lib.escapeShellArg entry.source} \"$tmp_extra_dir${target}\""
+                    else
+                      "${entry.command} > \"$tmp_extra_dir${target}\"";
+                in
+                ''
+                  mkdir -p "$tmp_extra_dir$(dirname ${lib.escapeShellArg target})"
+                  ${sourceCommand}
+                  chmod ${entry.mode or "0400"} "$tmp_extra_dir${target}"
+                ''
+              ) extraFiles
+            );
           in
           pkgs.writeShellScriptBin "create-${nodeName}" ''
-            ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${deploymentConfig.targetUser}@${deploymentConfig.targetHost}
+            set -euo pipefail
+            extra_files=()
+            tmp_extra_dir=""
+            cleanup() { [ -z "$tmp_extra_dir" ] || rm -rf "$tmp_extra_dir"; }
+            trap cleanup EXIT
+            ${
+              if extraFiles == { } then
+                ""
+              else
+                ''
+                  tmp_extra_dir="$(mktemp -d)"
+                  ${extraFileSetup}
+                  extra_files=(--extra-files "$tmp_extra_dir")
+                ''
+            }
+            ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} "''${extra_files[@]}" ${nixosConfig} ${deploymentConfig.targetUser}@${deploymentConfig.targetHost}
           '';
 
         format =

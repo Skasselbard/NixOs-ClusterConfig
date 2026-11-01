@@ -1,6 +1,6 @@
 # Secret Service
 
-> **Status:** this document describes the target sops-nix-based design. The current code in this directory still contains the previous gocryptfs-based implementation while the migration is in progress. `SPEC.md` is the normative option and behavior reference; `DECISIONS.md` records why the design looks the way it does.
+> **Status:** implemented. The service now uses sops-nix and age. `SPEC.md` is the normative option and behavior reference; `DECISIONS.md` records why the design looks the way it does.
 
 The secret service lets you declare secrets in the cluster configuration and have them installed on the correct target nodes with the correct owner, group, mode and path.
 
@@ -55,9 +55,9 @@ sops:
         ...
 ```
 
-A random **data key** encrypts the values. The data key is itself encrypted to one or more **recipients**. Anyone with a matching identity can decrypt the file.
+A random **data key** encrypts the values. The data key is itself encrypted to one or more **decryption key holders**: age public keys whose matching private identity can decrypt the file. All values in one sops file share the same key holders, so the file is the isolation boundary.
 
-`.sops.yaml` decides which recipients are used for which file. `sops edit`, `sops set`, `sops updatekeys` and `sops rotate` are the normal editing and key-management tools.
+`.sops.yaml` decides which key holders are used for which file. sops calls these entries “recipients”. `sops edit`, `sops set`, `sops updatekeys` and `sops rotate` are the normal editing and key-management tools.
 
 sops-nix reads `sops.secrets` declarations from the NixOS configuration, builds a manifest, and during activation runs `sops-install-secrets`. That helper decrypts each secret, writes the real file into a RAM-backed directory, applies ownership and permissions, creates symlinks at the configured paths, and restarts configured units. The plaintext never goes into the Nix store.
 
@@ -86,6 +86,16 @@ The layout is configurable. `sopsFile` accepts these shorthands:
 
 A machine belongs to exactly one cluster, which keeps the runtime secret names simple.
 
+### Global, group and machine secrets
+
+| Declaration | `sopsFile` | Can decrypt |
+|---|---|---|
+| `services.secrets.secrets.<user>.<secret>` without `sopsFile` | `"cluster"` → `cluster.yaml` | all selected nodes + admin key |
+| `services.secrets.secrets.<user>.<secret>` with `sopsFile = "cluster/<group>"` | group file | members of that group + admin key |
+| `machines.<machine>.secrets.<user>.<secret>` | machine file | that machine + admin key |
+
+Global secrets are useful for values every selected node needs, such as a shared service password. They are not admin-only. Use a group or machine file when access should be narrower.
+
 ## Quick start
 
 ### 1. Enable the service
@@ -94,12 +104,18 @@ A machine belongs to exactly one cluster, which keeps the runtime secret names s
 services.secrets = {
   selectors = [ filters.clusterMachines ];
 
+  # Convention: <flakeRoot>/secrets.
   sopsRoot = ./secrets;
-  machinesDir = "machines";
-  clusterDir = "cluster";
+  machinesSubDir = "machines";
+  clusterSubDir = "cluster";
 
-  # Used by secretsSyncRecipients to generate .sops.yaml.
-  adminPublicKey = "age1...";
+  # The admin key is a key holder for every generated rule and the identity
+  # used by key-holder management commands.
+  adminKeySource = {
+    type = "age";
+    # A string, not a Nix path, so the private key is not copied into the store.
+    age.sourceKeyFile = "/path/to/admin.key";
+  };
 
   # Optional shared groups for "cluster/<group>" sops files.
   groups.monitoring = [ "vm1" "vm2" ];
@@ -117,24 +133,34 @@ machines.vm1 = {
     keepass = {
       databasePath = "/home/user/secrets.kdbx";
       entry = "hosts/vm1";
-      attachment = "age.key";
       # Optional: avoid an interactive prompt in automation
       # passwordCommand = "...";
     };
-    publicKey = "age1...";
   };
 };
 ```
 
-Supported key-source types are `age`, `keepass`, `file`, `ssh` and `native`. `native` means you configure `sops.*` yourself, for example PGP, KMS, Vault or age plugins.
+Supported key-source types are `age`, `keepass`, `ssh` and `native`. `age` always requires a build-host `age.sourceKeyFile`; the target key file is provisioned from it. `keepass` extracts the private age key from the configured entry. `native` means you configure `sops.*` yourself, including age plugins.
+
+Generate or replace a key directly in its source:
+
+```bash
+# file-backed age key: requires --force to overwrite
+nix run .#<cluster>.<machine>.secretKeyGenerate -- --force
+
+# KeePass entry: overwrites without --force and prints a warning
+nix run .#<cluster>.<machine>.secretKeyGenerate
+```
+
+Public keys are derived at runtime from `age.sourceKeyFile`, the KeePass entry or the SSH key. They are not configured in the cluster options.
 
 ### 3. Generate or update `.sops.yaml`
 
 ```bash
-nix run .#example.secrets.secretsSyncRecipients
+nix run .#example.secrets.secretsSyncKeyHolders
 ```
 
-This derives `.sops.yaml` from the machine public keys, the admin key and the configured groups. It also runs `sops updatekeys` and, where recipients were removed, `sops rotate`. Commit the resulting files before deploying.
+This derives public keys from the machine and admin key sources at runtime, generates `.sops.yaml`, runs `sops updatekeys` and rotates data keys.
 
 ### 4. Declare secrets
 
@@ -181,10 +207,10 @@ admin:
 
 ```bash
 nix run .#example.vm1.secretsCheck
-nix run .#example.vm1.secretsUpdate
+nix run .#example.vm1.secretsInstallKey
 ```
 
-`secretsCheck` is read-only. `secretsUpdate` installs/verifies the host key, verifies the sops files, and deploys the machine. Secrets are part of the normal system closure, so there is no separate secret-transfer step.
+`secretsCheck` is read-only. `secretsInstallKey` only installs or repairs the host key. Secret changes are deployed through the normal system closure, so there is no separate secret-transfer step.
 
 ## Commands
 
@@ -192,36 +218,32 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 
 | Command | Purpose |
 |---|---|
-| `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, recipients, declared secrets and templates. |
-| `nix run .#<clusterName>.<machineName>.secretsUpdate` | Ensure the host key, verify everything, and deploy the machine. |
+| `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, decryption key holders, declared secrets and templates. |
+| `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
 | `nix run .#<clusterName>.<machineName>.secretsRemoveOld` | Remove old age identities from the host after the rollback window. |
+| `nix run .#<clusterName>.<machineName>.secretKeyGenerate [-- --force]` | Generate a new key into its age source or KeePass entry. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
-| `nix run .#<clusterName>.secrets.secretsSyncRecipients` | Regenerate `.sops.yaml` from the cluster configuration, run `sops updatekeys`, and rotate data keys when recipients are removed. |
+| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Derive public keys, regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on the cluster files. |
 | `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on the cluster files. |
+| `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file, for example `secretMonitoringEdit`. |
+| `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
+| `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
+| `nix run .#<clusterName>.secrets.secret<Group>Rotate` | Run `sops rotate` on one group file. |
 
-The package path determines the scope: machine commands live under `<clusterName>.<machineName>`, cluster commands under `<clusterName>.secrets`.
-
-`secretsUpdate` refuses to run when sops files are untracked or dirty. For development only, the dirty check can be bypassed by passing a flag to the script:
-
-```bash
-nix run .#example.vm1.secretsUpdate -- --impure
-```
-
-Do not confuse this with Nix's own `--impure`.
+The package path determines the scope: machine commands live under `<clusterName>.<machineName>`, cluster and group commands under `<clusterName>.secrets`. Group names are capitalized and `-` is replaced with `_` in package names.
 
 ## Key sources
 
 | Type | Behavior |
 |---|---|
-| `age` | A dedicated age key file on the target, normally `/var/lib/sops-nix/key.txt`. |
-| `keepass` | The helper extracts the age key from a KeePass entry during setup/recovery. KeePass is not needed at boot. |
-| `file` | A securely stored local key file is installed on the target during setup. |
-| `ssh` | The target's SSH host key is used as the age identity. No key injection is needed, but the host key must exist before activation and reimaging requires re-encryption. |
-| `native` | You configure `sops.age.*`, `sops.gnupg.*`, `sops.environment` or age plugins directly. |
+| `age` | A build-host `age.sourceKeyFile` is installed to `targetKeyFile`, normally `/var/lib/sops-nix/key.txt`. |
+| `keepass` | The helper extracts the age key from a KeePass entry during setup/recovery and installs it to `targetKeyFile`. KeePass is not needed at boot. |
+| `ssh` | The target's SSH host key is used as the age identity. No key injection is needed, but the host key must exist before activation and reimaging requires re-encryption. Public-key derivation requires a locally readable key. |
+| `native` | You configure `sops.age.*`, `sops.gnupg.*`, `sops.environment` or age plugins directly. For recipient generation, set `native.publicKey` or `native.publicKeyFile`. |
 
 Dedicated age keys are the default recommendation because they rotate independently from SSH access and have a clear recovery path. SSH keys are supported for convenience, but document the tradeoff.
 
@@ -229,17 +251,17 @@ Dedicated age keys are the default recommendation because they rotate independen
 
 Secrets are encrypted files in the Nix store and are copied as part of the normal system closure. A `nixos-rebuild switch` or colmena deployment is the secret deployment.
 
-First installation via `nixos-anywhere` needs the host age key before activation. The `create` package injects it with `--extra-files` and verifies the public key before installing. On later deployments, `secretsUpdate` checks or reinstalls the key over SSH.
+First installation via `nixos-anywhere` needs the host age key before activation. The `create` package injects it through the generic `deployment.extraFiles` option, which builds a temporary `--extra-files` tree at runtime. On later deployments, `secretsInstallKey` checks or reinstalls the key over SSH; the system deployment handles secret activation.
 
 ## Rotation and recovery
 
 There are three different operations:
 
-1. **Recipient/key change** — edit recipients, run `sops updatekeys`, commit.
+1. **Decryption key holder change** — edit decryption key holders, run `sops updatekeys`, commit.
 2. **Data-key rotation** — run `sops rotate`, commit.
 3. **Secret-value rotation** — generate the new password/certificate/token and update the sops file with `sops set` or `sops edit`.
 
-When removing a recipient because a key may have been compromised, follow the sops-recommended order:
+When removing a decryption key holder because a key may have been compromised, follow the sops-recommended order:
 
 1. Remove the key from `.sops.yaml`.
 2. Run `sops updatekeys` on the affected files.
@@ -247,19 +269,18 @@ When removing a recipient because a key may have been compromised, follow the so
 4. Commit the updated files.
 5. Rotate the actual secret values.
 
-This order matters: removing a recipient without rotating the data key can leave the removed holder able to recover the old data key from an older version of the file and use it against the new file. Old ciphertext in Git history or the Nix store cannot be revoked by sops; rotating the actual values is what limits the impact.
+This order matters: removing a decryption key holder without rotating the data key can leave the removed holder able to recover the old data key from an older version of the file and use it against the new file. Old ciphertext in Git history or the Nix store cannot be revoked by sops; rotating the actual values is what limits the impact.
 
 See the upstream sops documentation: <https://getsops.io/docs/usage/key-management/>.
 
-For rollback, keep the old host identity for a short window, or keep it in KeePass and install it temporarily. The admin recovery key is a recipient of every sops file and is the long-term recovery path. Do not keep old keys on hosts indefinitely.
+For rollback, keep the old host identity for a short window, or keep it in KeePass and install it temporarily. The admin recovery key is a decryption key holder of every sops file and is the long-term recovery path. Do not keep old keys on hosts indefinitely.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
 | `secret ... is not valid` at build time | A declared `key` is missing from the sops file. |
-| Activation cannot decrypt a file | The host public key is not a recipient, or the key file is missing/wrong. Run `secretsCheck`. |
-| `secretsUpdate` refuses to run | Sops files are untracked or dirty. Commit them or use the documented development bypass. |
+| Activation cannot decrypt a file | The host public key is not a decryption key holder, or the key file is missing/wrong. Run `secretsCheck`. |
 | Secret path is missing at runtime | The secret is not declared for that machine, the key is wrong, or the service started before activation. Check `sops.secrets.<name>.path` and unit ordering. |
 | Service cannot read a secret | Check `owner`, `group` and `mode`; hardened units may need `ReadOnlyPaths` for `/run/secrets`. |
 | VM cannot decrypt | Check the host-side per-VM key file and the microvm share mount ordering. |

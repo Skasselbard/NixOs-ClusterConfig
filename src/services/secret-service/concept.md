@@ -42,10 +42,10 @@ The secret service never stores plaintext secret values in the Nix store or in g
 
 ## Isolation model
 
-- A sops file has one data key and one recipient set. The file is the isolation boundary.
+- A sops file has one data key and one decryption key holder set. The file is the isolation boundary.
 - Machine-private secrets live in the machine's sops file, encrypted to that machine and the admin recovery key.
 - Shared secrets live in a cluster or group file, encrypted only to the machines that need them and the admin key.
-- A compromised machine can read its own file and any shared file it is intentionally a recipient of. It cannot read another machine's private file.
+- A compromised machine can read its own file and any shared file it is intentionally a key holder of. It cannot read another machine's private file.
 
 ## Lifecycle
 
@@ -61,24 +61,22 @@ The secret service never stores plaintext secret values in the Nix store or in g
 
 1. Edit the sops file with `nix run .#<clusterName>.<machineName>.secretEdit` or set one value with `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>`.
 2. Commit the encrypted file.
-3. Deploy the machine normally, or run `nix run .#<clusterName>.<machineName>.secretsUpdate`.
-
-`secretsUpdate` refuses dirty/untracked sops files by default so an uncommitted secret is not the only copy.
+3. Deploy the machine normally. Run `nix run .#<clusterName>.<machineName>.secretsInstallKey` only to install or repair the host key.
 
 ### Adding or removing a machine
 
 1. Update the machine public keys / shared groups in the cluster configuration.
-2. Run `nix run .#<clusterName>.secrets.secretsSyncRecipients`.
+2. Run `nix run .#<clusterName>.secrets.secretsSyncKeyHolders`.
    - regenerates/validates `.sops.yaml`,
    - runs `sops updatekeys`,
-   - runs `sops rotate` when a recipient was removed,
+   - runs `sops rotate` when a key holder was removed,
    - reports files to commit.
 3. Commit the updated files.
-4. Run `nix run .#<clusterName>.<machineName>.secretsUpdate` on affected machines.
+4. Deploy the affected machines normally; run `secretsInstallKey` only if their host key needs repair.
 
 ### Rotation and compromise
 
-- Changing a recipient is not enough after a key compromise: the removed holder may have had the old data key. Run `sops updatekeys`, then `sops rotate`, then rotate the actual secret values.
+- Changing a key holder is not enough after a key compromise: the removed holder may have had the old data key. Run `sops updatekeys`, then `sops rotate`, then rotate the actual secret values.
 - Old ciphertext in Git history or the Nix store cannot be revoked by sops. Rotating the actual values limits the impact.
 - Keep old host identities only for a bounded rollback window, or in KeePass for temporary recovery.
 - The admin recovery key is included in every file as the long-term fallback.

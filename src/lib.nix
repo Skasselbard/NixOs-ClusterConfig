@@ -231,8 +231,9 @@ let
       else
         let
           # Add cluster information including "this" pointer for the current cluster and machine/vm and node.
-          clusterConfigNodeResolved = attrsets.recursiveUpdate clusterConfigBase {
-            clusters.this =
+          clusterConfigNodeResolved = clusterConfigBase // {
+            clusters = clusterConfigBase.clusters // {
+              this =
               let
                 thisCluster = clusterConfigBase.clusters."${clusterName}";
                 thisMachine = thisCluster.machines."${nodeName}" or null;
@@ -245,11 +246,19 @@ let
                   else
                     throw "nodeName '${nodeName}' not found in cluster '${clusterName}' during clusterConfig evaluation";
               in
-              attrsets.recursiveUpdate thisCluster {
-                machines.this = thisMachine;
-                vms.this = thisVm;
-                nodes.this = thisNode;
+              thisCluster
+              // {
+                machines = thisCluster.machines // {
+                  this = thisMachine;
+                };
+                vms = (thisCluster.vms or { }) // {
+                  this = thisVm;
+                };
+                nodes = (thisCluster.nodes or { }) // {
+                  this = thisNode;
+                };
               };
+            };
           };
 
           clusterConfigClusterResolved = attrsets.recursiveUpdate clusterConfigBase {

@@ -186,7 +186,31 @@ in
           }).options.deployment
           # overwrite colmena defaults
           {
-            # targetHost.default = TODO: ?;
+            extraFiles = lib.mkOption {
+              type = lib.types.attrsOf (
+                lib.types.submodule {
+                  options = {
+                    source = lib.mkOption {
+                      type = lib.types.nullOr lib.types.str;
+                      default = null;
+                      description = "Runtime source path copied to the target path. Use a string, not a Nix path.";
+                    };
+                    command = lib.mkOption {
+                      type = lib.types.nullOr lib.types.str;
+                      default = null;
+                      description = "Runtime command whose stdout is written to the target path.";
+                    };
+                    mode = lib.mkOption {
+                      type = lib.types.str;
+                      default = "0400";
+                      description = "File mode in octal.";
+                    };
+                  };
+                }
+              );
+              default = { };
+              description = "Additional files injected into a fresh installation through nixos-anywhere --extra-files.";
+            };
           };
 
       # TODO: VMs cannot be build and deployed (in the same way) and need to be gated.
