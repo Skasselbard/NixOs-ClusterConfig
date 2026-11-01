@@ -115,7 +115,7 @@ These options map directly to the upstream [sops-nix secret options](https://git
 |---|---|---|---|
 | [`sopsFile`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L50) | string or path | scope default | Which sops file contains the value. See [§7.2 String shorthands](#72-string-shorthands). |
 | [`key`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L61) | string | `"<user>/<secret>"` | Path inside the sops file. Uses `/` as separator. |
-| [`name`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L53) | string | `"<user>/<secret>"` | Runtime file name under the sops secret store. |
+| [`name`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L53) | string | `"<user>/<secret>"` | Runtime name used to derive the default `path`. The internal sops identity remains the cluster-qualified attribute key, so changing `name` does not affect template placeholders. |
 | [`path`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L68) | null or string | `"/run/secrets/<name>"` | Symlink path created by sops-nix. |
 | [`owner`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L103) | null or string | `null` (meaning `<user>`) | Runtime owner. |
 | [`group`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L116) | null or string | `null` | Runtime group. |
@@ -124,6 +124,8 @@ These options map directly to the upstream [sops-nix secret options](https://git
 | [`restartUnits`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L150) | list of strings | `[]` | Units restarted when the secret changes. |
 | [`reloadUnits`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L159) | list of strings | `[]` | Units reloaded when the secret changes. |
 | [`neededForUsers`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L168) | bool | `false` | Install before users are created, for hashed passwords. Forces root ownership and the early sops path. |
+
+The projected `sops.secrets` attribute key is the stable identity: `<cluster>/<user>/<secret>`. sops-nix uses the same value internally as the manifest secret name and placeholder lookup key. The `name` option only changes the default runtime path; `path` overrides it entirely. This keeps `config.sops.placeholder."<cluster>/<user>/<secret>"` stable even when a custom runtime name is set.
 
 ### 5.1 `neededForUsers` special case
 
@@ -370,7 +372,7 @@ The `create` package injects additional files with `nixos-anywhere --extra-files
 
 ### 11.3 Later deployments
 
-`secretsInstallKey` installs or replaces the key over SSH. It requires root/sudo to write the target key file, normally `/var/lib/sops-nix/key.txt`.
+`secretsInstallKey` installs or replaces the key over SSH. It requires root/sudo to write the target key file, normally `/var/lib/sops-nix/key.txt`. For managed key sources, activation runs a preflight check first and prints the machine-specific `secretsInstallKey` command if the key file is missing.
 
 ### 11.4 SSH host keys
 

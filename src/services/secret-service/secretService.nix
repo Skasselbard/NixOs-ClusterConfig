@@ -18,7 +18,9 @@ let
 
   inherit (lib)
     concatStringsSep
+    escapeShellArg
     mapAttrsToList
+    mkBefore
     mkDefault
     mkIf
     optionalAttrs
@@ -50,19 +52,20 @@ let
         else
           sopsFileRaw;
       key = if secret.key != null then secret.key else "${user}/${secretName}";
-      name = if secret.name != null then secret.name else "${user}/${secretName}";
+      runtimeName = if secret.name != null then secret.name else "${user}/${secretName}";
+      name = "${clusterName}/${user}/${secretName}";
       neededForUsers = secret.neededForUsers or false;
       owner = if neededForUsers then null else (if secret.owner != null then secret.owner else user);
       path =
         if secret.path != null then
           secret.path
         else if neededForUsers then
-          "/run/secrets-for-users/${name}"
+          "/run/secrets-for-users/${runtimeName}"
         else
-          "/run/secrets/${name}";
+          "/run/secrets/${runtimeName}";
     in
     {
-      name = "${clusterName}/${user}/${secretName}";
+      inherit name;
       value =
         {
           inherit
@@ -160,6 +163,18 @@ let
   keySource = machine.deployment.secrets.keySource;
   hasManagedAgeKey = keySource.type == "age" || keySource.type == "keepass";
 
+  keyPreflight = ''
+    if [ ! -s ${escapeShellArg keySource.targetKeyFile} ]; then
+      echo "ERROR: sops age key is missing at ${keySource.targetKeyFile}" >&2
+      echo "" >&2
+      echo "Install it first:" >&2
+      echo "  nix run .#${clusterName}.${machineName}.secretsInstallKey" >&2
+      echo "" >&2
+      echo "Then deploy again." >&2
+      exit 1
+    fi
+  '';
+
   assertions = [
     {
       assertion = duplicateKeys == [ ];
@@ -233,6 +248,10 @@ in
 
       (mkIf hasManagedAgeKey {
         sops.age.keyFile = keySource.targetKeyFile;
+        system.activationScripts.setupSecrets.text = mkBefore keyPreflight;
+      })
+      (mkIf (hasManagedAgeKey && config.sops.useSystemdActivation && config.sops.secrets != { }) {
+        systemd.services.sops-install-secrets.preStart = mkBefore keyPreflight;
       })
       (mkIf (keySource.type == "ssh") {
         sops.age.sshKeyPaths = keySource.ssh.keyPaths;
