@@ -22,7 +22,7 @@ This example uses the `secret-service` cluster service based on `sops-nix` to in
         └── cluster/monitoring.yaml  # shared group secrets
 ```
 
-`secrets/` is the conventional `<flakeRoot>/secrets` location.
+`secrets/` is the conventional `./secrets` location relative to this flake.
 
 The age keys used by this example live in `../00-exampleConfigs/secrets/age/` and are intentionally public test keys. Never reuse them for real deployments.
 
@@ -40,7 +40,7 @@ The cluster service declares the shared group and the cluster-scoped secret:
 services.secrets = {
   selectors = [ filters.clusterMachines ];
 
-  # Convention: <flakeRoot>/secrets.
+  # Helpers may run from any directory inside this flake. The explicit { nixPath; osPath; } form also works.
   sopsRoot = ./secrets;
   machinesSubDir = "machines";
   clusterSubDir = "cluster";
@@ -52,9 +52,12 @@ services.secrets = {
     age.sourceKeyFile = "../00-exampleConfigs/secrets/age/admin.key";
   };
 
-  # Group members share one sops file. That file is encrypted to the admin
-  # key and every member listed here.
-  groups.monitoring = [ "vm0" "vm1" "vm2" ];
+  # Secret-group members share one sops file. This is a cluster-local secret
+  # group, not an OS group. vm2 is selected by the service but not a member.
+  groups.monitoring = [ "vm0" "vm1" ];
+
+  # Explicit custom sops file, relative to sopsRoot.
+  secrets.custom.customPassword.sopsFile = "secrets/example/custom.yaml";
 
   # Global cluster secret: no sopsFile means cluster.yaml. Every selected
   # node plus the admin key can decrypt it.
@@ -118,7 +121,16 @@ machines.vm1 = {
 };
 ```
 
-The entry password is the vm1 age private key. The public key is derived at runtime; it is not stored in the Nix configuration. `keepass.entry` is optional and defaults to `clusterConfig/<clusterName>/machines/<machineName>`; this example uses `clusterConfig/example/machines/vm1`.
+The entry password is the vm1 age private key. The public key is derived at runtime; it is not stored in the Nix configuration. `keepass.entry` is optional and defaults to `clusterConfig/<clusterName>/machines/<machineName>`; this example uses `clusterConfig/example/machines/vm1`. `secretsKeyGenerate` creates missing parent groups before writing the entry.
+
+The checked-in `secrets/.secret-service-root` marker identifies this secret root. On a fresh root, create it with:
+
+```bash
+nix run .#example.secrets.secretsInitRoot
+git add secrets/.secret-service-root
+```
+
+Mutating helpers refuse to run until the marker is committed and visible in the evaluated store snapshot.
 
 ## Commands
 
@@ -149,8 +161,8 @@ Generate a new key directly in its key source:
 # age source: refuses to overwrite without --force
 nix run .#example.vm0.secretsKeyGenerate -- --force
 
-# Keepass source: updates the entry without --force, retaining old values in history
-nix run .#example.vm1.secretsKeyGenerate
+# Keepass source: requires --force to replace an existing entry
+nix run .#example.vm1.secretsKeyGenerate -- --force
 
 # Then synchronize recipients and install the new host keys
 nix run .#example.secrets.secretsSyncKeyHolders
@@ -166,6 +178,12 @@ Regenerate `.sops.yaml` and update the file key holders:
 nix run .#example.secrets.secretsSyncKeyHolders
 ```
 
+Synchronization only rotates data keys when the generated recipient configuration changed. To rotate all managed data keys unconditionally:
+
+```bash
+nix run .#example.secrets.secretsRotate
+```
+
 Check the machine and install its key. Deploy the system separately:
 
 ```bash
@@ -178,20 +196,22 @@ nix run .#example.vm0.deploy
 
 ## Test
 
-```bash
-ssh root@192.168.122.200
-cat /run/secrets/testService/testSecret
-cat /run/secrets/cluster/clusterPassword
-cat /run/secrets/monitoring/token
-cat /run/secrets/rendered/monitoring.env
-```
-
-For vm1:
+After deploying all three VMs, run:
 
 ```bash
-ssh root@192.168.122.201
-cat /home/admin/secrets/testPassword
+nix shell nixpkgs#age nixpkgs#keepassxc -c bash ./test.sh
 ```
+
+`test.sh` verifies:
+
+- every VM has the expected target key and `0600 root:root` key permissions,
+- cluster-wide secrets exist on all selected nodes,
+- vm0 and vm1 receive the monitoring secret and rendered template,
+- vm2 does not receive the monitoring secret or template,
+- the custom `sopsFile` secret exists on all selected nodes,
+- machine secrets have the expected owner and mode,
+- root can read each secret and `nobody` cannot,
+- `secretsCheck` passes for every VM.
 
 ## Important Notes
 

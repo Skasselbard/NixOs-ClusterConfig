@@ -26,7 +26,7 @@ Out of scope:
 | data key | The symmetric key sops generates per file to encrypt values. |
 | decryption key holder | A public key or key service that can decrypt the file's data key. sops calls this a recipient in `.sops.yaml`. |
 | identity | The private key material used by a decryption key holder. |
-| key source | How a target obtains its identity: age key file, KeePass, secure file, SSH host key, or native sops configuration. |
+| key source | How a target obtains its identity: age key file, KeePass, SSH host key, or native sops configuration. |
 | cluster-scoped secret | Declared under `services.secrets.secrets`; available on every machine selected by the service. |
 | machine-scoped secret | Declared under `machines.<machine>.secrets`; available only on that machine. |
 | projection | The evaluation-time mapping from cluster configuration to `sops.secrets` / `sops.templates`. |
@@ -38,14 +38,14 @@ These live under `domain.clusters.<cluster>.services.secrets`.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `selectors` | framework service option | required | Machines/VMs on which the service is active. |
-| `sopsRoot` | path | required | Root directory for sops files, conventionally `<flakeRoot>/secrets`. |
+| `sopsRoot` | path or `{ nixPath, osPath }` | required | Root directory for sops files. The normal form is `./secrets`; the explicit form supplies both projection and helper paths. |
 | `machinesSubDir` | string | `"machines"` | Subdirectory for per-machine sops files. |
 | `clusterSubDir` | string | `"cluster"` | Subdirectory for cluster group sops files. |
-| `clusterSopsFile` | null or path | `null` | Explicit cluster-wide sops file. `null` means `<sopsRoot>/<clusterName>/cluster.yaml`. |
+| `clusterSopsFile` | null or string | `null` | Explicit cluster-wide sops file. `null` means `<sopsRoot>/<clusterName>/cluster.yaml`. |
 | `secrets` | attrs of attrs of secret | `{}` | Cluster-scoped secrets, projected to every selected node. |
 | `templates` | attrs of template | `{}` | Cluster-scoped templates, projected to every selected node. |
 | `adminKeySource` | null or key-source submodule | `null` | Admin decryption key holder and identity used by `secretsSyncKeyHolders`. Its public key is derived from the key source at runtime. |
-| `groups` | attrs of list of node names | `{}` | Shared group membership. A group named `monitoring` with members `[ "vm1" "vm2" ]` corresponds to `sopsFile = "cluster/monitoring"`; see [§7.2](#72-string-shorthands). |
+| `groups` | attrs of list of node names | `{}` | Cluster-local secret groups. A group named `monitoring` with members `[ "vm1" "vm2" ]` corresponds to `sopsFile = "cluster/monitoring"` and is projected only to those nodes. These are not OS groups. |
 | `keepGenerations` | null or int | `null` | Projects to [`sops.keepGenerations`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L237) when non-null. |
 | `useTmpfs` | null or bool | `null` | Projects to [`sops.useTmpfs`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L299) when non-null. |
 | `log` | null or list of enum | `null` | Projects to [`sops.log`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L245) when non-null. |
@@ -113,7 +113,7 @@ These options map directly to the upstream [sops-nix secret options](https://git
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| [`sopsFile`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L50) | string or path | scope default | Which sops file contains the value. See [§7.2 String shorthands](#72-string-shorthands). |
+| `sopsFile` | string | scope default | Which sops file contains the value. Relative explicit paths resolve under `sopsRoot`. See [§7.2](#72-string-shorthands). |
 | [`key`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L61) | string | `"<user>/<secret>"` | Path inside the sops file. Uses `/` as separator. |
 | [`name`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L53) | string | `"<user>/<secret>"` | Runtime name used to derive the default `path`. The internal sops identity remains the cluster-qualified attribute key, so changing `name` does not affect template placeholders. |
 | [`path`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L68) | null or string | `"/run/secrets/<name>"` | Symlink path created by sops-nix. |
@@ -142,6 +142,7 @@ Both `services.secrets.templates.<name>` and `machines.<machine>.secrets.templat
 
 | Option | Type | Default | Description |
 |---|---|---|---|
+| `sopsFile` | null or string | `null` | Optional secret-group scope marker. `cluster/<group>` limits projection to that group; the template is not encrypted. |
 | [`content`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/templates/default.nix#L40) | function `{ config, lib, pkgs, ... }: string` | required | Template content, evaluated in NixOS module context. |
 | [`path`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/templates/default.nix#L34) | string | required | Runtime path for the rendered file. |
 | [`owner`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/templates/default.nix#L54) | null or string | `null` | Runtime owner. |
@@ -170,7 +171,7 @@ Templates cannot reference `neededForUsers` secrets.
 <sopsRoot>/<clusterName>/<clusterSubDir>/<groupName>.yaml
 ```
 
-`clusterSopsFile` overrides the cluster-wide file. `sopsRoot`, `machinesSubDir` and `clusterSubDir` are configurable. The convention is `<flakeRoot>/secrets`. These paths and the `sopsFile` shorthands are resolved as described in [§7.2](#72-string-shorthands).
+`clusterSopsFile` overrides the cluster-wide file. `sopsRoot`, `machinesSubDir` and `clusterSubDir` are configurable. Helpers locate the nearest enclosing `flake.nix` and may run from any directory inside the flake. From outside the flake, use the explicit `{ nixPath, osPath }` form. These paths and the `sopsFile` shorthands are resolved as described in [§7.2](#72-string-shorthands).
 
 ### 7.2 String shorthands
 
@@ -179,7 +180,7 @@ Templates cannot reference `neededForUsers` secrets.
 | `"machine"` | `<sopsRoot>/<clusterName>/<machinesSubDir>/<machineName>.yaml` |
 | `"cluster"` | `clusterSopsFile` if set, otherwise `<sopsRoot>/<clusterName>/cluster.yaml` |
 | `"cluster/<group>"` | `<sopsRoot>/<clusterName>/<clusterSubDir>/<group>.yaml` |
-| Any other string/path | Treated as an explicit path. |
+| Any other string | Explicit path. Relative values resolve under `sopsRoot`; absolute values are allowed. |
 
 ### 7.3 Resolution
 
@@ -193,6 +194,10 @@ There is no precedence chain:
 - If the resolved path or the configured scope file is invalid, fail with an error identifying the secret and the unresolved value. Do not fall back to another file.
 
 Every projected `sops.secrets` entry receives an explicit `sopsFile`. The service never relies on `sops.defaultSopsFile`.
+
+### 7.4 Root marker
+
+The sops root contains a committed `.secret-service-root` marker with a schema version, random `rootId`, cluster names and FQDN. Evaluation tolerates a missing marker; mutating helpers require it and compare the evaluated marker with the working-tree marker. `secretsInitRoot` creates the marker during bootstrap. The marker contains no secrets and is a safety guard, not an authorization boundary.
 
 ## 8. Projection rules
 
@@ -219,12 +224,12 @@ The Nix attribute name is namespaced by cluster. The sops `key` is **not** autom
 ### 8.1 Machine vs cluster scope
 
 - Machine-scoped secrets are projected only for that machine. Their `sopsFile` defaults to `"machine"`; see [§7.2](#72-string-shorthands).
-- Cluster-scoped secrets are projected for every node selected by the service. Their `sopsFile` defaults to `"cluster"`; see [§7.2](#72-string-shorthands).
+- Cluster-scoped secrets are projected to every selected node unless they use a secret-group file.
 - A cluster-scoped secret without `sopsFile` is a global secret stored in `cluster.yaml`; its key holders are all selected nodes plus the admin key.
-- A cluster-scoped secret with `sopsFile = "cluster/<group>"` is a group secret; its key holders are the group members plus the admin key.
+- A cluster-scoped secret with `sopsFile = "cluster/<group>"` is projected only to members of that cluster-local secret group; its key holders are the group members plus the admin key.
 - Global and group secrets share the same `services.secrets.secrets.<user>.<secret>` namespace. Use different names if both scopes are needed.
 - If both define the same `<user>/<secret>`, the machine-scoped secret wins and a Nix warning reports the shadowed cluster secret.
-- Duplicate mappings to the same `(sopsFile, key)` within a scope are an evaluation error.
+- Duplicate mappings to the same `(sopsFile, key)` are an evaluation error.
 
 ### 8.2 Templates
 
@@ -235,7 +240,7 @@ Templates are projected to `sops.templates` with namespaced names:
 <cluster>/<template>             # cluster-scoped
 ```
 
-Template `content` is called with the NixOS `config` so it can use `config.sops.placeholder`.
+Template `content` is called with the NixOS `config` so it can use `config.sops.placeholder`. Cluster templates are projected to every selected node by default and must reference only cluster-wide secrets. Setting `sopsFile = "cluster/<group>"` on a template is a scope marker that limits projection to that secret group; the template is not encrypted. Use machine templates for machine-only values.
 
 ### 8.3 Namespacing convention
 
@@ -258,12 +263,12 @@ Template `content` is called with the NixOS `config` so it can use `config.sops.
 Read-only, per machine. It verifies:
 
 1. The configured key source is resolvable.
-2. The target key file exists and matches the expected public key (age/keepass/file/ssh).
-3. Every sops file used by the machine contains the expected recipient, or is recoverable through the admin key.
-4. No unexpected machine recipients are present in machine-private files.
-5. Every declared key exists in its sops file.
-7. Templates reference declared secrets.
-8. `neededForUsers`, owner, group and mode constraints hold.
+2. The target key file exists and its derived public key matches the configured source (age/keepass).
+3. Every sops file used by the machine has exactly the expected recipients: the machine, the relevant secret group or cluster selection, and the admin key.
+4. No unexpected age recipients are present. Recipient comparison requires structured YAML/JSON metadata; binary files are reported as skipped.
+5. Every declared key decrypts from its sops file.
+6. Template placeholders reference declared secrets at evaluation time.
+7. `neededForUsers`, owner and group constraints hold where evaluable.
 
 It must not install, decrypt to persistent storage, or modify the repository.
 
@@ -272,7 +277,7 @@ It must not install, decrypt to persistent storage, or modify the repository.
 - exactly one of `owner`/`uid` and `group`/`gid` where relevant,
 - all secrets from one `sopsFile` use the same `format`,
 - target `owner` and `group` users/groups exist,
-- no duplicate `(sopsFile, key)` mappings per scope,
+- no duplicate `(sopsFile, key)` mappings,
 - `neededForUsers` is not combined with non-root ownership,
 - template placeholders refer to declared secrets,
 - `sopsFile` shorthands resolve to valid paths as defined in [§7.2](#72-string-shorthands).
@@ -287,7 +292,6 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 |---|---|
 | `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, recipients, declared secrets and templates. |
 | `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
-| `nix run .#<clusterName>.<machineName>.secretsRemoveOld` | Replace the host key file with the current identity. |
 | `nix run .#<clusterName>.<machineName>.secretsKeyGenerate [-- --force]` | Generate a key into `age.sourceKeyFile` or the KeePass entry. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
@@ -296,11 +300,13 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 
 | Command | Purpose |
 |---|---|
-| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients are removed. |
+| `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker. |
+| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
+| `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for all managed sops files. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
-| `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on the cluster files. |
-| `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on the cluster files. |
+| `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
+| `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on all managed files. |
 | `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file. |
 | `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
 | `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
@@ -326,24 +332,25 @@ It does not deploy the system. Secret activation happens when the normal system 
 
 Cluster-level. Mutates the repository and reports the changed files.
 
-1. Derive public keys at runtime from `adminKeySource`, each machine key source and `groups`, then generate `.sops.yaml`.
-2. Use `adminKeySource` (or an explicitly selected machine key source) to obtain an identity for data-key operations.
-3. Run `sops updatekeys` on affected files.
-4. For files where a recipient was removed, run `sops rotate --in-place`.
-5. Report changed files.
+1. Derive public keys at runtime from `adminKeySource`, managed machine key sources, groups and custom sops files, then generate `.sops.yaml`.
+2. Build the managed file set from machine files, group files, the cluster file and explicit `sopsFile` paths.
+3. Run `sops updatekeys` on managed files.
+4. If the generated `.sops.yaml` changed, rotate data keys for all managed files.
+5. Stage changes and restore prior file contents on failure.
+6. Report changed files.
 
-### 10.6 `secretsRemoveOld`
+Native key sources without a manual public key are skipped and reported as unmanaged.
 
-Per machine and cluster-level variants. Reinstalls the current key over the existing target key file, replacing old identities. It does not run when the key source is `ssh` or `native`.
+### 10.6 `secretsRotate`
 
-It cannot revoke old ciphertext in Git history or the Nix store; see section 12.
+Cluster-level. Rotates data keys for every managed sops file. It does not regenerate host identities and does not rewrite `.sops.yaml`.
 
 ### 10.7 `secretsKeyGenerate`
 
 Per machine. Generates a key directly in the configured key source.
 
 - `age`: writes `age.sourceKeyFile`; refuses to overwrite without `--force`.
-- `keepass`: updates the configured entry password; overwrites without `--force` and prints a warning.
+- `keepass`: creates missing entry parent groups, updates the configured entry password, and refuses to overwrite without `--force`.
 - `ssh`: derives and prints the public recipient; does not rotate host keys.
 - `native`: unsupported.
 
@@ -355,8 +362,8 @@ These are thin wrappers around the corresponding sops commands:
 
 - `secretEdit` opens the default scope file. Machine scope edits the machine file; cluster scope edits the cluster file.
 - `secretSet` sets one key in the default scope file. The value is read from stdin.
-- `secretUpdateKeys` runs `sops updatekeys` on the cluster files.
-- `secretRotate` runs `sops rotate` on the cluster files.
+- `secretUpdateKeys` runs `sops updatekeys` on all managed files.
+- `secretRotate` runs `sops rotate` on all managed files.
 
 The wrappers use the same path resolution as the projection; see [§7.2](#72-string-shorthands).
 
@@ -364,7 +371,7 @@ The wrappers use the same path resolution as the projection; see [§7.2](#72-str
 
 ### 11.1 Default recommendation
 
-A dedicated age key per node. It separates secret access from SSH access, rotates independently, and can be escrowed in KeePass or a secure file.
+A dedicated age key per node. It separates secret access from SSH access, rotates independently, and can be escrowed in KeePass or an age-key file.
 
 ### 11.2 First installation
 

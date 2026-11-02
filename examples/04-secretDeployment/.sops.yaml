@@ -1,30 +1,36 @@
 creation_rules:
-  - path_regex: ^secrets/example/machines/vm0\.yaml$
-    key_groups:
-      - age:
-          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
-          - age164wt3nxhjktkcvqe200y2psj0w3jrkk8vk2rmc0gtc0dlqwntyashhgkch
-  - path_regex: ^secrets/example/machines/vm1\.yaml$
-    key_groups:
-      - age:
-          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
-          - age1vdvx7r7uyrx8er3yxpu87ylpgdruclwwav6j7tl4lse2f7mqscls3l4exj
-  - path_regex: ^secrets/example/machines/vm2\.yaml$
-    key_groups:
-      - age:
-          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
-          - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf
-  - path_regex: ^secrets/example/cluster/monitoring\.yaml$
+  - path_regex: ^secrets/example/cluster.yaml$
     key_groups:
       - age:
           - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
           - age164wt3nxhjktkcvqe200y2psj0w3jrkk8vk2rmc0gtc0dlqwntyashhgkch
           - age1vdvx7r7uyrx8er3yxpu87ylpgdruclwwav6j7tl4lse2f7mqscls3l4exj
           - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf
-  - path_regex: ^secrets/example/cluster\.yaml$
+  - path_regex: ^secrets/example/cluster/monitoring.yaml$
     key_groups:
       - age:
           - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
           - age164wt3nxhjktkcvqe200y2psj0w3jrkk8vk2rmc0gtc0dlqwntyashhgkch
           - age1vdvx7r7uyrx8er3yxpu87ylpgdruclwwav6j7tl4lse2f7mqscls3l4exj
+  - path_regex: ^secrets/example/custom.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age164wt3nxhjktkcvqe200y2psj0w3jrkk8vk2rmc0gtc0dlqwntyashhgkch
+          - age1vdvx7r7uyrx8er3yxpu87ylpgdruclwwav6j7tl4lse2f7mqscls3l4exj
+          - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf
+  - path_regex: ^secrets/example/machines/vm0.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age164wt3nxhjktkcvqe200y2psj0w3jrkk8vk2rmc0gtc0dlqwntyashhgkch
+  - path_regex: ^secrets/example/machines/vm1.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
+          - age1vdvx7r7uyrx8er3yxpu87ylpgdruclwwav6j7tl4lse2f7mqscls3l4exj
+  - path_regex: ^secrets/example/machines/vm2.yaml$
+    key_groups:
+      - age:
+          - age104d65gc0j9zu7lnf3afglrc2hq292cuyx3y0ytp8mctelj2s3ppstnxx39
           - age1hn3mxk8zpmeyrrftaek5djxth63vsylel3sdzvzvzx92phs9xssssznkvf

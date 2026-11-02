@@ -20,6 +20,7 @@ let
 
   inherit (lib)
     concatStringsSep
+    hasInfix
     hasPrefix
     optional
     optionalString
@@ -49,45 +50,59 @@ let
 
   keepassExtractCommand =
     keepass:
-    let
-      password = keepassPasswordCommand keepass;
-      args =
-        "${keepassKeyFileArg keepass} ${lib.escapeShellArg (toString keepass.databasePath)} ${lib.escapeShellArg keepass.entry}";
-    in
-    if password == "" then
-      "${keepassxc} show -q -s -a Password ${args}"
+    if keepass.databasePath == null || keepass.entry == null then
+      throw "secret-service: keepass.databasePath and keepass.entry are required"
     else
-      "printf '%s\\n' \"$(${password})\" | ${keepassxc} show -q -s -a Password ${args}";
+      let
+        password = keepassPasswordCommand keepass;
+        args =
+          "${keepassKeyFileArg keepass} ${lib.escapeShellArg (toString keepass.databasePath)} ${lib.escapeShellArg keepass.entry}";
+      in
+      if password == "" then
+        "${keepassxc} show -q -s -a Password ${args}"
+      else
+        "printf '%s\\n' \"$(${password})\" | ${keepassxc} show -q -s -a Password ${args}";
 
   serviceOf = clusterConfig: clusterConfig.clusters.this.services.secrets;
   machineOf = clusterConfig: clusterConfig.clusters.this.machines.this;
   clusterNameOf = clusterConfig: clusterConfig.clusters.this.name;
   machineNameOf = clusterConfig: clusterConfig.clusters.this.machines.this.name;
 
-  sopsRootPath = service: toString service.sopsRoot;
+  isAbsolute = hasPrefix "/";
 
-  # Helper commands use the documented <flakeRoot>/secrets convention. Keeping
-  # this as a relative path means they work from the flake root without a
-  # second writable-path option.
-  sopsRootCommand = _service: "secrets";
+  sopsRootSpec =
+    service:
+    if isPath service.sopsRoot then
+      {
+        nixPath = toString service.sopsRoot;
+        osPath = null;
+      }
+    else
+      {
+        nixPath = toString service.sopsRoot.nixPath;
+        osPath = service.sopsRoot.osPath;
+      };
+
+  sopsRootPath = service: (sopsRootSpec service).nixPath;
+  sopsRootOsPath = service: (sopsRootSpec service).osPath;
 
   sopsConfigFile = _service: ".sops.yaml";
 
   clusterRootAt =
     root: clusterName:
-    "${root}/${clusterName}";
+    if root == "" then clusterName else "${root}/${clusterName}";
 
   clusterRoot = service: clusterName: clusterRootAt (sopsRootPath service) clusterName;
-  clusterRootCommand = service: clusterName: clusterRootAt (sopsRootCommand service) clusterName;
+  clusterRootCommand = service: clusterName: clusterRootAt "" clusterName;
 
   machineSopsFileAt =
     root: service: clusterName: machineName:
     "${clusterRootAt root clusterName}/${service.machinesSubDir}/${machineName}.yaml";
 
   clusterSopsFileAt =
-    root: service: clusterName:
+    root: explicit: service: clusterName:
     if service.clusterSopsFile != null then
-      toString service.clusterSopsFile
+      explicit service.clusterSopsFile
     else
       "${clusterRootAt root clusterName}/cluster.yaml";
 
@@ -98,6 +113,7 @@ let
   resolveSopsFileAt =
     {
       root,
+      explicit,
       service,
       clusterName,
       machineName ? null,
@@ -114,19 +130,17 @@ let
       else
         machineSopsFileAt root service clusterName machineName
     else if selected == "cluster" then
-      clusterSopsFileAt root service clusterName
+      clusterSopsFileAt root explicit service clusterName
     else if isString selected && hasPrefix "cluster/" selected then
       let
         group = removePrefix "cluster/" selected;
       in
-      if group == "" || lib.hasInfix "/" group then
+      if group == "" || hasInfix "/" group then
         throw "secret-service: invalid group sopsFile '${selected}'"
       else
         groupSopsFileAt root service clusterName group
-    else if isPath selected then
-      toString selected
     else if isString selected then
-      selected
+      explicit selected
     else
       throw "secret-service: unsupported sopsFile value '${toString selected}'";
 
@@ -136,6 +150,7 @@ let
       args
       // {
         root = sopsRootPath args.service;
+        explicit = (value: if isAbsolute value then value else "${sopsRootPath args.service}/${value}");
       }
     );
 
@@ -144,7 +159,8 @@ let
     resolveSopsFileAt (
       args
       // {
-        root = sopsRootCommand args.service;
+        root = "";
+        explicit = (value: value);
       }
     );
 
@@ -165,6 +181,43 @@ let
         value = args.secret.sopsFile or null;
       }
     );
+
+  keepassEntry =
+    {
+      clusterName,
+      machineName,
+      keepass,
+    }:
+    if keepass.entry != null then
+      keepass.entry
+    else
+      "clusterConfig/${clusterName}/machines/${machineName}";
+
+  # A cluster secret that points at a secret-group file is only visible to
+  # members of that secret group. Secret groups are cluster-local access
+  # groups; they are unrelated to OS users/groups.
+  clusterSecretVisibleToMachine =
+    {
+      service,
+      machineName,
+      secret,
+    }:
+    let
+      value = secret.sopsFile or null;
+    in
+    if value != null && isString value && hasPrefix "cluster/" value then
+      let
+        group = removePrefix "cluster/" value;
+      in
+      if group == "" || hasInfix "/" group then
+        # Invalid group shorthands are rejected by resolveSopsFileAt.
+        true
+      else if !(hasAttr group (service.groups or { })) then
+        throw "secret-service: sopsFile '${value}' references undefined secret group '${group}'"
+      else
+        elem machineName (service.groups.${group} or [ ])
+    else
+      true;
 
   # Returns the node names selected by the service. Different evaluation stages
   # expose selectors either as filter-produced names or as resolved node sets.
@@ -206,7 +259,10 @@ let
     if keySource == null then
       ""
     else if keySource.type == "age" then
-      "export SOPS_AGE_KEY_FILE=${lib.escapeShellArg (toString keySource.age.sourceKeyFile)}"
+      if keySource.age.sourceKeyFile == null then
+        throw "secret-service: age.sourceKeyFile is required for type = \"age\""
+      else
+        "export SOPS_AGE_KEY_FILE=${lib.escapeShellArg (toString keySource.age.sourceKeyFile)}"
     else if keySource.type == "keepass" then
       ''
         __secret_service_key_file="$(mktemp)"
@@ -216,9 +272,12 @@ let
       ''
     else if keySource.type == "ssh" then
       let
-        key = head keySource.ssh.keyPaths;
+        keys = keySource.ssh.keyPaths;
       in
-      "export SOPS_AGE_SSH_PRIVATE_KEY_FILE=${lib.escapeShellArg (toString key)}"
+      if keys == [ ] then
+        throw "secret-service: ssh.keyPaths must contain at least one key"
+      else
+        "export SOPS_AGE_SSH_PRIVATE_KEY_FILE=${lib.escapeShellArg (toString (head keys))}"
     else
       "";
 
@@ -227,8 +286,14 @@ let
     if keySource == null then
       ""
     else if keySource.type == "age" then
-      "${ageKeygen} -y ${lib.escapeShellArg (toString keySource.age.sourceKeyFile)}"
+      if keySource.age.sourceKeyFile == null then
+        throw "secret-service: age.sourceKeyFile is required for type = \"age\""
+      else
+        "${ageKeygen} -y ${lib.escapeShellArg (toString keySource.age.sourceKeyFile)}"
     else if keySource.type == "keepass" then
+      if keySource.keepass.databasePath == null || keySource.keepass.entry == null then
+        throw "secret-service: keepass.databasePath and keepass.entry are required for type = \"keepass\""
+      else
       ''
         __secret_service_key="$(mktemp)"
         ${keepassExtractCommand keySource.keepass} > "$__secret_service_key"
@@ -237,9 +302,12 @@ let
       ''
     else if keySource.type == "ssh" then
       let
-        key = head keySource.ssh.keyPaths;
+        keys = keySource.ssh.keyPaths;
       in
-      "${sshKeygen} -y -f ${lib.escapeShellArg (toString key)} | ${sshToAge}"
+      if keys == [ ] then
+        throw "secret-service: ssh.keyPaths must contain at least one key"
+      else
+        "${sshKeygen} -y -f ${lib.escapeShellArg (toString (head keys))} | ${sshToAge}"
     else if keySource.type == "native" then
       if keySource.native.publicKey != null then
         "printf '%s\\n' ${lib.escapeShellArg keySource.native.publicKey}"
@@ -256,11 +324,15 @@ let
     {
       sops,
       file,
+      fileShell ? null,
       key,
       format ? null,
     }:
+    let
+      fileArg = if fileShell == null then lib.escapeShellArg file else fileShell;
+    in
     if format == "binary" then
-      "${sops} --decrypt ${lib.escapeShellArg file} >/dev/null"
+      "${sops} --decrypt ${fileArg} >/dev/null"
     else
       let
         keyPath =
@@ -270,7 +342,7 @@ let
           )
           + "]";
       in
-      "${sops} --decrypt --extract ${lib.escapeShellArg keyPath} ${lib.escapeShellArg file} >/dev/null";
+      "${sops} --decrypt --extract ${lib.escapeShellArg keyPath} ${fileArg} >/dev/null";
 
 in
 {
@@ -278,6 +350,8 @@ in
     clusterNameOf
     clusterRoot
     clusterRootCommand
+    clusterSecretVisibleToMachine
+    keepassEntry
     keepassExtractCommand
     keepassKeyFileArg
     keepassPasswordCommand
@@ -295,7 +369,8 @@ in
     selectedNodes
     serviceOf
     sopsConfigFile
-    sopsRootCommand
+    sopsRootOsPath
     sopsRootPath
+    sopsRootSpec
     ;
 }

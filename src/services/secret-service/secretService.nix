@@ -10,6 +10,7 @@ let
 
   inherit (builtins)
     attrNames
+    attrValues
     concatMap
     filter
     hasAttr
@@ -47,7 +48,9 @@ let
         machineName = if scope == "machine" then machineName else null;
       };
       sopsFile =
-        if builtins.isString sopsFileRaw && lib.hasPrefix "/" sopsFileRaw then
+        if builtins.isString sopsFileRaw && lib.hasPrefix "/nix/store/" sopsFileRaw then
+          /. + (builtins.unsafeDiscardStringContext sopsFileRaw)
+        else if builtins.isString sopsFileRaw && lib.hasPrefix "/" sopsFileRaw then
           /. + sopsFileRaw
         else
           sopsFileRaw;
@@ -84,7 +87,18 @@ let
 
   clusterEntries = concatMap (
     user:
-    mapAttrsToList (secretName: secret: mkSecret "cluster" user secretName secret) clusterSecrets.${user}
+    map (
+      secretName:
+      mkSecret "cluster" user secretName clusterSecrets.${user}.${secretName}
+    ) (
+      filter (
+        secretName:
+        secretLib.clusterSecretVisibleToMachine {
+          inherit service machineName;
+          secret = clusterSecrets.${user}.${secretName};
+        }
+      ) (attrNames clusterSecrets.${user})
+    )
   ) (attrNames clusterSecrets);
 
   machineEntries = concatMap (
@@ -114,6 +128,35 @@ let
 
   shadowed = filter (name: hasAttr name machineEntryAttrs) (attrNames clusterEntryAttrs);
   effectiveSecrets = clusterEntryAttrs // machineEntryAttrs;
+
+  formatsByFile = builtins.foldl' (
+    acc: entry:
+    let
+      format = entry.value.format or null;
+      file = entry.value.sopsFile;
+    in
+    if format == null then
+      acc
+    else
+      acc // { ${file} = unique ((acc.${file} or [ ]) ++ [ format ]); }
+  ) { } (attrValues effectiveSecrets);
+  formatConflicts = builtins.filter (file: builtins.length formatsByFile.${file} > 1) (
+    attrNames formatsByFile
+  );
+
+  ownerGroupAssertions = concatMap (
+    entry:
+    [
+      {
+        assertion = (entry.value.owner or null) == null || hasAttr entry.value.owner config.users.users;
+        message = "secret-service: secret ${entry.name} references unknown owner '${entry.value.owner or ""}'";
+      }
+      {
+        assertion = (entry.value.group or null) == null || hasAttr entry.value.group config.users.groups;
+        message = "secret-service: secret ${entry.name} references unknown group '${entry.value.group or ""}'";
+      }
+    ]
+  ) (attrValues effectiveSecrets);
 
   mkTemplate =
     scope: templateName: template:
@@ -152,7 +195,20 @@ let
       inherit (entry) name value;
     }) (
       concatMap (
-        templateName: [ (mkTemplate "cluster" templateName clusterTemplates.${templateName}) ]
+        templateName:
+        let
+          template = clusterTemplates.${templateName};
+        in
+        if
+          template.sopsFile == null
+          || secretLib.clusterSecretVisibleToMachine {
+            inherit service machineName;
+            secret = { inherit (template) sopsFile; };
+          }
+        then
+          [ (mkTemplate "cluster" templateName template) ]
+        else
+          [ ]
       ) (attrNames clusterTemplates)
       ++ concatMap (
         templateName: [ (mkTemplate "machine" templateName machineTemplates.${templateName}) ]
@@ -162,6 +218,18 @@ let
 
   keySource = machine.deployment.secrets.keySource;
   hasManagedAgeKey = keySource.type == "age" || keySource.type == "keepass";
+  templatePlaceholderTokens = builtins.concatMap (
+    template:
+    map builtins.head (
+      builtins.filter builtins.isList (
+        builtins.split "(<SOPS:[0-9a-f]+:PLACEHOLDER>)" template.content
+      )
+    )
+  ) (builtins.attrValues templates);
+  knownPlaceholders = builtins.attrValues config.sops.placeholder;
+  unknownTemplatePlaceholders = builtins.filter (
+    token: !(builtins.elem token knownPlaceholders)
+  ) templatePlaceholderTokens;
 
   keyPreflight = ''
     if [ ! -s ${escapeShellArg keySource.targetKeyFile} ]; then
@@ -188,7 +256,22 @@ let
       assertion = keySource.type != "keepass" || keySource.keepass.databasePath != null;
       message = "secret-service: machines.${machineName}.deployment.secrets.keySource.keepass.databasePath is required for type = \"keepass\"";
     }
+    {
+      assertion =
+        keySource.type != "keepass"
+        || !(keySource.keepass.passwordFile != null && keySource.keepass.passwordCommand != null);
+      message = "secret-service: machines.${machineName}.deployment.secrets.keySource.keepass.passwordFile and .passwordCommand are mutually exclusive";
+    }
+    {
+      assertion = unknownTemplatePlaceholders == [ ];
+      message = "secret-service: templates on ${machineName} reference unknown placeholders: ${concatStringsSep ", " unknownTemplatePlaceholders}";
+    }
+    {
+      assertion = formatConflicts == [ ];
+      message = "secret-service: sops files with conflicting secret formats on ${machineName}: ${concatStringsSep ", " formatConflicts}";
+    }
   ]
+  ++ ownerGroupAssertions
   ++ concatMap (
     user:
     mapAttrsToList (

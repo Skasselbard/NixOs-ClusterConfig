@@ -81,7 +81,7 @@
                 # option for the age key that unlocks the sops files.
                 secrets = {
                   selectors = [ filters.clusterMachines ];
-                  # Convention: <flakeRoot>/secrets.
+                  # Helpers may run from any directory inside this flake. The explicit { nixPath; osPath; } form also works.
                   sopsRoot = ./secrets;
                   # The admin key source is both the recipient key for every
                   # generated rule and the identity used by key-holder commands.
@@ -94,7 +94,6 @@
                   groups.monitoring = [
                     "vm0"
                     "vm1"
-                    "vm2"
                   ];
 
                   # Global cluster secret: no sopsFile means cluster.yaml.
@@ -110,12 +109,20 @@
                     owner = "root";
                   };
 
-                  templates.monitoringEnv = {
-                    path = "/run/secrets/rendered/monitoring.env";
+                  # Explicit custom sops file: relative to sopsRoot.
+                  secrets.custom.customPassword = {
+                    sopsFile = "example/custom.yaml";
+                    owner = "root";
+                  };
+
+                  # Cluster-level template using a cluster-wide secret.
+                  templates.clusterEnv = {
+                    path = "/run/secrets/rendered/cluster.env";
                     content = { config }: ''
-                      TOKEN=${config.sops.placeholder."example/monitoring/token"}
+                      PASSWORD=${config.sops.placeholder."example/cluster/clusterPassword"}
                     '';
                   };
+
                 };
 
               };
@@ -174,6 +181,12 @@
                       path = "/home/admin/secrets/adminSecret";
                       mode = "0400";
                     };
+                    templates.monitoringEnv = {
+                      path = "/run/secrets/rendered/monitoring.env";
+                      content = { config }: ''
+                        TOKEN=${config.sops.placeholder."example/monitoring/token"}
+                      '';
+                    };
                   };
 
                   nixosModules = [
@@ -208,9 +221,17 @@
                       passwordFile = "../00-exampleConfigs/secrets/keepass.pass";
                     };
                   };
-                  secrets.admin.testPassword = {
-                    path = "/home/admin/secrets/testPassword";
-                    mode = "0440";
+                  secrets = {
+                    admin.testPassword = {
+                      path = "/home/admin/secrets/testPassword";
+                      mode = "0440";
+                    };
+                    templates.monitoringEnv = {
+                      path = "/run/secrets/rendered/monitoring.env";
+                      content = { config }: ''
+                        TOKEN=${config.sops.placeholder."example/monitoring/token"}
+                      '';
+                    };
                   };
 
                   # The service module is still enabled through the selector just like on the other machines.

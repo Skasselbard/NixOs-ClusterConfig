@@ -1,6 +1,6 @@
 # Secret Service — Decisions and Rationale
 
-> **Status:** decision log for the sops-nix migration. The implementation is in progress. This file records why the design looks the way it does, including alternatives that were considered and rejected.
+> **Status:** decision log for the implemented sops-nix secret service. This file records why the design looks the way it does, including alternatives that were considered and rejected.
 
 ## Context
 
@@ -130,7 +130,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D11 — Dedicated age keys by default; support SSH and native backends
 
-**Decision:** default recommendation is a dedicated age key per node. Support KeePass, secure file, SSH host key and native sops configuration. Do not force one key model.
+**Decision:** default recommendation is a dedicated age key per node. Support KeePass, age-key files, SSH host key and native sops configuration. Do not force one key model.
 
 **Reasoning:**
 
@@ -163,7 +163,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D15 — Parameterless commands
 
-**Decision:** commands are generated per machine/cluster with all parameters embedded. Use separate commands for separate operations: `secretsCheck`, `secretsInstallKey`, `secretsSyncKeyHolders`, `secretsRemoveOld`, plus the `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` helpers.
+**Decision:** commands are generated per machine/cluster with all parameters embedded. Use separate commands for separate operations: `secretsCheck`, `secretsInstallKey`, `secretsSyncKeyHolders`, `secretsRotate`, plus the `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` helpers.
 
 **Reasoning:**
 
@@ -243,6 +243,94 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 - The checks added complexity and depended on how the helper command was launched.
 - Git-backed flakes still require files to be tracked to be visible to Nix; that is a Nix constraint, not a service feature.
 
+### D23 — Secret groups filter projection
+
+**Decision:** cluster-local secret groups are access groups. A cluster secret using `sopsFile = "cluster/<group>"` is projected only to machines in that group, not to every selected machine.
+
+**Reasoning:**
+
+- A group file is only decryptable by its members and the admin key.
+- Projecting it to non-members creates a deployment that fails activation for no useful reason.
+- Secret groups are unrelated to OS users/groups.
+
+### D24 — File-recipient map instead of path patterns only
+
+**Decision:** derive recipients from the actual files referenced by secrets and the default machine/group/cluster files. Generate one rule per resolved file.
+
+**Reasoning:**
+
+- `clusterSopsFile` and explicit `sopsFile` paths must work.
+- Multiple nodes can reference the same custom file; the recipient set is their union plus admin.
+- It avoids processing unrelated files found by `find`.
+
+### D25 — Sync and rotate are separate
+
+**Decision:** `secretsSyncKeyHolders` updates recipients and rotates data keys only when the recipient configuration changed. `secretsRotate` rotates all managed files unconditionally.
+
+**Reasoning:**
+
+- `sops updatekeys` does not change the data key.
+- Rotating after recipient removal is important for compromise recovery.
+- Unconditional rotation should be an explicit operation.
+
+### D26 — Native sources are manually managed
+
+**Decision:** native sources are skipped by sync unless a manual public key is configured. Native PGP/KMS/Vault creation rules are outside this service.
+
+**Reasoning:**
+
+- The service cannot derive those recipients from private cluster config.
+- Silently omitting a required recipient would produce a broken or insecure `.sops.yaml`.
+
+### D27 — Path roots and working-tree resolution
+
+**Decision:** `sopsRoot` is a Nix path by default (`./secrets`), with an optional explicit `{ nixPath, osPath }` form. Helper commands derive the working-tree path from the store suffix and Git flake prefix, or use `osPath`. Helpers may run from any directory inside the flake; the nearest enclosing `flake.nix` is used as the flake root. Writable sops paths are strings; Nix paths are not accepted for writable `sopsFile` values.
+
+**Reasoning:**
+
+- Nix paths point at the immutable store.
+- Projection and helper commands need one consistent path model.
+- Absolute paths remain possible for external secret trees.
+
+### D28 — Stage destructive updates
+
+**Decision:** sync and rotate back up managed files and restore them if a sops operation fails. `.sops.yaml` is written to a temporary file and moved into place only after success.
+
+**Reasoning:**
+
+- A partial key update leaves the repository in an inconsistent state.
+- Backup and restore are simpler and safer than trying to continue after a sops failure.
+
+### D29 — Exact target key and recipient verification
+
+**Decision:** `secretsCheck` reads the target key, derives its public key and requires an exact match. It also compares the complete age recipient set against the expected set. `secretsInstallKey` verifies the installed key by reading it back.
+
+**Reasoning:**
+
+- Checking only that a key file exists does not prove it is usable.
+- Checking only that the expected key is present does not detect an extra recipient.
+
+### D30 — Root marker and bootstrap
+
+**Decision:** store a non-secret `.secret-service-root` marker in the sops root. Evaluation tolerates a missing marker; mutating helpers require it. `secretsInitRoot` creates it during setup.
+
+**Reasoning:**
+
+- Mutable secret files cannot be compared safely.
+- The marker identifies the intended secret root without storing secret data.
+- A missing marker must not block evaluation, or the initializer could never be built.
+- Committing the marker makes it part of the evaluated store snapshot.
+
+### D31 — Remove `secretsRemoveOld`
+
+**Decision:** do not provide a separate old-identity removal command. `secretsInstallKey` replaces the target key file contents with the current identity.
+
+**Reasoning:**
+
+- The target key is a single managed file, not a set of generations.
+- Reinstallation already removes old contents from that file.
+- KeePass history is not host identity state and is not managed by this command.
+
 ## Rejected alternatives
 
 | Alternative | Why rejected |
@@ -262,7 +350,6 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 - Runtime credential checks for Vault/KMS in `secretsCheck`.
 - Optional per-generation key file paths for stronger rollback isolation.
 - Home-manager secret module for per-user secrets, if needed.
-- A dedicated `secretsRotateDataKey` command if data-key rotation becomes routine.
 
 ## Security notes
 

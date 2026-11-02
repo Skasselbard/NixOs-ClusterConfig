@@ -87,7 +87,7 @@ let
   secretType = types.submodule {
     options = {
       sopsFile = mkOption {
-        type = types.nullOr (types.either types.str types.path);
+        type = types.nullOr types.str;
         default = null;
         description = "Sops file containing this secret. Defaults to the scope file.";
       };
@@ -154,6 +154,11 @@ let
 
   templateType = types.submodule {
     options = {
+      sopsFile = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Optional secret-group scope for projection. Templates are not encrypted themselves.";
+      };
       content = mkOption {
         type = types.raw;
         description = "Template content string or function of { config, lib, pkgs }.";
@@ -257,32 +262,47 @@ let
   secretServiceExtraFiles =
     config:
     clusterlib.update.nodes config (
-      _clusterName: _nodeName: nodeConfig:
+      clusterName: nodeName: nodeConfig:
       let
+        service = config.domain.clusters.${clusterName}.services.secrets or null;
+        selected =
+          if service == null then
+            [ ]
+          else
+            filters.resolveNodeName (service.selectors or [ ]) clusterName config;
+        clusterSecrets = if service == null then { } else service.secrets or { };
+        machineSecrets = builtins.removeAttrs (nodeConfig.secrets or { }) [ "templates" ];
+        hasVisibleClusterSecret = builtins.any (
+          user:
+          builtins.any (
+            secretName:
+            secretLib.clusterSecretVisibleToMachine {
+              inherit service;
+              machineName = nodeName;
+              secret = clusterSecrets.${user}.${secretName};
+            }
+          ) (builtins.attrNames clusterSecrets.${user})
+        ) (builtins.attrNames clusterSecrets);
+        hasMachineSecret = builtins.any (user: machineSecrets.${user} != { }) (
+          builtins.attrNames machineSecrets
+        );
+        needsKey = selected != [ ] && builtins.elem nodeName selected && (hasVisibleClusterSecret || hasMachineSecret);
         keySource = nodeConfig.deployment.secrets.keySource;
         keepass = keySource.keepass;
-        keepassEntry =
-          if keepass.entry != null then
-            keepass.entry
-          else
-            "clusterConfig/${_clusterName}/machines/${_nodeName}";
-        keepassPassword =
-          if keepass.passwordFile != null then
-            "cat ${lib.escapeShellArg (toString keepass.passwordFile)}"
-          else if keepass.passwordCommand != null then
-            keepass.passwordCommand
+        keepassEntry = secretLib.keepassEntry {
+          inherit clusterName;
+          machineName = nodeName;
+          keepass = keySource.keepass;
+        };
+        keepassCommand =
+          if keySource.type == "keepass" then
+            secretLib.keepassExtractCommand (keepass // { entry = keepassEntry; })
           else
             "";
-        keepassArgs = lib.optionalString (keepass.keyFilePath != null) (
-          "--key-file ${lib.escapeShellArg (toString keepass.keyFilePath)}"
-        );
-        keepassCommand =
-          if keepassPassword == "" then
-            "${pkgs.keepassxc}/bin/keepassxc-cli show -q -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg keepassEntry}"
-          else
-            "printf '%s\\n' \"$(${keepassPassword})\" | ${pkgs.keepassxc}/bin/keepassxc-cli show -q -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg keepassEntry}";
         extraFiles =
-          if keySource.type == "age" then
+          if !needsKey then
+            { }
+          else if keySource.type == "age" then
             {
               ${keySource.targetKeyFile} = {
                 source = keySource.age.sourceKeyFile;
@@ -387,10 +407,24 @@ let
     ) groupNames
   );
 
+  sopsRootType = types.submodule {
+    options = {
+      nixPath = mkOption {
+        type = types.path;
+        description = "Nix path used for sops-nix projection.";
+      };
+      osPath = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Working-tree path used by helper commands. Shell expansion is supported. If null, helpers derive it from Git.";
+      };
+    };
+  };
+
   serviceOptions = {
     sopsRoot = mkOption {
-      type = types.path;
-      description = "Root directory for sops files, conventionally <flakeRoot>/secrets.";
+      type = types.either types.path sopsRootType;
+      description = "Root directory for sops files. Use a path for the normal Git-resolved case, or { nixPath, osPath } for an explicit working-tree path.";
     };
     machinesSubDir = mkOption {
       type = types.str;
@@ -403,7 +437,7 @@ let
       description = "Subdirectory for group sops files.";
     };
     clusterSopsFile = mkOption {
-      type = types.nullOr (types.either types.str types.path);
+      type = types.nullOr types.str;
       default = null;
       description = "Explicit cluster-wide sops file. Defaults to <sopsRoot>/<cluster>/cluster.yaml.";
     };
@@ -485,6 +519,12 @@ in
       options = serviceOptions;
 
       packages = {
+        secretsInitRoot =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretsInitRoot" (
+            scripts.mkInitRootScript { inherit clusterConfig; }
+          );
+
         secretsSyncKeyHolders =
           { clusterConfig }:
           pkgs.writeShellScriptBin "secretsSyncKeyHolders" (
@@ -515,6 +555,15 @@ in
             scripts.mkUpdateKeysScript {
               inherit clusterConfig;
               rotate = false;
+            }
+          );
+
+        secretsRotate =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretsRotate" (
+            scripts.mkUpdateKeysScript {
+              inherit clusterConfig;
+              rotate = true;
             }
           );
 
@@ -561,17 +610,6 @@ in
           in
           pkgs.writeShellScriptBin "secretsInstallKey" (
             scripts.mkInstallKeyScript {
-              inherit clusterConfig machineName;
-            }
-          );
-
-        secretsRemoveOld =
-          { clusterConfig }:
-          let
-            machineName = secretLib.machineNameOf clusterConfig;
-          in
-          pkgs.writeShellScriptBin "secretsRemoveOld" (
-            scripts.mkRemoveOldScript {
               inherit clusterConfig machineName;
             }
           );

@@ -13,7 +13,7 @@ It uses [sops-nix](https://github.com/Mic92/sops-nix) for the runtime side and n
 - Each machine has its own sops file by default, so a compromised machine cannot decrypt another machine's secrets.
 - Secrets are decrypted on the target at activation time and written to a RAM-backed secret store.
 - Per-secret `owner`, `group`, `mode`, `path`, `restartUnits` and `reloadUnits` are supported.
-- Templates can render configuration files from several secrets.
+- Templates can render configuration files from several secrets. A cluster template may set `sopsFile = "cluster/<group>"` to limit projection to that secret group; the template itself is not encrypted. Without `sopsFile`, a cluster template is projected to every selected node and must use cluster-wide secrets.
 - KeePass can be used as the key escrow for the small number of age keys. It is not a data backend and is not required on target machines.
 - Other sops key methods are supported through native sops-nix configuration: age key files, SSH keys as age identities, PGP, cloud KMS, Vault Transit and age plugins.
 
@@ -104,7 +104,7 @@ Global secrets are useful for values every selected node needs, such as a shared
 services.secrets = {
   selectors = [ filters.clusterMachines ];
 
-  # Convention: <flakeRoot>/secrets.
+  # Helpers may run from any directory inside this flake.
   sopsRoot = ./secrets;
   machinesSubDir = "machines";
   clusterSubDir = "cluster";
@@ -142,7 +142,7 @@ machines.vm1 = {
 };
 ```
 
-Supported key-source types are `age`, `keepass`, `ssh` and `native`. `age` always requires a build-host `age.sourceKeyFile`; the target key file is provisioned from it. `keepass` extracts the private age key from the configured entry. `native` means you configure `sops.*` yourself, including age plugins.
+Supported key-source types are `age`, `keepass`, `ssh` and `native`. `age` always requires a build-host `age.sourceKeyFile`; the target key file is provisioned from it. `keepass` extracts the private age key from the configured entry and creates missing parent groups during key generation. `native` is manually managed; configure `sops.*` yourself, including age plugins.
 
 Password sources, in preference order:
 
@@ -168,8 +168,8 @@ Generate or replace a key directly in its source:
 # file-backed age key: requires --force to overwrite
 nix run .#<cluster>.<machine>.secretsKeyGenerate -- --force
 
-# KeePass entry: overwrites without --force and prints a warning
-nix run .#<cluster>.<machine>.secretsKeyGenerate
+# KeePass entry: requires --force to overwrite an existing entry
+nix run .#<cluster>.<machine>.secretsKeyGenerate -- --force
 ```
 
 Public keys are derived at runtime from `age.sourceKeyFile`, the KeePass entry or the SSH key. They are not configured in the cluster options.
@@ -240,15 +240,16 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 |---|---|
 | `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, decryption key holders, declared secrets and templates. |
 | `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
-| `nix run .#<clusterName>.<machineName>.secretsRemoveOld` | Remove old age identities from the host after the rollback window. |
 | `nix run .#<clusterName>.<machineName>.secretsKeyGenerate [-- --force]` | Generate a new key into its age source or KeePass entry. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
-| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Derive public keys, regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys. |
+| `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker. Required once per secret root. |
+| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Derive public keys, regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
+| `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for every managed sops file. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
-| `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on the cluster files. |
-| `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on the cluster files. |
+| `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
+| `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on all managed files. |
 | `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file, for example `secretMonitoringEdit`. |
 | `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
 | `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
@@ -263,9 +264,45 @@ The package path determines the scope: machine commands live under `<clusterName
 | `age` | A build-host `age.sourceKeyFile` is installed to `targetKeyFile`, normally `/var/lib/sops-nix/key.txt`. |
 | `keepass` | The helper extracts the age key from a KeePass entry during setup/recovery and installs it to `targetKeyFile`. KeePass is not needed at boot. |
 | `ssh` | The target's SSH host key is used as the age identity. No key injection is needed, but the host key must exist before activation and reimaging requires re-encryption. Public-key derivation requires a locally readable key. |
-| `native` | You configure `sops.age.*`, `sops.gnupg.*`, `sops.environment` or age plugins directly. For recipient generation, set `native.publicKey` or `native.publicKeyFile`. |
+| `native` | Manually managed. Set `native.publicKey` or `native.publicKeyFile` if sync should include it as an age recipient. Native PGP/KMS/Vault rules are not generated by this service; `secretsSyncKeyHolders` rewrites `.sops.yaml`, so keep manual native rules outside that managed file. |
 
 Dedicated age keys are the default recommendation because they rotate independently from SSH access and have a clear recovery path. SSH keys are supported for convenience, but document the tradeoff.
+
+## Paths and secret groups
+
+`sopsRoot` is normally a Nix path such as `./secrets`. Projection uses that path, while helper commands resolve the corresponding working-tree path. Run helpers from anywhere inside the flake; the helper locates the nearest enclosing `flake.nix`. If you invoke a helper from outside the flake, use the explicit form:
+
+```nix
+sopsRoot = {
+  nixPath = ./secrets;
+  osPath = "secrets";
+};
+```
+
+`osPath` may use shell expansion such as `~` or `$HOME`. Plain `clusterSopsFile` and explicit `sopsFile` strings are relative to `sopsRoot`; absolute paths are allowed. Nix paths are not accepted for writable sops files.
+
+The sops root must contain a committed `.secret-service-root` marker. Evaluation tolerates a missing marker, but mutating helpers require it. Initialize a fresh root with:
+
+```bash
+nix run .#<cluster>.secrets.secretsInitRoot
+git add secrets/.secret-service-root
+```
+
+The marker contains only a random root ID, cluster names and FQDN; it is a safety guard, not a secret or authorization boundary.
+
+A “group” in this service is a **cluster-local secret group**, not an OS user group. A cluster secret with `sopsFile = "cluster/monitoring"` is projected only to the machines listed in `groups.monitoring`. Use cluster-wide files or machine files when different access is required. Cluster templates are projected to all selected nodes, so they must only reference cluster-wide secrets; use machine templates for group-only values.
+
+Custom `sopsFile` values participate in recipient generation. The expected recipients for a custom file are the union of the nodes that reference it, plus the admin key.
+
+## Sync, rotate and key generation
+
+These are separate operations:
+
+- `secretsSyncKeyHolders` regenerates `.sops.yaml`, updates recipients and only rotates data keys when the recipient configuration changed.
+- `secretsRotate` rotates data keys for every managed sops file.
+- `secretsKeyGenerate` generates or replaces a host identity.
+
+`secretsSyncKeyHolders` and `secretsRotate` work on the discovered managed file set, not on every YAML file below `sopsRoot`. They stage changes and restore the previous files if a sops operation fails.
 
 ## Deployment
 

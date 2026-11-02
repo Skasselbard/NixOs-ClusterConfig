@@ -35,7 +35,7 @@ cluster configuration
 | Which secret belongs to which machine/user and where it is mounted | cluster configuration |
 | Secret values | sops files |
 | Which keys can decrypt a sops file | `.sops.yaml` and the sops file metadata |
-| Host identities | key source configuration (KeePass, secure file, age key, SSH key or native sops configuration) |
+| Host identities | key source configuration (KeePass, age key file, SSH key or native sops configuration) |
 | Recovery key | KeePass or another protected escrow |
 
 The secret service never stores plaintext secret values in the Nix store or in generated scripts.
@@ -44,7 +44,8 @@ The secret service never stores plaintext secret values in the Nix store or in g
 
 - A sops file has one data key and one decryption key holder set. The file is the isolation boundary.
 - Machine-private secrets live in the machine's sops file, encrypted to that machine and the admin recovery key.
-- Shared secrets live in a cluster or group file, encrypted only to the machines that need them and the admin key.
+- Shared secrets live in a cluster or secret-group file, encrypted only to the machines that need them and the admin key. Secret groups are cluster-local access groups, not OS groups.
+- The sops root carries a committed `.secret-service-root` marker so helpers can verify the working-tree root before editing.
 - A compromised machine can read its own file and any shared file it is intentionally a key holder of. It cannot read another machine's private file.
 
 ## Lifecycle
@@ -52,7 +53,7 @@ The secret service never stores plaintext secret values in the Nix store or in g
 ### Provisioning a new machine
 
 1. Generate a dedicated age key, or select SSH/native key source.
-2. Store the public key in the cluster configuration/`.sops.yaml`; store the private key in KeePass, a secure file, or on the host depending on the key source.
+2. Store the public key in the cluster configuration/`.sops.yaml`; store the private key in KeePass, an age-key file, or on the host depending on the key source.
 3. The `create` package injects the age key with `nixos-anywhere --extra-files` before activation.
 4. The sops file was already encrypted to the host's public key.
 5. Activation decrypts it and installs the secrets.
@@ -69,7 +70,7 @@ The secret service never stores plaintext secret values in the Nix store or in g
 2. Run `nix run .#<clusterName>.secrets.secretsSyncKeyHolders`.
    - regenerates/validates `.sops.yaml`,
    - runs `sops updatekeys`,
-   - runs `sops rotate` when a key holder was removed,
+   - runs `sops rotate` when the recipient configuration changed,
    - reports files to commit.
 3. Commit the updated files.
 4. Deploy the affected machines normally; run `secretsInstallKey` only if their host key needs repair.

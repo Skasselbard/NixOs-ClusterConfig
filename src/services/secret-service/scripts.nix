@@ -23,10 +23,130 @@ let
   ssh = "${pkgs.openssh}/bin/ssh";
   ageKeygen = "${pkgs.age}/bin/age-keygen";
   jq = "${pkgs.jq}/bin/jq";
+  yq = "${pkgs.yq-go}/bin/yq";
   sed = "${pkgs.gnused}/bin/sed";
   keepassxc = "${pkgs.keepassxc}/bin/keepassxc-cli";
 
   shellList = values: concatStringsSep " " (map escapeShellArg values);
+
+  sopsRootResolve =
+    service:
+    let
+      spec = secretLib.sopsRootSpec service;
+      osPath = if spec.osPath == null then "" else spec.osPath;
+    in
+    ''
+      sops_root_store=${escapeShellArg spec.nixPath}
+      sops_root_os=${escapeShellArg osPath}
+      find_flake_root() {
+        repo_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || {
+          echo "ERROR: cannot determine the Git repository root for the sops root." >&2
+          echo "Run this helper from inside the flake, or configure:" >&2
+          echo "  sopsRoot = { nixPath = ./secrets; osPath = "/absolute/path/to/secrets"; };" >&2
+          exit 1
+        }
+        flake_root="$PWD"
+        while [ "$flake_root" != "/" ] && [ ! -f "$flake_root/flake.nix" ]; do
+          flake_root="$(dirname "$flake_root")"
+        done
+        if [ ! -f "$flake_root/flake.nix" ]; then
+          echo "ERROR: cannot find an enclosing flake.nix." >&2
+          echo "Run this helper from inside the flake, or configure sopsRoot.osPath." >&2
+          exit 1
+        fi
+        case "$flake_root" in
+          "$repo_root"|"$repo_root"/*) ;;
+          *)
+            echo "ERROR: the enclosing flake is outside the current Git repository." >&2
+            exit 1
+            ;;
+        esac
+        if [ "$flake_root" = "$repo_root" ]; then
+          flake_prefix=""
+        else
+          flake_prefix="''${flake_root#"$repo_root"/}/"
+        fi
+      }
+
+      resolve_sops_root() {
+        find_flake_root
+        if [ -n "$sops_root_os" ]; then
+          case "$sops_root_os" in
+            "~"*) sops_root_os="''${HOME}''${sops_root_os#\~}" ;;
+          esac
+          eval "expanded=\"$sops_root_os\""
+          case "$expanded" in
+            /*) sops_root="$expanded" ;;
+            *) sops_root="$flake_root/$expanded" ;;
+          esac
+        else
+          case "$sops_root_store" in
+            /nix/store/*)
+              sops_root_rel="''${sops_root_store#/nix/store/*/}"
+              case "$sops_root_rel" in
+                "$flake_prefix"*) sops_root_rel="''${sops_root_rel#"$flake_prefix"}" ;;
+              esac
+              sops_root="$sops_root_rel"
+              ;;
+            *) sops_root="$sops_root_store" ;;
+          esac
+        fi
+        cd "$flake_root"
+        sops_config="$flake_root/.sops.yaml"
+      }
+      resolve_sops_root
+      sops_path() {
+        case "$1" in
+          /*) printf '%s' "$1" ;;
+          *) printf '%s/%s' "$sops_root" "$1" ;;
+        esac
+      }
+    '';
+
+  sopsRootPreamble =
+    service:
+    sopsRootResolve service
+    + ''
+      if [ ! -f "$sops_root_store/.secret-service-root" ]; then
+        echo "ERROR: missing secret-service root marker in the evaluated sops root:" >&2
+        echo "  $sops_root_store/.secret-service-root" >&2
+        echo "" >&2
+        echo "Run the root initializer first:" >&2
+        echo "  nix run .#<cluster>.secrets.secretsInitRoot" >&2
+        exit 1
+      fi
+      if [ ! -f "$sops_root/.secret-service-root" ]; then
+        echo "ERROR: missing secret-service root marker in the working tree:" >&2
+        echo "  $sops_root/.secret-service-root" >&2
+        echo "" >&2
+        echo "Commit the marker and re-run Nix so the evaluated sops root contains it." >&2
+        exit 1
+      fi
+      if ! cmp -s "$sops_root_store/.secret-service-root" "$sops_root/.secret-service-root"; then
+        echo "ERROR: secret-service root marker mismatch." >&2
+        echo "  evaluated: $sops_root_store/.secret-service-root" >&2
+        echo "  working:   $sops_root/.secret-service-root" >&2
+        echo "" >&2
+        echo "Run this helper from inside the flake, commit the marker, or configure:" >&2
+        echo "  sopsRoot = { nixPath = ./secrets; osPath = \"secrets\"; };" >&2
+        exit 1
+      fi
+    '';
+
+  sopsRootPreambleOptional =
+    service:
+    sopsRootResolve service
+    + ''
+      if [ ! -f "$sops_root_store/.secret-service-root" ] || [ ! -f "$sops_root/.secret-service-root" ]; then
+        echo "WARNING: secret-service root marker is missing; run secretsInitRoot." >&2
+      fi
+    '';
+
+  keySourceManagedInSync =
+    keySource:
+    keySource.type != "native"
+    || keySource.native.publicKey != null
+    || keySource.native.publicKeyFile != null;
 
   secretEntries =
     {
@@ -54,7 +174,18 @@ let
     in
     concatMap (
       user:
-      mapAttrsToList (secretName: secret: mk "cluster" user secretName secret) clusterSecrets.${user}
+      map (
+        secretName:
+        mk "cluster" user secretName clusterSecrets.${user}.${secretName}
+      ) (
+        filter (
+          secretName:
+          secretLib.clusterSecretVisibleToMachine {
+            inherit service machineName;
+            secret = clusterSecrets.${user}.${secretName};
+          }
+        ) (attrNames clusterSecrets.${user})
+      )
     ) (attrNames clusterSecrets)
     ++ concatMap (
       user:
@@ -85,6 +216,7 @@ let
       clusterName,
       machine,
       machineName,
+      clusterConfig,
     }:
     let
       entries = secretEntries {
@@ -107,25 +239,67 @@ let
         secretLib.keyCheck {
           inherit sops;
           file = entry.sopsFile;
+          fileShell = "$(sops_path ${escapeShellArg entry.sopsFile})";
           key = entry.key;
           format = entry.format;
         }
       ) entries;
       keyEnv = secretLib.keySourceEnv keySource;
       sopsConfig = secretLib.sopsConfigFile service;
+      selected = secretLib.selectedNodes service;
+      fileRecipients = managedFileRecipients {
+        inherit service clusterName clusterConfig;
+      };
+      nodeCommand = nodeName: {
+        name = nodeName;
+        command = secretLib.keySourcePublicKeyCommand (
+          secretLib.keySourceOf (secretLib.nodeByName clusterConfig nodeName)
+        );
+      };
+      nodeCommands = map nodeCommand selected;
+      adminCommand =
+        if service.adminKeySource == null then
+          ""
+        else
+          secretLib.keySourcePublicKeyCommand service.adminKeySource;
+      publicKeyCase = concatStringsSep "\n" (
+        [ ''
+          "admin") key="$(
+            ${adminCommand}
+          )" ;;
+        '' ]
+        ++ map (
+          node:
+          ''
+            ${escapeShellArg node.name}) key="$(
+              ${node.command}
+            )" ;;
+          ''
+        ) nodeCommands
+      );
+      expectedRecipientNames = file: [ "admin" ] ++ (fileRecipients.${file} or [ ]);
+      recipientCases = concatStringsSep "\n" (
+        map (
+          file:
+          "${escapeShellArg file}) expected_names=(${shellList (expectedRecipientNames file)}) ;;"
+        ) files
+      );
     in
     ''
+      set -euo pipefail
+      ${sopsRootPreambleOptional service}
       echo "Checking sops files for ${machineName}..."
 
       for file in ${shellList files}; do
-        [ -f "$file" ] || {
-          echo "ERROR: sops file does not exist: $file" >&2
+        sops_file="$(sops_path "$file")"
+        [ -f "$sops_file" ] || {
+          echo "ERROR: sops file does not exist: $sops_file" >&2
           exit 1
         }
       done
 
       ${keyEnv}
-      export SOPS_CONFIG=${escapeShellArg sopsConfig}
+      export SOPS_CONFIG="$sops_config"
 
       if [ "${keySource.type}" = "age" ] || [ "${keySource.type}" = "keepass" ]; then
         if [ -n ${escapeShellArg targetHost} ]; then
@@ -157,23 +331,33 @@ let
       fi
 
       if [ -n "$expected_key" ]; then
+        target_key_tmp="$(mktemp)"
+        trap 'rm -f "$target_key_tmp" "''${__secret_service_key_file:-}"' EXIT
         if [ -n ${escapeShellArg targetHost} ]; then
-          actual_key="$(${ssh} ${sshArgs} ${escapeShellArg target} "command -v age-keygen >/dev/null && age-keygen -y ${targetKeyFile}" 2>/dev/null || true)"
+          ${ssh} ${sshArgs} ${escapeShellArg target} "cat -- ${targetKeyFile}" > "$target_key_tmp" || {
+            echo "ERROR: could not read age key file on ${machineName}: ${keySource.targetKeyFile}" >&2
+            exit 1
+          }
+          actual_key="$(${ageKeygen} -y "$target_key_tmp" 2>/dev/null || true)"
         elif [ -s ${targetKeyFile} ]; then
           actual_key="$(${ageKeygen} -y ${targetKeyFile} 2>/dev/null || true)"
         else
           actual_key=""
         fi
-        if [ -n "$actual_key" ] && [ "$actual_key" != "$expected_key" ]; then
-          echo "ERROR: age key does not match the configured source" >&2
+        if [ -z "$actual_key" ] || [ "$actual_key" != "$expected_key" ]; then
+          echo "ERROR: target age key does not match the configured source" >&2
           echo "  expected: $expected_key" >&2
           echo "  actual:   $actual_key" >&2
+          echo "" >&2
+          echo "Install the expected key with:" >&2
+          echo "  nix run .#${clusterName}.${machineName}.secretsInstallKey" >&2
           exit 1
         fi
 
         for file in ${shellList files}; do
-          ${pkgs.gnugrep}/bin/grep -qF "$expected_key" "$file" || {
-            echo "ERROR: $file is not encrypted to the current machine key." >&2
+          sops_file="$(sops_path "$file")"
+          ${pkgs.gnugrep}/bin/grep -qF "$expected_key" "$sops_file" || {
+            echo "ERROR: $sops_file is not encrypted to the current machine key." >&2
             echo "  expected: $expected_key" >&2
             echo "" >&2
             echo "This usually means the key was rotated but sops files were not updated." >&2
@@ -187,6 +371,55 @@ let
         done
       fi
 
+      public_key_for() {
+        local name="$1"
+        local key=""
+        case "$name" in
+      ${publicKeyCase}
+          *)
+            echo "ERROR: no public key available for '$name'" >&2
+            return 1
+            ;;
+        esac
+        if [ -z "$key" ]; then
+          echo "ERROR: no public key available for '$name'" >&2
+          return 1
+        fi
+        printf '%s\n' "$key"
+      }
+
+      echo "Checking recipients..."
+      for file in ${shellList files}; do
+        sops_file="$(sops_path "$file")"
+        case "$file" in
+          *.yaml|*.yml|*.json)
+            expected_names=()
+            case "$file" in
+      ${recipientCases}
+            esac
+            expected_recipients=""
+            for name in "''${expected_names[@]}"; do
+              expected_recipients="$expected_recipients$(public_key_for "$name")"$'\n'
+            done
+            expected_recipients="$(printf '%s' "$expected_recipients" | sort -u)"
+            actual_recipients="$(${yq} -r '.sops.age[]?.recipient' "$sops_file" 2>/dev/null | sort -u)"
+            if [ "$actual_recipients" != "$expected_recipients" ]; then
+              echo "ERROR: unexpected recipient set in $sops_file" >&2
+              echo "  expected:" >&2
+              printf '%s\n' "$expected_recipients" | sed 's/^/    /' >&2
+              echo "  actual:" >&2
+              printf '%s\n' "$actual_recipients" | sed 's/^/    /' >&2
+              echo "Run:" >&2
+              echo "  nix run .#${clusterName}.secrets.secretsSyncKeyHolders" >&2
+              exit 1
+            fi
+            ;;
+          *)
+            echo "WARNING: skipping recipient check for non-structured sops file: $file" >&2
+            ;;
+        esac
+      done
+
       echo "Checking declared keys..."
       ${concatStringsSep "\n" checkCommands}
 
@@ -194,13 +427,37 @@ let
     '';
 
   mkInstallKeyBody =
-    machine:
+    {
+      machine,
+      clusterName,
+      machineName,
+    }:
     let
       keySource = machine.deployment.secrets.keySource;
+      keepassEntry = secretLib.keepassEntry {
+        inherit clusterName machineName;
+        keepass = keySource.keepass;
+      };
       target = sshTargetOf machine;
       sshArgs = sshArgsOf machine;
       keyFile = escapeShellArg keySource.targetKeyFile;
       installFromStdin = "${ssh} ${sshArgs} ${escapeShellArg target} \"umask 077; mkdir -p \\\"$(dirname ${keyFile})\\\"; cat > ${keyFile}; chmod 600 ${keyFile}\"";
+      verifyInstalledKey = ''
+        expected_key="$(
+          ${secretLib.keySourcePublicKeyCommand keySource}
+        )"
+        target_key_tmp="$(mktemp)"
+        ${ssh} ${sshArgs} ${escapeShellArg target} "cat -- ${keyFile}" > "$target_key_tmp"
+        actual_key="$(${ageKeygen} -y "$target_key_tmp" 2>/dev/null || true)"
+        rm -f "$target_key_tmp"
+        if [ -z "$actual_key" ] || [ "$actual_key" != "$expected_key" ]; then
+          echo "ERROR: installed key does not match the configured source" >&2
+          echo "  expected: $expected_key" >&2
+          echo "  actual:   $actual_key" >&2
+          exit 1
+        fi
+        echo "Verified installed key: $actual_key"
+      '';
     in
     if keySource.type == "age" then
       ''
@@ -210,15 +467,17 @@ let
           exit 1
         }
         ${installFromStdin} < ${escapeShellArg (toString keySource.age.sourceKeyFile)}
+        ${verifyInstalledKey}
       ''
     else if keySource.type == "keepass" then
       ''
-        echo "Extracting age key from KeePass entry ${keySource.keepass.entry}..."
+        echo "Extracting age key from KeePass entry ${keepassEntry}..."
         tmp_key="$(mktemp)"
         trap 'rm -f "$tmp_key"' EXIT
-        ${secretLib.keepassExtractCommand keySource.keepass} > "$tmp_key"
+        ${secretLib.keepassExtractCommand (keySource.keepass // { entry = keepassEntry; })} > "$tmp_key"
         test -s "$tmp_key" || { echo "ERROR: KeePass entry did not yield an age key" >&2; exit 1; }
         ${installFromStdin} < "$tmp_key"
+        ${verifyInstalledKey}
       ''
     else
       ''
@@ -232,7 +491,8 @@ let
     }:
     let
       machine = secretLib.machineOf clusterConfig;
-      installBody = mkInstallKeyBody machine;
+      clusterName = secretLib.clusterNameOf clusterConfig;
+      installBody = mkInstallKeyBody { inherit machine clusterName machineName; };
     in
     ''
       set -euo pipefail
@@ -241,29 +501,6 @@ let
 
       echo "Key installation/check complete for ${machineName}."
       echo "Deploy secret changes through the normal system deployment."
-    '';
-
-  mkRemoveOldScript =
-    {
-      clusterConfig,
-      machineName,
-    }:
-    let
-      machine = secretLib.machineOf clusterConfig;
-      keySource = machine.deployment.secrets.keySource;
-      installBody = mkInstallKeyBody machine;
-    in
-    ''
-      set -euo pipefail
-
-      if [ "${keySource.type}" = "age" ] || [ "${keySource.type}" = "keepass" ]; then
-        # Installing the current key replaces all previous identities.
-        ${installBody}
-        echo "Old identities removed from ${machineName}."
-        exit 0
-      fi
-
-      echo "Key source type '${keySource.type}' has no old identities managed by this service."
     '';
 
   mkSecretsKeyGenerateScript =
@@ -281,12 +518,15 @@ let
       passwordSetup = optionalString (passwordCommand != "") ''
         password="$(${passwordCommand})"
       '';
-      keepassExtract = secretLib.keepassExtractCommand keepass;
+      keepassExtract =
+        if keySource.type == "keepass" then
+          secretLib.keepassExtractCommand keepass
+        else
+          "";
       keepassDb = escapeShellArg (if keepass.databasePath == null then "" else toString keepass.databasePath);
-      keepassEntryValue =
-        if keepass.entry != null
-        then keepass.entry
-        else "clusterConfig/${clusterName}/machines/${machineName}";
+      keepassEntryValue = secretLib.keepassEntry {
+        inherit clusterName machineName keepass;
+      };
       keepassEntry = escapeShellArg keepassEntryValue;
       publicCommand = secretLib.keySourcePublicKeyCommand keySource;
     in
@@ -325,6 +565,31 @@ let
           ${passwordSetup}
           entry_key="$(grep '^AGE-SECRET' "$tmp_key")"
           test -n "$entry_key" || { echo "ERROR: generated age key has no private identity line" >&2; exit 1; }
+          if [ "$force" -ne 1 ] && ${keepassExtract} >/dev/null 2>&1; then
+            echo "ERROR: KeePass entry already exists: ${keepassEntryValue}; pass --force to overwrite it." >&2
+            exit 1
+          fi
+          ensure_keepass_group() {
+            local group="$1"
+            local current=""
+            local part
+            IFS='/' read -ra parts <<< "$group"
+            for part in "''${parts[@]}"; do
+              [ -z "$part" ] && continue
+              current="''${current:+$current/}$part"
+              if [ -n "''${password:-}" ]; then
+                if ! printf '%s\n' "$password" | ${keepassxc} ls -q ${keyFileArg} ${keepassDb} "$current" >/dev/null 2>&1; then
+                  printf '%s\n' "$password" | ${keepassxc} mkdir -q ${keyFileArg} ${keepassDb} "$current"
+                fi
+              else
+                if ! ${keepassxc} ls -q ${keyFileArg} ${keepassDb} "$current" >/dev/null 2>&1; then
+                  ${keepassxc} mkdir -q ${keyFileArg} ${keepassDb} "$current"
+                fi
+              fi
+            done
+          }
+          entry_group="$(dirname ${keepassEntry})"
+          [ "$entry_group" != "." ] && ensure_keepass_group "$entry_group"
           if [ -n "${"$"}{password:-}" ]; then
             if ${keepassExtract} >/dev/null 2>&1; then
               printf '%s\n%s\n' "$password" "$entry_key" | ${keepassxc} edit -q -p ${keyFileArg} ${keepassDb} ${keepassEntry}
@@ -396,9 +661,10 @@ let
     in
     ''
       set -euo pipefail
-      export SOPS_CONFIG=${escapeShellArg sopsConfig}
+      ${sopsRootPreamble service}
+      export SOPS_CONFIG="$sops_config"
       ${keyEnv}
-      ${sops} edit ${escapeShellArg file} "$@"
+      ${sops} edit "$(sops_path ${escapeShellArg file})" "$@"
     '';
 
   mkSecretSetScript =
@@ -443,7 +709,8 @@ let
     in
     ''
             set -euo pipefail
-            export SOPS_CONFIG=${escapeShellArg sopsConfig}
+            ${sopsRootPreamble service}
+            export SOPS_CONFIG="$sops_config"
             ${keyEnv}
             key=""
             if [ "${"$"}{1:-}" = "--key" ]; then
@@ -463,25 +730,108 @@ let
             key_path=$(printf '%s' "$key" | ${sed} 's#/#"]["#g')
             key_path="[\"$key_path\"]"
             value_json="$(cat | ${jq} -Rs .)"
-            printf '%s' "$value_json" | ${sops} set --value-stdin "$file" "$key_path"
+            printf '%s' "$value_json" | ${sops} set --value-stdin "$(sops_path "$file")" "$key_path"
     '';
+
+  mergeFileRecipients =
+    entries:
+    builtins.foldl' (
+      acc: entry:
+      if builtins.hasAttr entry.file acc then
+        acc // { ${entry.file} = unique (acc.${entry.file} ++ entry.recipients); }
+      else
+        acc // { ${entry.file} = unique entry.recipients; }
+    ) { } entries;
+
+  managedFileRecipients =
+    {
+      service,
+      clusterName,
+      clusterConfig,
+    }:
+    let
+      selected = secretLib.selectedNodes service;
+      managedNode =
+        nodeName:
+        keySourceManagedInSync (
+          secretLib.keySourceOf (secretLib.nodeByName clusterConfig nodeName)
+        );
+      managedSelected = filter managedNode selected;
+      groups = attrNames (service.groups or { });
+      machineFile = nodeName: {
+        file = secretLib.resolveSopsFileCommand {
+          inherit service clusterName;
+          scope = "machine";
+          machineName = nodeName;
+        };
+        recipients = [ nodeName ];
+      };
+      groupFile = group: {
+        file = secretLib.resolveSopsFileCommand {
+          inherit service clusterName;
+          scope = "cluster";
+          value = "cluster/${group}";
+        };
+        recipients = filter managedNode service.groups.${group};
+      };
+      clusterFile = {
+        file = secretLib.resolveSopsFileCommand {
+          inherit service clusterName;
+          scope = "cluster";
+        };
+        recipients = managedSelected;
+      };
+      entriesForNode =
+        nodeName:
+        if !(managedNode nodeName) then
+          [ ]
+        else
+          let
+            machine = secretLib.nodeByName clusterConfig nodeName;
+          in
+          map (
+            entry:
+            {
+              file = entry.sopsFile;
+              recipients = [ nodeName ];
+            }
+          ) (secretEntries {
+            inherit service clusterName;
+            machineName = nodeName;
+            machine = machine;
+          });
+    in
+    mergeFileRecipients (
+      [ clusterFile ]
+      ++ map machineFile managedSelected
+      ++ map groupFile groups
+      ++ concatMap entriesForNode selected
+    );
 
   mkSyncKeyHoldersScript =
     { clusterConfig }:
     let
       service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
-      sopsRoot = secretLib.sopsRootCommand service;
       sopsConfig = secretLib.sopsConfigFile service;
-      relativeRoot = baseNameOf sopsRoot;
       selected = secretLib.selectedNodes service;
+      managedSelected = filter (
+        nodeName: keySourceManagedInSync (secretLib.keySourceOf (secretLib.nodeByName clusterConfig nodeName))
+      ) selected;
+      nativeSkipped = filter (
+        nodeName: !(keySourceManagedInSync (secretLib.keySourceOf (secretLib.nodeByName clusterConfig nodeName)))
+      ) selected;
+      fileRecipients = managedFileRecipients {
+        inherit service clusterName clusterConfig;
+      };
+      managedFiles = attrNames fileRecipients;
       nodeCommand = nodeName: {
         name = nodeName;
         command = secretLib.keySourcePublicKeyCommand (
           secretLib.keySourceOf (secretLib.nodeByName clusterConfig nodeName)
         );
       };
-      nodeCommands = map nodeCommand selected;
+      nodeCommands = map nodeCommand managedSelected;
       adminCommand =
         if service.adminKeySource == null then
           ""
@@ -502,30 +852,36 @@ let
           ''
         ) nodeCommands
       );
-      machineRules = map (
-        nodeName:
-        let
-          regex = "^${relativeRoot}/${clusterName}/${service.machinesSubDir}/${nodeName}\\.yaml$";
-        in
-        "append_rule ${escapeShellArg regex} ${escapeShellArg nodeName}"
-      ) selected;
-      groupRules = map (
-        group:
-        let
-          members = service.groups.${group} or [ ];
-          regex = "^${relativeRoot}/${clusterName}/${service.clusterSubDir}/${group}\\.yaml$";
-        in
-        "append_rule ${escapeShellArg regex} ${shellList members}"
-      ) (attrNames (service.groups or { }));
-      clusterRegex = "^${relativeRoot}/${clusterName}/cluster\\.yaml$";
-      clusterRule = "append_rule ${escapeShellArg clusterRegex} ${shellList selected}";
+      fileRules = map (
+        file:
+        "append_rule_file ${escapeShellArg file} ${shellList fileRecipients.${file}}"
+      ) managedFiles;
       adminKeyEnv = secretLib.keySourceEnv service.adminKeySource;
     in
     ''
       set -euo pipefail
-      sopsConfig=${escapeShellArg sopsConfig}
+      ${sopsRootPreamble service}
+      ${optionalString (nativeSkipped != [ ]) ''
+        echo "WARNING: skipping unmanaged native key sources: ${concatStringsSep " " nativeSkipped}" >&2
+      ''}
       public_key_cache="$(mktemp -d)"
-      trap 'rm -rf "$public_key_cache"' EXIT
+      config_tmp="$(mktemp "$sops_config.XXXXXX")"
+      backup_dir="$(mktemp -d)"
+      backup_index="$backup_dir/index"
+      : > "$backup_index"
+      cleanup() {
+        status=$?
+        if [ "$status" -ne 0 ]; then
+          while IFS=$'\t' read -r original backup; do
+            [ -n "$original" ] && cp -a "$backup" "$original"
+          done < "$backup_index"
+        fi
+        rm -rf "$public_key_cache" "$backup_dir"
+        [ -e "$config_tmp" ] && rm -f "$config_tmp"
+        [ -n "''${__secret_service_key_file:-}" ] && rm -f "$__secret_service_key_file"
+        exit "$status"
+      }
+      trap cleanup EXIT
 
       public_key_for() {
         local name="$1"
@@ -550,12 +906,22 @@ let
         printf '%s\n' "$key"
       }
 
+      append_rule_file() {
+        local file="$1"
+        shift
+        case "$file" in
+          /*) ;;
+          *) file="$sops_root/$file" ;;
+        esac
+        append_rule "^$file$" "$@"
+      }
+
       append_rule() {
         local regex="$1"
         shift
-        printf '  - path_regex: %s\n' "$regex" >> "$sopsConfig"
-        printf '    key_groups:\n' >> "$sopsConfig"
-        printf '      - age:\n' >> "$sopsConfig"
+        printf '  - path_regex: %s\n' "$regex" >> "$config_tmp"
+        printf '    key_groups:\n' >> "$config_tmp"
+        printf '      - age:\n' >> "$config_tmp"
         local used=" "
         local name key
         for name in admin "$@"; do
@@ -568,37 +934,82 @@ let
             echo "ERROR: key source for '$name' did not produce a public key." >&2
             return 1
           fi
-          printf '          - %s\n' "$key" >> "$sopsConfig"
+          printf '          - %s\n' "$key" >> "$config_tmp"
         done
       }
 
-      mkdir -p ${escapeShellArg (dirOf sopsConfig)}
-      : > ${escapeShellArg sopsConfig}
-      printf 'creation_rules:\n' >> ${escapeShellArg sopsConfig}
+      printf 'creation_rules:\n' >> "$config_tmp"
+      ${concatStringsSep "\n" fileRules}
 
-      ${concatStringsSep "\n" (machineRules ++ groupRules ++ [ clusterRule ])}
+      if [ -f "$sops_config" ] && cmp -s "$config_tmp" "$sops_config"; then
+        config_changed=0
+      else
+        config_changed=1
+      fi
 
-      echo "Wrote ${sopsConfig}"
-      export SOPS_CONFIG=${escapeShellArg sopsConfig}
+      export SOPS_CONFIG="$config_tmp"
       ${adminKeyEnv}
+      trap cleanup EXIT
       if [ -z "${"$"}{SOPS_AGE_KEY_FILE:-}" ] && [ -z "${"$"}{SOPS_AGE_SSH_PRIVATE_KEY_FILE:-}" ]; then
         echo "ERROR: configure services.secrets.adminKeySource, or export SOPS_AGE_KEY_FILE/SOPS_AGE_SSH_PRIVATE_KEY_FILE." >&2
         exit 1
       fi
 
+      backup_file() {
+        local file="$1"
+        local backup
+        backup="$(mktemp "$backup_dir/file.XXXXXX")"
+        cp -a "$file" "$backup"
+        printf '%s\t%s\n' "$file" "$backup" >> "$backup_index"
+      }
+
       echo "Updating file keys..."
-      while IFS= read -r -d "" file; do
-        echo "  $file"
-        ${sops} updatekeys --yes "$file"
-      done < <(find ${escapeShellArg "${sopsRoot}/${clusterName}"} -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' -o -name '*.env' -o -name '*.ini' \) -print0)
+      for file in ${shellList managedFiles}; do
+        sops_file="$(sops_path "$file")"
+        [ -f "$sops_file" ] || continue
+        echo "  $sops_file"
+        backup_file "$sops_file"
+        ${sops} updatekeys --yes "$sops_file"
+      done
 
-      echo "Rotating data keys..."
-      while IFS= read -r -d "" file; do
-        ${sops} rotate --in-place "$file"
-      done < <(find ${escapeShellArg "${sopsRoot}/${clusterName}"} -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' -o -name '*.env' -o -name '*.ini' \) -print0)
+      if [ "$config_changed" -eq 1 ]; then
+        echo "Recipient configuration changed; rotating data keys..."
+        for file in ${shellList managedFiles}; do
+          sops_file="$(sops_path "$file")"
+          [ -f "$sops_file" ] || continue
+          ${sops} rotate --in-place "$sops_file"
+        done
+      fi
 
-      echo "Key-holder files updated. Review the changed sops files and .sops.yaml."
+      mv "$config_tmp" "$sops_config"
+      echo "Wrote $sops_config"
+      echo "Key-holder files updated. Review the changed sops files and $sops_config."
     '';
+
+  sopsMutationPreamble = ''
+    backup_dir="$(mktemp -d)"
+    backup_index="$backup_dir/index"
+    : > "$backup_index"
+    cleanup() {
+      status=$?
+      if [ "$status" -ne 0 ]; then
+        while IFS=$'\t' read -r original backup; do
+          [ -n "$original" ] && cp -a "$backup" "$original"
+        done < "$backup_index"
+      fi
+      rm -rf "$backup_dir"
+      [ -n "''${__secret_service_key_file:-}" ] && rm -f "$__secret_service_key_file"
+      exit "$status"
+    }
+    trap cleanup EXIT
+    backup_file() {
+      local file="$1"
+      local backup
+      backup="$(mktemp "$backup_dir/file.XXXXXX")"
+      cp -a "$file" "$backup"
+      printf '%s\t%s\n' "$file" "$backup" >> "$backup_index"
+    }
+  '';
 
   mkUpdateKeysScript =
     {
@@ -609,40 +1020,77 @@ let
     let
       service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
-      sopsRoot = secretLib.sopsRootCommand service;
       sopsConfig = secretLib.sopsConfigFile service;
       adminKeyEnv = secretLib.keySourceEnv service.adminKeySource;
       command = if rotate then "rotate --in-place" else "updatekeys --yes";
-      groupFile = secretLib.resolveSopsFileCommand {
-        inherit
-          service
-          clusterName
-          ;
-        scope = "cluster";
-        value = if group == null then null else "cluster/${group}";
+      fileRecipients = managedFileRecipients {
+        inherit service clusterName clusterConfig;
       };
+      files =
+        if group == null then
+          attrNames fileRecipients
+        else
+          [
+            (secretLib.resolveSopsFileCommand {
+              inherit service clusterName;
+              scope = "cluster";
+              value = "cluster/${group}";
+            })
+          ];
     in
     ''
       set -euo pipefail
-      export SOPS_CONFIG=${escapeShellArg sopsConfig}
+      ${sopsRootPreamble service}
+      export SOPS_CONFIG="$sops_config"
       ${adminKeyEnv}
       if [ -z "${"$"}{SOPS_AGE_KEY_FILE:-}${"$"}{SOPS_AGE_SSH_PRIVATE_KEY_FILE:-}" ]; then
         echo "ERROR: configure services.secrets.adminKeySource, or export SOPS_AGE_KEY_FILE/SOPS_AGE_SSH_PRIVATE_KEY_FILE." >&2
         exit 1
       fi
-      ${
-        if group == null then
-          ''
-            while IFS= read -r -d "" file; do
-              echo "  $file"
-              ${sops} ${command} "$file"
-            done < <(find ${escapeShellArg "${sopsRoot}/${clusterName}"} -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' -o -name '*.env' -o -name '*.ini' \) -print0)
-          ''
-        else
-          ''
-            ${sops} ${command} ${escapeShellArg groupFile}
-          ''
-      }
+      ${sopsMutationPreamble}
+      for file in ${shellList files}; do
+        sops_file="$(sops_path "$file")"
+        [ -f "$sops_file" ] || continue
+        echo "  $sops_file"
+        backup_file "$sops_file"
+        ${sops} ${command} "$sops_file"
+      done
+    '';
+
+  mkInitRootScript =
+    { clusterConfig }:
+    let
+      service = secretLib.serviceOf clusterConfig;
+      clusterName = secretLib.clusterNameOf clusterConfig;
+      fqdn = clusterConfig.clusters.this.fqdn or "";
+    in
+    ''
+      set -euo pipefail
+      force=0
+      if [ "''${1:-}" = "--force" ]; then
+        force=1
+      fi
+      ${sopsRootResolve service}
+      marker="$sops_root/.secret-service-root"
+      if [ -f "$marker" ] && [ "$force" -ne 1 ]; then
+        echo "ERROR: root marker already exists: $marker" >&2
+        echo "Pass --force to replace it." >&2
+        exit 1
+      fi
+      mkdir -p "$sops_root"
+      root_id="$(cat /proc/sys/kernel/random/uuid)"
+      cat > "$marker" <<EOF
+schema: 1
+rootId: $root_id
+clusters:
+  - ${clusterName}
+fqdn:
+  - ${fqdn}
+EOF
+      echo "Wrote root marker: $marker"
+      echo ""
+      echo "Add it to Git and re-run Nix:"
+      echo "  git add '$marker'"
     '';
 
   mkCheckScript =
@@ -656,6 +1104,7 @@ let
       inherit
         service
         clusterName
+        clusterConfig
         machine
         machineName
         ;
@@ -665,7 +1114,7 @@ in
 {
   inherit
     mkCheckScript
-    mkRemoveOldScript
+    mkInitRootScript
     mkSecretEditScript
     mkSecretsKeyGenerateScript
     mkSecretSetScript
