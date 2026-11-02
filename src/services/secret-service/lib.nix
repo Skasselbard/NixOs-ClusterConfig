@@ -55,9 +55,9 @@ let
         "${keepassKeyFileArg keepass} ${lib.escapeShellArg (toString keepass.databasePath)} ${lib.escapeShellArg keepass.entry}";
     in
     if password == "" then
-      "${keepassxc} show -s -a Password ${args}"
+      "${keepassxc} show -q -s -a Password ${args}"
     else
-      "printf '%s\\n' \"$(${password})\" | ${keepassxc} show -s -a Password ${args}";
+      "printf '%s\\n' \"$(${password})\" | ${keepassxc} show -q -s -a Password ${args}";
 
   serviceOf = clusterConfig: clusterConfig.clusters.this.services.secrets;
   machineOf = clusterConfig: clusterConfig.clusters.this.machines.this;

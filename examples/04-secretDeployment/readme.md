@@ -107,14 +107,18 @@ machines.vm1 = {
     type = "keepass";
     keepass = {
       databasePath = "../00-exampleConfigs/secrets/Passwords.kdbx";
-      entry = "sops/vm1";
-      passwordCommand = "printf '%s\n' exampledb";
+      # This example password file lives with the test secrets in 00-exampleConfigs.
+      # Real deployments should keep the password outside the repository.
+      passwordFile = "../00-exampleConfigs/secrets/keepass.pass";
+
+      # Alternative: read the password from a secret manager or protected command.
+      # passwordCommand = "secret-tool lookup service keepass database example";
     };
   };
 };
 ```
 
-The entry password is the vm1 age private key. The public key is derived at runtime; it is not stored in the Nix configuration.
+The entry password is the vm1 age private key. The public key is derived at runtime; it is not stored in the Nix configuration. `keepass.entry` is optional and defaults to `clusterConfig/<clusterName>/machines/<machineName>`; this example uses `clusterConfig/example/machines/vm1`.
 
 ## Commands
 
@@ -143,10 +147,15 @@ Generate a new key directly in its key source:
 
 ```bash
 # age source: refuses to overwrite without --force
-nix run .#example.vm0.secretKeyGenerate -- --force
+nix run .#example.vm0.secretsKeyGenerate -- --force
 
 # Keepass source: updates the entry without --force, retaining old values in history
-nix run .#example.vm1.secretKeyGenerate
+nix run .#example.vm1.secretsKeyGenerate
+
+# Then synchronize recipients and install the new host keys
+nix run .#example.secrets.secretsSyncKeyHolders
+nix run .#example.vm0.secretsInstallKey
+nix run .#example.vm1.secretsInstallKey
 ```
 
 The public key is derived from the resulting private key and written to `.sops.yaml` by `secretsSyncKeyHolders`. Do not add public keys to the cluster configuration.

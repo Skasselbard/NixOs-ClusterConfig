@@ -94,10 +94,10 @@ These live under `machines.<machine>` (and are also available on VMs where appli
 | `type` | enum `age`, `keepass`, `ssh`, `native` | `"native"` | Key-source strategy. |
 | `targetKeyFile` | string | `/var/lib/sops-nix/key.txt` | Target key path for `age` and `keepass`. |
 | `age.sourceKeyFile` | null or string | required for age | Build-host private age key. A string, not a Nix path, so it is not copied into the store. |
-| `keepass.databasePath` | path/string | required for keepass | KeePass database on the admin machine. Use a string if `secretKeyGenerate` should write it. |
-| `keepass.entry` | string | required for keepass | Entry path, e.g. `hosts/vm1`. The password field contains the age private key. |
-| `keepass.passwordFile` | null or path | `null` | File containing the KeePass password. |
-| `keepass.passwordCommand` | null or string | `null` | Command that prints the KeePass password. |
+| `keepass.databasePath` | path/string | required for keepass | KeePass database on the admin machine. Use a string if `secretsKeyGenerate` should write it. |
+| `keepass.entry` | string | `clusterConfig/<cluster>/machines/<machine>` for machine sources | Entry path. The password field contains the age private key. |
+| `keepass.passwordFile` | null or string | `null` | File containing the KeePass password. Kept as a string so it is not copied into the Nix store. |
+| `keepass.passwordCommand` | null or string | `null` | Command that prints the KeePass password. Use instead of `passwordFile`. |
 | `keepass.keyFilePath` | null or path | `null` | KeePass key file. |
 | `native.publicKey` | null or string | `null` | Public recipient for native recipient generation. |
 | `native.publicKeyFile` | null or string/path | `null` | File containing the native public recipient. |
@@ -288,7 +288,7 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, recipients, declared secrets and templates. |
 | `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
 | `nix run .#<clusterName>.<machineName>.secretsRemoveOld` | Replace the host key file with the current identity. |
-| `nix run .#<clusterName>.<machineName>.secretKeyGenerate [-- --force]` | Generate a key into `age.sourceKeyFile` or the KeePass entry. |
+| `nix run .#<clusterName>.<machineName>.secretsKeyGenerate [-- --force]` | Generate a key into `age.sourceKeyFile` or the KeePass entry. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
 
@@ -338,7 +338,7 @@ Per machine and cluster-level variants. Reinstalls the current key over the exis
 
 It cannot revoke old ciphertext in Git history or the Nix store; see section 12.
 
-### 10.7 `secretKeyGenerate`
+### 10.7 `secretsKeyGenerate`
 
 Per machine. Generates a key directly in the configured key source.
 

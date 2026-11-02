@@ -132,9 +132,11 @@ machines.vm1 = {
     type = "keepass";
     keepass = {
       databasePath = "/home/user/secrets.kdbx";
-      entry = "hosts/vm1";
-      # Optional: avoid an interactive prompt in automation
-      # passwordCommand = "...";
+      # entry defaults to clusterConfig/<cluster>/machines/<machine>
+
+      # Choose one password source.
+      passwordFile = "/run/keys/keepass.pass";
+      # passwordCommand = "secret-tool lookup service keepass database example";
     };
   };
 };
@@ -142,14 +144,32 @@ machines.vm1 = {
 
 Supported key-source types are `age`, `keepass`, `ssh` and `native`. `age` always requires a build-host `age.sourceKeyFile`; the target key file is provisioned from it. `keepass` extracts the private age key from the configured entry. `native` means you configure `sops.*` yourself, including age plugins.
 
+Password sources, in preference order:
+
+1. `passwordFile` pointing to a `0600` file outside the Nix store.
+2. `passwordCommand` using an OS keyring or secret manager, for example `secret-tool`, `pass` or `gopass`.
+3. `passwordCommand` reading a password-file path from an environment variable, for example:
+   ```nix
+   passwordCommand = "cat \"\${KEEPASS_PASSWORD_FILE:?set KEEPASS_PASSWORD_FILE}\"";
+   ```
+4. An environment variable containing the password directly. This is convenient but weaker: environment variables can leak through `/proc`, child processes, crash reports and CI logs.
+
+```nix
+# Password-file variant:
+passwordFile = "../00-exampleConfigs/secrets/keepass.pass";
+
+# Password-command variant:
+passwordCommand = "cat \"\${KEEPASS_PASSWORD_FILE:?set KEEPASS_PASSWORD_FILE}\"";
+```
+
 Generate or replace a key directly in its source:
 
 ```bash
 # file-backed age key: requires --force to overwrite
-nix run .#<cluster>.<machine>.secretKeyGenerate -- --force
+nix run .#<cluster>.<machine>.secretsKeyGenerate -- --force
 
 # KeePass entry: overwrites without --force and prints a warning
-nix run .#<cluster>.<machine>.secretKeyGenerate
+nix run .#<cluster>.<machine>.secretsKeyGenerate
 ```
 
 Public keys are derived at runtime from `age.sourceKeyFile`, the KeePass entry or the SSH key. They are not configured in the cluster options.
@@ -157,7 +177,7 @@ Public keys are derived at runtime from `age.sourceKeyFile`, the KeePass entry o
 ### 3. Generate or update `.sops.yaml`
 
 ```bash
-nix run .#example.secrets.secretsSyncKeyHolders
+nix run .#<cluster>.secrets.secretsSyncKeyHolders
 ```
 
 This derives public keys from the machine and admin key sources at runtime, generates `.sops.yaml`, runs `sops updatekeys` and rotates data keys.
@@ -221,7 +241,7 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 | `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, decryption key holders, declared secrets and templates. |
 | `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
 | `nix run .#<clusterName>.<machineName>.secretsRemoveOld` | Remove old age identities from the host after the rollback window. |
-| `nix run .#<clusterName>.<machineName>.secretKeyGenerate [-- --force]` | Generate a new key into its age source or KeePass entry. |
+| `nix run .#<clusterName>.<machineName>.secretsKeyGenerate [-- --force]` | Generate a new key into its age source or KeePass entry. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Derive public keys, regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys. |

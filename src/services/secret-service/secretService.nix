@@ -185,10 +185,8 @@ let
       message = "secret-service: machines.${machineName}.deployment.secrets.keySource.age.sourceKeyFile is required for type = \"age\"";
     }
     {
-      assertion =
-        keySource.type != "keepass"
-        || (keySource.keepass.databasePath != null && keySource.keepass.entry != null);
-      message = "secret-service: machines.${machineName}.deployment.secrets.keySource.keepass.databasePath and .entry are required for type = \"keepass\"";
+      assertion = keySource.type != "keepass" || keySource.keepass.databasePath != null;
+      message = "secret-service: machines.${machineName}.deployment.secrets.keySource.keepass.databasePath is required for type = \"keepass\"";
     }
   ]
   ++ concatMap (

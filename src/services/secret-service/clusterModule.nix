@@ -52,9 +52,9 @@ let
         description = "KeePass entry containing the age key in its password field.";
       };
       keepass.passwordFile = mkOption {
-        type = types.nullOr types.path;
+        type = types.nullOr types.str;
         default = null;
-        description = "File containing the KeePass database password.";
+        description = "File containing the KeePass database password. Kept as a string so it is not copied into the Nix store.";
       };
       keepass.passwordCommand = mkOption {
         type = types.nullOr types.str;
@@ -190,6 +190,40 @@ let
     };
   };
 
+  secretServiceDefaults =
+    config:
+    clusterlib.update.nodes config (
+      clusterName: nodeName: nodeConfig:
+      let
+        service = config.domain.clusters.${clusterName}.services.secrets or null;
+        selected =
+          if service == null then
+            [ ]
+          else
+            filters.resolveNodeName (service.selectors or [ ]) clusterName config;
+        keySource = nodeConfig.deployment.secrets.keySource;
+      in
+      if
+        service == null
+        || !(builtins.elem nodeName selected)
+        || keySource.type != "keepass"
+        || keySource.keepass.entry != null
+      then
+        { }
+      else
+        {
+          deployment = nodeConfig.deployment // {
+            secrets = nodeConfig.deployment.secrets // {
+              keySource = keySource // {
+                keepass = keySource.keepass // {
+                  entry = "clusterConfig/${clusterName}/machines/${nodeName}";
+                };
+              };
+            };
+          };
+        }
+    );
+
   secretServiceNodes =
     config:
     clusterlib.update.nodes config (
@@ -227,6 +261,11 @@ let
       let
         keySource = nodeConfig.deployment.secrets.keySource;
         keepass = keySource.keepass;
+        keepassEntry =
+          if keepass.entry != null then
+            keepass.entry
+          else
+            "clusterConfig/${_clusterName}/machines/${_nodeName}";
         keepassPassword =
           if keepass.passwordFile != null then
             "cat ${lib.escapeShellArg (toString keepass.passwordFile)}"
@@ -239,9 +278,9 @@ let
         );
         keepassCommand =
           if keepassPassword == "" then
-            "${pkgs.keepassxc}/bin/keepassxc-cli show -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg (keepass.entry or "")}"
+            "${pkgs.keepassxc}/bin/keepassxc-cli show -q -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg keepassEntry}"
           else
-            "printf '%s\\n' \"$(${keepassPassword})\" | ${pkgs.keepassxc}/bin/keepassxc-cli show -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg (keepass.entry or "")}";
+            "printf '%s\\n' \"$(${keepassPassword})\" | ${pkgs.keepassxc}/bin/keepassxc-cli show -q -s -a Password ${keepassArgs} ${lib.escapeShellArg (toString (keepass.databasePath or ""))} ${lib.escapeShellArg keepassEntry}";
         extraFiles =
           if keySource.type == "age" then
             {
@@ -435,6 +474,7 @@ in
 {
   config.extensions = {
     transformations.clusterTransformations = [
+      secretServiceDefaults
       secretServiceNodes
       secretServiceExtraFiles
     ];
@@ -536,13 +576,13 @@ in
             }
           );
 
-        secretKeyGenerate =
+        secretsKeyGenerate =
           { clusterConfig }:
           let
             machineName = secretLib.machineNameOf clusterConfig;
           in
-          pkgs.writeShellScriptBin "secretKeyGenerate" (
-            scripts.mkSecretKeyGenerateScript {
+          pkgs.writeShellScriptBin "secretsKeyGenerate" (
+            scripts.mkSecretsKeyGenerateScript {
               inherit clusterConfig machineName;
             }
           );

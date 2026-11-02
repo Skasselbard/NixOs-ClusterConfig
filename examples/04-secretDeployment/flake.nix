@@ -91,7 +91,11 @@
                   };
                   # Group members share one sops file. This file is encrypted to
                   # the admin key and every member listed here.
-                  groups.monitoring = [ "vm0" "vm1" "vm2" ];
+                  groups.monitoring = [
+                    "vm0"
+                    "vm1"
+                    "vm2"
+                  ];
 
                   # Global cluster secret: no sopsFile means cluster.yaml.
                   # It is readable by every selected node plus the admin key.
@@ -201,8 +205,7 @@
                     type = "keepass";
                     keepass = {
                       databasePath = "../00-exampleConfigs/secrets/Passwords.kdbx";
-                      entry = "sops/vm1";
-                      passwordCommand = "printf '%s\\n' exampledb";
+                      passwordFile = "../00-exampleConfigs/secrets/keepass.pass";
                     };
                   };
                   secrets.admin.testPassword = {
