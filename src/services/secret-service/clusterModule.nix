@@ -530,6 +530,18 @@ in
             scripts.mkSyncKeyHoldersScript { inherit clusterConfig; }
           );
 
+        secretsAdminKeyGenerate =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretsAdminKeyGenerate" (
+            scripts.mkAdminKeyGenerateScript { inherit clusterConfig; }
+          );
+
+        secretsKeyGenerateAll =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "secretsKeyGenerateAll" (
+            scripts.mkSecretsKeyGenerateAllScript { inherit clusterConfig; }
+          );
+
         secretEdit =
           { clusterConfig }:
           pkgs.writeShellScriptBin "secretEdit" (

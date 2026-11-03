@@ -243,9 +243,11 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 | `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, decryption key holders, declared secrets and templates. |
 | `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
 | `nix run .#<clusterName>.<machineName>.secretsKeyGenerate [-- --force]` | Generate a new key into its age source or KeePass entry. |
+| `nix run .#<clusterName>.secrets.secretsAdminKeyGenerate [-- --force]` | Generate or update the admin key source. |
+| `nix run .#<clusterName>.secrets.secretsKeyGenerateAll [-- --force]` | Generate every managed age/KeePass key, including the admin key. One-time bootstrap convenience. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
-| `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker. Required once per secret root. |
+| `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker and empty placeholder sops files. Safe to repeat; use `--force` to replace the marker. |
 | `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Derive public keys, regenerate `<sopsRoot>/.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
 | `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for every managed sops file. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
@@ -285,7 +287,7 @@ sopsRoot = {
 
 The generated sops configuration is `<sopsRoot>/.sops.yaml`. When invoking `sops` manually, either run from `sopsRoot` or set `SOPS_CONFIG` explicitly, for example `SOPS_CONFIG=secrets/.sops.yaml sops secrets/example/cluster.yaml`.
 
-The sops root must contain a committed `.secret-service-root` marker. Evaluation tolerates a missing marker, but mutating helpers require it. Initialize a fresh root with:
+The sops root must contain a committed `.secret-service-root` marker. Evaluation tolerates a missing marker, but mutating helpers require it. `secretsInitRoot` creates the marker and placeholder sops files; initialize a fresh root with:
 
 ```bash
 nix run .#<cluster>.secrets.secretsInitRoot

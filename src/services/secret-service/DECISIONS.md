@@ -312,7 +312,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D30 — Root marker and bootstrap
 
-**Decision:** store a non-secret `.secret-service-root` marker in the sops root. Evaluation tolerates a missing marker; mutating helpers require it and validate its schema, rootId and cluster membership. `secretsInitRoot` creates it during setup.
+**Decision:** store a non-secret `.secret-service-root` marker in the sops root. Evaluation tolerates a missing marker; mutating helpers require it and validate its schema, rootId and cluster membership. `secretsInitRoot` creates it during setup, together with empty placeholder sops files so a new sops root can be evaluated before the first encrypted values exist. `secretSet` creates the encrypted file when its placeholder is empty.
 
 **Reasoning:**
 

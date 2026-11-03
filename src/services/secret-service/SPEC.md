@@ -199,7 +199,7 @@ Every projected `sops.secrets` entry receives an explicit `sopsFile`. The servic
 
 ### 7.4 Root marker
 
-The sops root contains a committed `.secret-service-root` marker with schema version `1`, a non-empty random `rootId`, cluster names and FQDN. Evaluation tolerates a missing marker; mutating helpers require it, validate the schema and `rootId`, verify that the current cluster is listed, and compare the evaluated marker with the working-tree marker. `secretsInitRoot` creates the marker during bootstrap. The marker contains no secrets and is a safety guard, not an authorization boundary.
+The sops root contains a committed `.secret-service-root` marker with schema version `1`, a non-empty random `rootId`, cluster names and FQDN. Evaluation tolerates a missing marker; mutating helpers require it, validate the schema and `rootId`, verify that the current cluster is listed, and compare the evaluated marker with the working-tree marker. `secretsInitRoot` creates the marker and empty placeholder sops files during bootstrap; it is safe to repeat. `secretSet` creates an encrypted file when its placeholder is empty. The marker contains no secrets and is a safety guard, not an authorization boundary.
 
 ## 8. Projection rules
 
@@ -295,6 +295,8 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | `nix run .#<clusterName>.<machineName>.secretsCheck` | Read-only verification of the key, recipients, declared secrets and templates. |
 | `nix run .#<clusterName>.<machineName>.secretsInstallKey` | Install or repair the host key only. |
 | `nix run .#<clusterName>.<machineName>.secretsKeyGenerate [-- --force]` | Generate a key into `age.sourceKeyFile` or the KeePass entry. |
+| `nix run .#<clusterName>.secrets.secretsAdminKeyGenerate [-- --force]` | Generate or update the admin key source. |
+| `nix run .#<clusterName>.secrets.secretsKeyGenerateAll [-- --force]` | Generate all managed admin and host keys. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
 | `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
 
@@ -302,7 +304,7 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 
 | Command | Purpose |
 |---|---|
-| `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker. |
+| `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker and empty placeholder sops files. |
 | `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Regenerate `<sopsRoot>/.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
 | `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for all managed sops files. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |

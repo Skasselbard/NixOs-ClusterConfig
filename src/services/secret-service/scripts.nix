@@ -549,16 +549,17 @@ let
       echo "Deploy secret changes through the normal system deployment."
     '';
 
-  mkSecretsKeyGenerateScript =
+  mkKeyGenerateScript =
     {
       clusterConfig,
-      machineName,
+      keySource,
+      keyName,
+      keepassEntryOverride ? null,
+      nextCommands ? "",
     }:
     let
-      machine = secretLib.machineOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
       service = secretLib.serviceOf clusterConfig;
-      keySource = machine.deployment.secrets.keySource;
       keepass = keySource.keepass;
       keyFileArg = secretLib.keepassKeyFileArg keepass;
       passwordCommand = secretLib.keepassPasswordCommand keepass;
@@ -571,9 +572,14 @@ let
         else
           "";
       keepassDb = escapeShellArg (if keepass.databasePath == null then "" else toString keepass.databasePath);
-      keepassEntryValue = secretLib.keepassEntry {
-        inherit clusterName machineName keepass;
-      };
+      keepassEntryValue =
+        if keepassEntryOverride != null then
+          keepassEntryOverride
+        else
+          secretLib.keepassEntry {
+            inherit clusterName keepass;
+            machineName = keyName;
+          };
       keepassEntry = escapeShellArg keepassEntryValue;
       publicCommand = secretLib.keySourcePublicKeyCommand keySource;
     in
@@ -670,14 +676,101 @@ let
           ;;
       esac
 
-      case "${keySource.type}" in
-        age|keepass)
-          echo ""
-          echo "Next:"
-          echo "  nix run .#${clusterName}.secrets.secretsSyncKeyHolders"
-          echo "  nix run .#${clusterName}.${machineName}.secretsInstallKey"
-          ;;
-      esac
+      ${nextCommands}
+    '';
+
+  mkSecretsKeyGenerateScript =
+    {
+      clusterConfig,
+      machineName,
+    }:
+    let
+      machine = secretLib.machineOf clusterConfig;
+      clusterName = secretLib.clusterNameOf clusterConfig;
+      keySource = machine.deployment.secrets.keySource;
+    in
+    mkKeyGenerateScript {
+      inherit clusterConfig keySource;
+      keyName = machineName;
+      nextCommands = optionalString (keySource.type == "age" || keySource.type == "keepass") ''
+        echo ""
+        echo "Next:"
+        echo "  nix run .#${clusterName}.secrets.secretsSyncKeyHolders"
+        echo "  nix run .#${clusterName}.${machineName}.secretsInstallKey"
+      '';
+    };
+
+  mkAdminKeyGenerateScript =
+    { clusterConfig }:
+    let
+      service = secretLib.serviceOf clusterConfig;
+      clusterName = secretLib.clusterNameOf clusterConfig;
+      keySource = service.adminKeySource;
+      keepassEntry =
+        if keySource.keepass.entry != null then
+          keySource.keepass.entry
+        else
+          "clusterConfig/${clusterName}/admin";
+    in
+    mkKeyGenerateScript {
+      inherit clusterConfig keySource;
+      keyName = "admin";
+      keepassEntryOverride = keepassEntry;
+      nextCommands = optionalString (keySource.type == "age" || keySource.type == "keepass") ''
+        echo ""
+        echo "Next:"
+        echo "  nix run .#${clusterName}.secrets.secretsSyncKeyHolders"
+      '';
+    };
+
+  mkSecretsKeyGenerateAllScript =
+    { clusterConfig }:
+    let
+      service = secretLib.serviceOf clusterConfig;
+      clusterName = secretLib.clusterNameOf clusterConfig;
+      adminTarget = {
+        name = "admin";
+        keySource = service.adminKeySource;
+        keepassEntryOverride =
+          if service.adminKeySource.keepass.entry != null then
+            service.adminKeySource.keepass.entry
+          else
+            "clusterConfig/${clusterName}/admin";
+      };
+      machineTargets = map (
+        name:
+        let
+          machine = secretLib.nodeByName clusterConfig name;
+        in
+        {
+          inherit name;
+          keySource = machine.deployment.secrets.keySource;
+          keepassEntryOverride = null;
+        }
+      ) (secretLib.selectedNodes service);
+      managedTargets = filter (
+        target: target.keySource.type == "age" || target.keySource.type == "keepass"
+      ) ([ adminTarget ] ++ machineTargets);
+      commands = map (
+        target:
+        "${pkgs.writeShellScriptBin "secretsKeyGenerate-${target.name}" (
+          mkKeyGenerateScript {
+            inherit clusterConfig;
+            inherit (target) keySource keepassEntryOverride;
+            keyName = target.name;
+          }
+        )}/bin/secretsKeyGenerate-${target.name}"
+      ) managedTargets;
+    in
+    ''
+      set -euo pipefail
+      ${optionalString (managedTargets == [ ]) ''
+        echo "No managed age or KeePass key sources to generate."
+      ''}
+      for command in ${shellList commands}; do
+        echo "=== $command ==="
+        "$command" "$@"
+      done
     '';
 
   mkSecretEditScript =
@@ -774,8 +867,13 @@ let
       ${fileCase}
             esac
             key_path="$(printf '%s' "$key" | ${jq} -Rr 'split("/") | if any(. == "") then error("secret key contains an empty path segment") else map("[" + @json + "]") | join("") end')"
+            sops_file="$(sops_path "$file")"
+            if [ ! -s "$sops_file" ]; then
+              mkdir -p "$(dirname "$sops_file")"
+              printf '%s\n' '{}' | ${sops} --encrypt --filename-override "$sops_file" --output "$sops_file" /dev/stdin
+            fi
             value_json="$(cat | ${jq} -Rs .)"
-            printf '%s' "$value_json" | ${sops} set --value-stdin "$(sops_path "$file")" "$key_path"
+            printf '%s' "$value_json" | ${sops} set --value-stdin "$sops_file" "$key_path"
     '';
 
   mergeFileRecipients =
@@ -1020,7 +1118,7 @@ let
       echo "Updating file keys..."
       for file in ${shellList managedFiles}; do
         sops_file="$(sops_path "$file")"
-        [ -f "$sops_file" ] || continue
+        [ -s "$sops_file" ] || continue
         echo "  $sops_file"
         backup_file "$sops_file"
         ${sops} updatekeys --yes "$sops_file"
@@ -1030,7 +1128,7 @@ let
         echo "Recipient configuration changed; rotating data keys..."
         for file in ${shellList managedFiles}; do
           sops_file="$(sops_path "$file")"
-          [ -f "$sops_file" ] || continue
+          [ -s "$sops_file" ] || continue
           ${sops} rotate --in-place "$sops_file"
         done
       fi
@@ -1103,7 +1201,7 @@ let
       ${sopsMutationPreamble}
       for file in ${shellList files}; do
         sops_file="$(sops_path "$file")"
-        [ -f "$sops_file" ] || continue
+        [ -s "$sops_file" ] || continue
         echo "  $sops_file"
         backup_file "$sops_file"
         ${sops} ${command} "$sops_file"
@@ -1116,6 +1214,9 @@ let
       service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
       fqdn = clusterConfig.clusters.this.fqdn or "";
+      files = attrNames (managedFileRecipients {
+        inherit service clusterName clusterConfig;
+      });
     in
     ''
       set -euo pipefail
@@ -1125,12 +1226,17 @@ let
       fi
       ${sopsRootResolve service}
       marker="$sops_root/.secret-service-root"
-      if [ -f "$marker" ] && [ "$force" -ne 1 ]; then
-        echo "ERROR: root marker already exists: $marker" >&2
-        echo "Pass --force to replace it." >&2
-        exit 1
-      fi
       mkdir -p "$sops_root"
+      for file in ${shellList files}; do
+        sops_file="$(sops_path "$file")"
+        mkdir -p "$(dirname "$sops_file")"
+        [ -e "$sops_file" ] || : > "$sops_file"
+      done
+      if [ -f "$marker" ] && [ "$force" -ne 1 ]; then
+        echo "Root marker already exists: $marker"
+        echo "Placeholder sops files ensured."
+        exit 0
+      fi
       root_id="$(cat /proc/sys/kernel/random/uuid)"
       cat > "$marker" <<EOF
 schema: 1
@@ -1168,8 +1274,10 @@ EOF
 in
 {
   inherit
+    mkAdminKeyGenerateScript
     mkCheckScript
     mkInitRootScript
+    mkSecretsKeyGenerateAllScript
     mkSecretEditScript
     mkSecretsKeyGenerateScript
     mkSecretSetScript
