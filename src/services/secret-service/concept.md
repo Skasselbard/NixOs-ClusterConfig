@@ -34,7 +34,7 @@ cluster configuration
 |---|---|
 | Which secret belongs to which machine/user and where it is mounted | cluster configuration |
 | Secret values | sops files |
-| Which keys can decrypt a sops file | `.sops.yaml` and the sops file metadata |
+| Which keys can decrypt a sops file | `<sopsRoot>/.sops.yaml` and the sops file metadata |
 | Host identities | key source configuration (KeePass, age key file, SSH key or native sops configuration) |
 | Recovery key | KeePass or another protected escrow |
 
@@ -53,7 +53,7 @@ The secret service never stores plaintext secret values in the Nix store or in g
 ### Provisioning a new machine
 
 1. Generate a dedicated age key, or select SSH/native key source.
-2. Store the public key in the cluster configuration/`.sops.yaml`; store the private key in KeePass, an age-key file, or on the host depending on the key source.
+2. Store the public key in the cluster configuration/`<sopsRoot>/.sops.yaml`; store the private key in KeePass, an age-key file, or on the host depending on the key source.
 3. The `create` package injects the age key with `nixos-anywhere --extra-files` before activation.
 4. The sops file was already encrypted to the host's public key.
 5. Activation decrypts it and installs the secrets.
@@ -68,7 +68,7 @@ The secret service never stores plaintext secret values in the Nix store or in g
 
 1. Update the machine public keys / shared groups in the cluster configuration.
 2. Run `nix run .#<clusterName>.secrets.secretsSyncKeyHolders`.
-   - regenerates/validates `.sops.yaml`,
+   - regenerates/validates `<sopsRoot>/.sops.yaml`,
    - runs `sops updatekeys`,
    - runs `sops rotate` when the recipient configuration changed,
    - reports files to commit.

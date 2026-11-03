@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# User-facing integration test. Requires the three VMs and SSH agent key
+# described in readme.md.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -116,6 +118,10 @@ check_absent "$VM2" /run/secrets/monitoring/token vm2-monitoring-secret
 check_file "$VM0" /run/secrets/rendered/monitoring.env 400 root vm0-monitoring-template
 check_file "$VM1" /run/secrets/rendered/monitoring.env 400 root vm1-monitoring-template
 check_absent "$VM2" /run/secrets/rendered/monitoring.env vm2-monitoring-template
+
+check_file "$VM0" /run/secrets/rendered/monitoring-cluster.env 400 root vm0-monitoring-cluster-template
+check_file "$VM1" /run/secrets/rendered/monitoring-cluster.env 400 root vm1-monitoring-cluster-template
+check_absent "$VM2" /run/secrets/rendered/monitoring-cluster.env vm2-monitoring-cluster-template
 
 check_file "$VM0" /run/secrets/rendered/cluster.env 400 root vm0-cluster-template
 check_file "$VM1" /run/secrets/rendered/cluster.env 400 root vm1-cluster-template

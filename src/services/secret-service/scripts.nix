@@ -24,8 +24,9 @@ let
   ageKeygen = "${pkgs.age}/bin/age-keygen";
   jq = "${pkgs.jq}/bin/jq";
   yq = "${pkgs.yq-go}/bin/yq";
-  sed = "${pkgs.gnused}/bin/sed";
   keepassxc = "${pkgs.keepassxc}/bin/keepassxc-cli";
+  git = "${pkgs.git}/bin/git";
+  realpath = "${pkgs.coreutils}/bin/realpath";
 
   shellList = values: concatStringsSep " " (map escapeShellArg values);
 
@@ -38,48 +39,74 @@ let
     ''
       sops_root_store=${escapeShellArg spec.nixPath}
       sops_root_os=${escapeShellArg osPath}
+      export PATH="${pkgs.coreutils}/bin:${pkgs.git}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:$PATH"
+
+      # Find the nearest enclosing flake without requiring Git. This is enough
+      # for explicit osPath configurations, which may be used outside a repo.
       find_flake_root() {
-        repo_root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || {
-          echo "ERROR: cannot determine the Git repository root for the sops root." >&2
-          echo "Run this helper from inside the flake, or configure:" >&2
-          echo "  sopsRoot = { nixPath = ./secrets; osPath = "/absolute/path/to/secrets"; };" >&2
-          exit 1
-        }
         flake_root="$PWD"
         while [ "$flake_root" != "/" ] && [ ! -f "$flake_root/flake.nix" ]; do
           flake_root="$(dirname "$flake_root")"
         done
         if [ ! -f "$flake_root/flake.nix" ]; then
-          echo "ERROR: cannot find an enclosing flake.nix." >&2
-          echo "Run this helper from inside the flake, or configure sopsRoot.osPath." >&2
-          exit 1
+          flake_root=""
         fi
-        case "$flake_root" in
-          "$repo_root"|"$repo_root"/*) ;;
-          *)
-            echo "ERROR: the enclosing flake is outside the current Git repository." >&2
-            exit 1
-            ;;
+      }
+
+      find_git_root() {
+        repo_root="$(${git} -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || return 1
+      }
+
+      # Only expand the forms documented in sopsRoot.osPath. Do not use eval:
+      # it would execute arbitrary shell text from the configuration.
+      expand_os_path() {
+        local expanded="$1"
+        case "$expanded" in
+          "~") expanded="$HOME" ;;
+          "~/"*) expanded="$HOME/''${expanded:2}" ;;
+          '$HOME'|'$HOME/'*) expanded="$HOME''${expanded:5}" ;;
         esac
-        if [ "$flake_root" = "$repo_root" ]; then
-          flake_prefix=""
-        else
-          flake_prefix="''${flake_root#"$repo_root"/}/"
-        fi
+        printf '%s' "$expanded"
       }
 
       resolve_sops_root() {
         find_flake_root
         if [ -n "$sops_root_os" ]; then
-          case "$sops_root_os" in
-            "~"*) sops_root_os="''${HOME}''${sops_root_os#\~}" ;;
-          esac
-          eval "expanded=\"$sops_root_os\""
+          expanded="$(expand_os_path "$sops_root_os")"
           case "$expanded" in
             /*) sops_root="$expanded" ;;
-            *) sops_root="$flake_root/$expanded" ;;
+            *)
+              if [ -n "$flake_root" ]; then
+                sops_root="$flake_root/$expanded"
+              else
+                sops_root="$PWD/$expanded"
+              fi
+              ;;
           esac
+          sops_root="$(${realpath} -m -- "$sops_root")"
         else
+          if ! find_git_root; then
+            echo "ERROR: cannot determine the Git repository root for the sops root." >&2
+            echo "Run this helper from inside the flake, or configure sopsRoot.osPath." >&2
+            exit 1
+          fi
+          if [ -z "$flake_root" ]; then
+            echo "ERROR: cannot find an enclosing flake.nix." >&2
+            echo "Run this helper from inside the flake, or configure sopsRoot.osPath." >&2
+            exit 1
+          fi
+          case "$flake_root" in
+            "$repo_root"|"$repo_root"/*) ;;
+            *)
+              echo "ERROR: the enclosing flake is outside the current Git repository." >&2
+              exit 1
+              ;;
+          esac
+          if [ "$flake_root" = "$repo_root" ]; then
+            flake_prefix=""
+          else
+            flake_prefix="''${flake_root#"$repo_root"/}/"
+          fi
           case "$sops_root_store" in
             /nix/store/*)
               sops_root_rel="''${sops_root_store#/nix/store/*/}"
@@ -91,10 +118,14 @@ let
             *) sops_root="$sops_root_store" ;;
           esac
         fi
-        cd "$flake_root"
-        sops_config="$flake_root/.sops.yaml"
+        if [ -n "$flake_root" ]; then
+          cd "$flake_root"
+        fi
+        sops_config="$sops_root/.sops.yaml"
       }
+
       resolve_sops_root
+
       sops_path() {
         case "$1" in
           /*) printf '%s' "$1" ;;
@@ -104,41 +135,59 @@ let
     '';
 
   sopsRootPreamble =
-    service:
+    { service, clusterName }:
+    let
+      clusterArg = escapeShellArg clusterName;
+    in
     sopsRootResolve service
     + ''
+      marker="$sops_root/.secret-service-root"
       if [ ! -f "$sops_root_store/.secret-service-root" ]; then
         echo "ERROR: missing secret-service root marker in the evaluated sops root:" >&2
         echo "  $sops_root_store/.secret-service-root" >&2
         echo "" >&2
         echo "Run the root initializer first:" >&2
-        echo "  nix run .#<cluster>.secrets.secretsInitRoot" >&2
+        echo "  nix run .#${clusterName}.secrets.secretsInitRoot" >&2
         exit 1
       fi
-      if [ ! -f "$sops_root/.secret-service-root" ]; then
+      if [ ! -f "$marker" ]; then
         echo "ERROR: missing secret-service root marker in the working tree:" >&2
-        echo "  $sops_root/.secret-service-root" >&2
+        echo "  $marker" >&2
         echo "" >&2
         echo "Commit the marker and re-run Nix so the evaluated sops root contains it." >&2
         exit 1
       fi
-      if ! cmp -s "$sops_root_store/.secret-service-root" "$sops_root/.secret-service-root"; then
+      marker_schema="$(${yq} -r '.schema // ""' "$marker" 2>/dev/null || true)"
+      marker_root_id="$(${yq} -r '.rootId // ""' "$marker" 2>/dev/null || true)"
+      marker_clusters="$(${yq} -r '.clusters[]?' "$marker" 2>/dev/null || true)"
+      if [ "$marker_schema" != "1" ] || [ -z "$marker_root_id" ]; then
+        echo "ERROR: malformed secret-service root marker: $marker" >&2
+        echo "Expected schema 1 and a non-empty rootId." >&2
+        exit 1
+      fi
+      if ! printf '%s\n' "$marker_clusters" | grep -qxF ${clusterArg}; then
+        echo "ERROR: secret-service root marker does not list cluster '${clusterName}'." >&2
+        echo "  marker: $marker" >&2
+        exit 1
+      fi
+      if ! cmp -s "$sops_root_store/.secret-service-root" "$marker"; then
         echo "ERROR: secret-service root marker mismatch." >&2
         echo "  evaluated: $sops_root_store/.secret-service-root" >&2
-        echo "  working:   $sops_root/.secret-service-root" >&2
+        echo "  working:   $marker" >&2
         echo "" >&2
         echo "Run this helper from inside the flake, commit the marker, or configure:" >&2
-        echo "  sopsRoot = { nixPath = ./secrets; osPath = \"secrets\"; };" >&2
+        echo "  sopsRoot = { nixPath = ./secrets; osPath = 'secrets'; };" >&2
         exit 1
       fi
     '';
 
   sopsRootPreambleOptional =
-    service:
+    { service, clusterName }:
     sopsRootResolve service
     + ''
       if [ ! -f "$sops_root_store/.secret-service-root" ] || [ ! -f "$sops_root/.secret-service-root" ]; then
-        echo "WARNING: secret-service root marker is missing; run secretsInitRoot." >&2
+        echo "WARNING: secret-service root marker is missing; run:" >&2
+        echo "  nix run .#${clusterName}.secrets.secretsInitRoot" >&2
       fi
     '';
 
@@ -245,7 +294,6 @@ let
         }
       ) entries;
       keyEnv = secretLib.keySourceEnv keySource;
-      sopsConfig = secretLib.sopsConfigFile service;
       selected = secretLib.selectedNodes service;
       fileRecipients = managedFileRecipients {
         inherit service clusterName clusterConfig;
@@ -257,11 +305,7 @@ let
         );
       };
       nodeCommands = map nodeCommand selected;
-      adminCommand =
-        if service.adminKeySource == null then
-          ""
-        else
-          secretLib.keySourcePublicKeyCommand service.adminKeySource;
+      adminCommand = secretLib.keySourcePublicKeyCommand service.adminKeySource;
       publicKeyCase = concatStringsSep "\n" (
         [ ''
           "admin") key="$(
@@ -287,7 +331,7 @@ let
     in
     ''
       set -euo pipefail
-      ${sopsRootPreambleOptional service}
+      ${sopsRootPreambleOptional { inherit service clusterName; }}
       echo "Checking sops files for ${machineName}..."
 
       for file in ${shellList files}; do
@@ -492,10 +536,12 @@ let
     let
       machine = secretLib.machineOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
+      service = secretLib.serviceOf clusterConfig;
       installBody = mkInstallKeyBody { inherit machine clusterName machineName; };
     in
     ''
       set -euo pipefail
+      ${sopsRootResolve service}
 
       ${installBody}
 
@@ -511,6 +557,7 @@ let
     let
       machine = secretLib.machineOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
+      service = secretLib.serviceOf clusterConfig;
       keySource = machine.deployment.secrets.keySource;
       keepass = keySource.keepass;
       keyFileArg = secretLib.keepassKeyFileArg keepass;
@@ -532,6 +579,7 @@ let
     in
     ''
       set -euo pipefail
+      ${sopsRootResolve service}
 
       force=0
       if [ "${"$"}{1:-}" = "--force" ]; then
@@ -651,7 +699,6 @@ let
         machineName = if scope == "machine" then machineName else null;
         value = if group == null then null else "cluster/${group}";
       };
-      sopsConfig = secretLib.sopsConfigFile service;
       keyEnv = secretLib.keySourceEnv (
         if scope == "machine" then
           (secretLib.machineOf clusterConfig).deployment.secrets.keySource
@@ -661,7 +708,7 @@ let
     in
     ''
       set -euo pipefail
-      ${sopsRootPreamble service}
+      ${sopsRootPreamble { inherit service clusterName; }}
       export SOPS_CONFIG="$sops_config"
       ${keyEnv}
       ${sops} edit "$(sops_path ${escapeShellArg file})" "$@"
@@ -699,7 +746,6 @@ let
           if group == null then entries else filter (entry: entry.sopsFile == defaultFile) entries
         )
       );
-      sopsConfig = secretLib.sopsConfigFile service;
       keyEnv = secretLib.keySourceEnv (
         if scope == "machine" then
           (secretLib.machineOf clusterConfig).deployment.secrets.keySource
@@ -709,7 +755,7 @@ let
     in
     ''
             set -euo pipefail
-            ${sopsRootPreamble service}
+            ${sopsRootPreamble { inherit service clusterName; }}
             export SOPS_CONFIG="$sops_config"
             ${keyEnv}
             key=""
@@ -727,8 +773,7 @@ let
             case "$key" in
       ${fileCase}
             esac
-            key_path=$(printf '%s' "$key" | ${sed} 's#/#"]["#g')
-            key_path="[\"$key_path\"]"
+            key_path="$(printf '%s' "$key" | ${jq} -Rr 'split("/") | if any(. == "") then error("secret key contains an empty path segment") else map("[" + @json + "]") | join("") end')"
             value_json="$(cat | ${jq} -Rs .)"
             printf '%s' "$value_json" | ${sops} set --value-stdin "$(sops_path "$file")" "$key_path"
     '';
@@ -813,7 +858,6 @@ let
     let
       service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
-      sopsConfig = secretLib.sopsConfigFile service;
       selected = secretLib.selectedNodes service;
       managedSelected = filter (
         nodeName: keySourceManagedInSync (secretLib.keySourceOf (secretLib.nodeByName clusterConfig nodeName))
@@ -832,11 +876,7 @@ let
         );
       };
       nodeCommands = map nodeCommand managedSelected;
-      adminCommand =
-        if service.adminKeySource == null then
-          ""
-        else
-          secretLib.keySourcePublicKeyCommand service.adminKeySource;
+      adminCommand = secretLib.keySourcePublicKeyCommand service.adminKeySource;
       publicKeyCase = concatStringsSep "\n" (
         [ ''
           "admin") key="$(
@@ -860,7 +900,7 @@ let
     in
     ''
       set -euo pipefail
-      ${sopsRootPreamble service}
+      ${sopsRootPreamble { inherit service clusterName; }}
       ${optionalString (nativeSkipped != [ ]) ''
         echo "WARNING: skipping unmanaged native key sources: ${concatStringsSep " " nativeSkipped}" >&2
       ''}
@@ -906,14 +946,28 @@ let
         printf '%s\n' "$key"
       }
 
+      regex_escape() {
+        local input="$1"
+        local output=""
+        local char
+        local i
+        for ((i=0; i<''${#input}; i++)); do
+          char="''${input:i:1}"
+          case "$char" in
+            '['|']'|'\'|'.'|'^'|'$'|'*'|'+'|'?'|'('|')'|'{'|'}'|'|') output="''${output}\\''${char}" ;;
+            *) output="''${output}''${char}" ;;
+          esac
+        done
+        printf '%s' "$output"
+      }
       append_rule_file() {
         local file="$1"
+        local regex
         shift
-        case "$file" in
-          /*) ;;
-          *) file="$sops_root/$file" ;;
-        esac
-        append_rule "^$file$" "$@"
+        # The sops configuration lives in sopsRoot, so sops matches path_regex
+        # against paths relative to that directory.
+        regex="$(regex_escape "$file")"
+        append_rule "^$regex$" "$@"
       }
 
       append_rule() {
@@ -1020,7 +1074,6 @@ let
     let
       service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
-      sopsConfig = secretLib.sopsConfigFile service;
       adminKeyEnv = secretLib.keySourceEnv service.adminKeySource;
       command = if rotate then "rotate --in-place" else "updatekeys --yes";
       fileRecipients = managedFileRecipients {
@@ -1040,7 +1093,7 @@ let
     in
     ''
       set -euo pipefail
-      ${sopsRootPreamble service}
+      ${sopsRootPreamble { inherit service clusterName; }}
       export SOPS_CONFIG="$sops_config"
       ${adminKeyEnv}
       if [ -z "${"$"}{SOPS_AGE_KEY_FILE:-}${"$"}{SOPS_AGE_SSH_PRIVATE_KEY_FILE:-}" ]; then
@@ -1090,7 +1143,9 @@ EOF
       echo "Wrote root marker: $marker"
       echo ""
       echo "Add it to Git and re-run Nix:"
-      echo "  git add '$marker'"
+      git_root_hint="$flake_root"
+      [ -n "$git_root_hint" ] || git_root_hint="$PWD"
+      echo "  git -C '$git_root_hint' add -- '$marker'"
     '';
 
   mkCheckScript =

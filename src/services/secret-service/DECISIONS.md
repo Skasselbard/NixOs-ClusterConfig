@@ -151,7 +151,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D13 — Sops removal policy: updatekeys + rotate + rotate values
 
-**Decision:** when removing a recipient because a key may be compromised, remove it from `.sops.yaml`, run `sops updatekeys`, then `sops rotate --in-place`, commit, and only then rotate the actual secret values.
+**Decision:** when removing a recipient because a key may be compromised, remove it from `<sopsRoot>/.sops.yaml`, run `sops updatekeys`, then `sops rotate --in-place`, commit, and only then rotate the actual secret values.
 
 **Reasoning:**
 
@@ -205,11 +205,11 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D19 — Generate `.sops.yaml`, not secret values
 
-**Decision:** generate `.sops.yaml` from cluster public keys, admin key and shared groups. Do not generate secret contents in the secret service; domain modules do that.
+**Decision:** generate `<sopsRoot>/.sops.yaml` from cluster public keys, admin key and shared groups. Do not generate secret contents in the secret service; domain modules do that.
 
 **Reasoning:**
 
-- `.sops.yaml` is derivable from public configuration.
+- `<sopsRoot>/.sops.yaml` is derivable from public configuration.
 - Secret values require plaintext or domain knowledge (for example, TLS certificates with SANs).
 - Automating derivable files reduces user error; inventing domain-specific secrets does not belong in a generic secret service.
 
@@ -280,11 +280,11 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 **Reasoning:**
 
 - The service cannot derive those recipients from private cluster config.
-- Silently omitting a required recipient would produce a broken or insecure `.sops.yaml`.
+- Silently omitting a required recipient would produce a broken or insecure `<sopsRoot>/.sops.yaml`.
 
 ### D27 — Path roots and working-tree resolution
 
-**Decision:** `sopsRoot` is a Nix path by default (`./secrets`), with an optional explicit `{ nixPath, osPath }` form. Helper commands derive the working-tree path from the store suffix and Git flake prefix, or use `osPath`. Helpers may run from any directory inside the flake; the nearest enclosing `flake.nix` is used as the flake root. Writable sops paths are strings; Nix paths are not accepted for writable `sopsFile` values.
+**Decision:** `sopsRoot` is a Nix path by default (`./secrets`), with an optional explicit `{ nixPath, osPath }` form. Helper commands derive the working-tree path from the store suffix and Git flake prefix, or use `osPath`. Helpers may run from any directory inside the flake; the nearest enclosing `flake.nix` is used as the flake root. An absolute `osPath` may be used outside the flake, but relative key-source paths then resolve from the current directory. `osPath` supports leading `~`, `~/`, and `$HOME` expansion only; it is not evaluated as shell. Writable sops paths and private key paths are strings; Nix paths are not accepted for these values.
 
 **Reasoning:**
 
@@ -294,7 +294,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D28 — Stage destructive updates
 
-**Decision:** sync and rotate back up managed files and restore them if a sops operation fails. `.sops.yaml` is written to a temporary file and moved into place only after success.
+**Decision:** sync and rotate back up managed files and restore them if a sops operation fails. `<sopsRoot>/.sops.yaml` is written to a temporary file and moved into place only after success.
 
 **Reasoning:**
 
@@ -312,7 +312,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D30 — Root marker and bootstrap
 
-**Decision:** store a non-secret `.secret-service-root` marker in the sops root. Evaluation tolerates a missing marker; mutating helpers require it. `secretsInitRoot` creates it during setup.
+**Decision:** store a non-secret `.secret-service-root` marker in the sops root. Evaluation tolerates a missing marker; mutating helpers require it and validate its schema, rootId and cluster membership. `secretsInitRoot` creates it during setup.
 
 **Reasoning:**
 

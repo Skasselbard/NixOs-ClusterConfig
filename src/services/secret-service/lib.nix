@@ -86,8 +86,6 @@ let
   sopsRootPath = service: (sopsRootSpec service).nixPath;
   sopsRootOsPath = service: (sopsRootSpec service).osPath;
 
-  sopsConfigFile = _service: ".sops.yaml";
-
   clusterRootAt =
     root: clusterName:
     if root == "" then clusterName else "${root}/${clusterName}";
@@ -368,7 +366,6 @@ in
     secretSopsFileCommand
     selectedNodes
     serviceOf
-    sopsConfigFile
     sopsRootOsPath
     sopsRootPath
     sopsRootSpec

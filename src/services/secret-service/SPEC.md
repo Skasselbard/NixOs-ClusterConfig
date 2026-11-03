@@ -38,13 +38,13 @@ These live under `domain.clusters.<cluster>.services.secrets`.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `selectors` | framework service option | required | Machines/VMs on which the service is active. |
-| `sopsRoot` | path or `{ nixPath, osPath }` | required | Root directory for sops files. The normal form is `./secrets`; the explicit form supplies both projection and helper paths. |
+| `sopsRoot` | path or `{ nixPath, osPath }` | required | Root directory for sops files. The normal form is `./secrets`; the explicit form supplies both projection and helper paths. The generated sops configuration is `<sopsRoot>/.sops.yaml`. |
 | `machinesSubDir` | string | `"machines"` | Subdirectory for per-machine sops files. |
 | `clusterSubDir` | string | `"cluster"` | Subdirectory for cluster group sops files. |
 | `clusterSopsFile` | null or string | `null` | Explicit cluster-wide sops file. `null` means `<sopsRoot>/<clusterName>/cluster.yaml`. |
 | `secrets` | attrs of attrs of secret | `{}` | Cluster-scoped secrets, projected to every selected node. |
 | `templates` | attrs of template | `{}` | Cluster-scoped templates, projected to every selected node. |
-| `adminKeySource` | null or key-source submodule | `null` | Admin decryption key holder and identity used by `secretsSyncKeyHolders`. Its public key is derived from the key source at runtime. |
+| `adminKeySource` | key-source submodule | required | Admin decryption key holder and identity used by `secretsSyncKeyHolders`. Its public key is derived from the key source at runtime and is included in every generated rule. |
 | `groups` | attrs of list of node names | `{}` | Cluster-local secret groups. A group named `monitoring` with members `[ "vm1" "vm2" ]` corresponds to `sopsFile = "cluster/monitoring"` and is projected only to those nodes. These are not OS groups. |
 | `keepGenerations` | null or int | `null` | Projects to [`sops.keepGenerations`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L237) when non-null. |
 | `useTmpfs` | null or bool | `null` | Projects to [`sops.useTmpfs`](https://github.com/Mic92/sops-nix/blob/master/modules/sops/default.nix#L299) when non-null. |
@@ -94,14 +94,14 @@ These live under `machines.<machine>` (and are also available on VMs where appli
 | `type` | enum `age`, `keepass`, `ssh`, `native` | `"native"` | Key-source strategy. |
 | `targetKeyFile` | string | `/var/lib/sops-nix/key.txt` | Target key path for `age` and `keepass`. |
 | `age.sourceKeyFile` | null or string | required for age | Build-host private age key. A string, not a Nix path, so it is not copied into the store. |
-| `keepass.databasePath` | path/string | required for keepass | KeePass database on the admin machine. Use a string if `secretsKeyGenerate` should write it. |
+| `keepass.databasePath` | null or string | required for keepass | KeePass database path on the admin machine. A host/working-tree string, not a Nix path. |
 | `keepass.entry` | string | `clusterConfig/<cluster>/machines/<machine>` for machine sources | Entry path. The password field contains the age private key. |
 | `keepass.passwordFile` | null or string | `null` | File containing the KeePass password. Kept as a string so it is not copied into the Nix store. |
 | `keepass.passwordCommand` | null or string | `null` | Command that prints the KeePass password. Use instead of `passwordFile`. |
-| `keepass.keyFilePath` | null or path | `null` | KeePass key file. |
+| `keepass.keyFilePath` | null or string | `null` | KeePass key file. A host/working-tree string, not a Nix path. |
 | `native.publicKey` | null or string | `null` | Public recipient for native recipient generation. |
 | `native.publicKeyFile` | null or string/path | `null` | File containing the native public recipient. |
-| `ssh.keyPaths` | list of paths | `[ "/etc/ssh/ssh_host_ed25519_key" ]` | Host keys used as age identities for `type = "ssh"`. Projected to `sops.age.sshKeyPaths`. |
+| `ssh.keyPaths` | list of strings | `[ "/etc/ssh/ssh_host_ed25519_key" ]` | Host keys used as age identities for `type = "ssh"`. Host/working-tree strings, not Nix paths. Projected to `sops.age.sshKeyPaths`. |
 
 `type = "native"` means the cluster service performs no key provisioning or key-file injection. The node must configure `sops.age.*`, `sops.gnupg.*`, `sops.environment` or age plugins itself.
 
@@ -166,12 +166,14 @@ Templates cannot reference `neededForUsers` secrets.
 ### 7.1 Default layout
 
 ```text
+<sopsRoot>/.sops.yaml
+<sopsRoot>/.secret-service-root
 <sopsRoot>/<clusterName>/<machinesSubDir>/<machineName>.yaml
 <sopsRoot>/<clusterName>/cluster.yaml
 <sopsRoot>/<clusterName>/<clusterSubDir>/<groupName>.yaml
 ```
 
-`clusterSopsFile` overrides the cluster-wide file. `sopsRoot`, `machinesSubDir` and `clusterSubDir` are configurable. Helpers locate the nearest enclosing `flake.nix` and may run from any directory inside the flake. From outside the flake, use the explicit `{ nixPath, osPath }` form. These paths and the `sopsFile` shorthands are resolved as described in [§7.2](#72-string-shorthands).
+`clusterSopsFile` overrides the cluster-wide file. `sopsRoot`, `machinesSubDir` and `clusterSubDir` are configurable. Helpers locate the nearest enclosing `flake.nix` and may run from any directory inside the flake. With an absolute `sopsRoot.osPath`, helpers may also run outside the flake; relative key-source paths then resolve from the current directory, so use absolute key-source paths or run inside the flake. Without `osPath`, helpers require an enclosing flake and Git checkout. These paths and the `sopsFile` shorthands are resolved as described in [§7.2](#72-string-shorthands).
 
 ### 7.2 String shorthands
 
@@ -197,7 +199,7 @@ Every projected `sops.secrets` entry receives an explicit `sopsFile`. The servic
 
 ### 7.4 Root marker
 
-The sops root contains a committed `.secret-service-root` marker with a schema version, random `rootId`, cluster names and FQDN. Evaluation tolerates a missing marker; mutating helpers require it and compare the evaluated marker with the working-tree marker. `secretsInitRoot` creates the marker during bootstrap. The marker contains no secrets and is a safety guard, not an authorization boundary.
+The sops root contains a committed `.secret-service-root` marker with schema version `1`, a non-empty random `rootId`, cluster names and FQDN. Evaluation tolerates a missing marker; mutating helpers require it, validate the schema and `rootId`, verify that the current cluster is listed, and compare the evaluated marker with the working-tree marker. `secretsInitRoot` creates the marker during bootstrap. The marker contains no secrets and is a safety guard, not an authorization boundary.
 
 ## 8. Projection rules
 
@@ -301,7 +303,7 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | Command | Purpose |
 |---|---|
 | `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker. |
-| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Regenerate `.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
+| `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Regenerate `<sopsRoot>/.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
 | `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for all managed sops files. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
@@ -332,10 +334,10 @@ It does not deploy the system. Secret activation happens when the normal system 
 
 Cluster-level. Mutates the repository and reports the changed files.
 
-1. Derive public keys at runtime from `adminKeySource`, managed machine key sources, groups and custom sops files, then generate `.sops.yaml`.
+1. Derive public keys at runtime from `adminKeySource`, managed machine key sources, groups and custom sops files, then generate `<sopsRoot>/.sops.yaml`.
 2. Build the managed file set from machine files, group files, the cluster file and explicit `sopsFile` paths.
 3. Run `sops updatekeys` on managed files.
-4. If the generated `.sops.yaml` changed, rotate data keys for all managed files.
+4. If the generated `<sopsRoot>/.sops.yaml` changed, rotate data keys for all managed files.
 5. Stage changes and restore prior file contents on failure.
 6. Report changed files.
 
@@ -343,7 +345,7 @@ Native key sources without a manual public key are skipped and reported as unman
 
 ### 10.6 `secretsRotate`
 
-Cluster-level. Rotates data keys for every managed sops file. It does not regenerate host identities and does not rewrite `.sops.yaml`.
+Cluster-level. Rotates data keys for every managed sops file. It does not regenerate host identities and does not rewrite `<sopsRoot>/.sops.yaml`.
 
 ### 10.7 `secretsKeyGenerate`
 
@@ -398,7 +400,7 @@ Sops has no mechanism to revoke old ciphertext. Old file versions in Git history
 
 When removing a decryption key holder because a key may be compromised:
 
-1. Remove the key from `.sops.yaml`.
+1. Remove the key from `<sopsRoot>/.sops.yaml`.
 2. `sops updatekeys` on affected files.
 3. `sops rotate --in-place` on affected files.
 4. Commit.

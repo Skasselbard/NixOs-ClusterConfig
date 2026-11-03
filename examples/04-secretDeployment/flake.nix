@@ -123,6 +123,16 @@
                     '';
                   };
 
+                  # A cluster template may be limited to one secret group with
+                  # sopsFile. It is projected only to vm0 and vm1 here.
+                  templates.monitoringClusterEnv = {
+                    sopsFile = "cluster/monitoring";
+                    path = "/run/secrets/rendered/monitoring-cluster.env";
+                    content = { config }: ''
+                      TOKEN=${config.sops.placeholder."example/monitoring/token"}
+                    '';
+                  };
+
                 };
 
               };

@@ -42,9 +42,9 @@ let
         description = "Build-host age private key used to provision type age. Kept as a string so it is not copied into the Nix store.";
       };
       keepass.databasePath = mkOption {
-        type = types.nullOr (types.either types.str types.path);
+        type = types.nullOr types.str;
         default = null;
-        description = "KeePass database used to escrow the age key.";
+        description = "KeePass database used to escrow the age key. A host/working-tree path string, not a Nix path.";
       };
       keepass.entry = mkOption {
         type = types.nullOr types.str;
@@ -62,9 +62,9 @@ let
         description = "Command that prints the KeePass database password.";
       };
       keepass.keyFilePath = mkOption {
-        type = types.nullOr types.path;
+        type = types.nullOr types.str;
         default = null;
-        description = "Optional KeePass key file.";
+        description = "Optional KeePass key file. A host/working-tree path string, not a Nix path.";
       };
       native.publicKey = mkOption {
         type = types.nullOr types.str;
@@ -77,9 +77,9 @@ let
         description = "File containing the public age recipient for type native.";
       };
       ssh.keyPaths = mkOption {
-        type = types.listOf types.path;
+        type = types.listOf types.str;
         default = [ "/etc/ssh/ssh_host_ed25519_key" ];
-        description = "SSH host keys used as age identities for type = \"ssh\".";
+        description = "SSH host keys used as age identities for type = \"ssh\". Host/working-tree path strings, not Nix paths.";
       };
     };
   };
@@ -289,16 +289,6 @@ let
         needsKey = selected != [ ] && builtins.elem nodeName selected && (hasVisibleClusterSecret || hasMachineSecret);
         keySource = nodeConfig.deployment.secrets.keySource;
         keepass = keySource.keepass;
-        keepassEntry = secretLib.keepassEntry {
-          inherit clusterName;
-          machineName = nodeName;
-          keepass = keySource.keepass;
-        };
-        keepassCommand =
-          if keySource.type == "keepass" then
-            secretLib.keepassExtractCommand (keepass // { entry = keepassEntry; })
-          else
-            "";
         extraFiles =
           if !needsKey then
             { }
@@ -310,6 +300,16 @@ let
               };
             }
           else if keySource.type == "keepass" then
+            let
+              keepassEntry = secretLib.keepassEntry {
+                inherit clusterName;
+                machineName = nodeName;
+                keepass = keySource.keepass;
+              };
+              keepassCommand = secretLib.keepassExtractCommand (
+                keepass // { entry = keepassEntry; }
+              );
+            in
             {
               ${keySource.targetKeyFile} = {
                 command = keepassCommand;
@@ -416,7 +416,7 @@ let
       osPath = mkOption {
         type = types.nullOr types.str;
         default = null;
-        description = "Working-tree path used by helper commands. Shell expansion is supported. If null, helpers derive it from Git.";
+        description = "Working-tree path used by helper commands. Supports a leading ~ or $HOME. If null, helpers derive it from the enclosing flake and Git.";
       };
     };
   };
@@ -452,9 +452,8 @@ let
       description = "Cluster-scoped templates.";
     };
     adminKeySource = mkOption {
-      type = types.nullOr keySourceType;
-      default = null;
-      description = "Identity used by recipient-management commands.";
+      type = keySourceType;
+      description = "Admin decryption key holder and identity used by recipient-management commands. Required.";
     };
     groups = mkOption {
       type = types.attrsOf (types.listOf types.str);
