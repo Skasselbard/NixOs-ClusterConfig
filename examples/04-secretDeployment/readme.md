@@ -1,6 +1,6 @@
 # Secret Deployment Example
 
-This example uses the `secret-service` cluster service based on `sops-nix` to install encrypted secrets at NixOS activation time.
+This example uses the `secret-service` cluster service based on `sops-nix` to install encrypted secrets at NixOS activation time. See the [secret-service user guide](../../src/services/secret-service/Readme.md) for the full command and option reference.
 
 ## Prerequisites
 
@@ -22,18 +22,50 @@ This example uses the `secret-service` cluster service based on `sops-nix` to in
   helpers use `StrictHostKeyChecking=accept-new`, so the first connection trusts
   the host key.
 
-The example includes public test age keys, a KeePass database, and encrypted
-sops files. They are checked in so a fresh checkout is deployable. Never reuse
-this material for a real deployment; real deployments must also commit their
-encrypted sops files.
+The example intentionally checks in public test age keys, a KeePass database, and
+encrypted sops files, so a fresh checkout already contains example secret
+material rather than starting empty. If you want to start with a completely
+clean setup, or if you have used this example before, run:
+
+```bash
+bash ./cleanupSecrets.sh --all
+```
+
+This restores the tracked example fixtures and removes untracked and ignored
+generated state such as `result`, `build` and `.direnv`. See
+[Reset the example](#reset-the-example) for details. Never reuse this material
+for a real deployment; real deployments must also commit their encrypted sops
+files.
 
 ## What You Will Learn
 
 - How to declare cluster-scoped, group-scoped and machine-scoped secrets
 - How decryption key holders control which machines can read a sops file
 - How the service projects declarations into `sops.secrets` and `sops.templates`
-- How to edit sops files with the generated helper commands
-- How secrets deploy as part of the normal system closure
+- How to deploy and verify secrets, templates and access boundaries
+- How to change secret values versus rotating data keys or host identities
+
+## Result
+
+After deployment, the example produces these secrets:
+
+| Scope | Secret | Sops file | Expected key holders | Target | What it demonstrates |
+|---|---|---|---|---|---|
+| Cluster | `cluster/clusterPassword` | `cluster.yaml` | vm0, vm1, vm2, admin | `/run/secrets/cluster/clusterPassword` (root `0400`) | Cluster-wide access |
+| Group | `monitoring/token` | `cluster/monitoring.yaml` | vm0, vm1, admin | `/run/secrets/monitoring/token` (root `0400`) | Group isolation; vm2 is excluded |
+| Custom file | `custom/customPassword` | `custom.yaml` | vm0, vm1, vm2, admin | `/run/secrets/custom/customPassword` (root `0400`) | Explicit `sopsFile` support |
+| vm0 machine | `testService/testSecret` | `machines/vm0.yaml` | vm0, admin | `/run/secrets/testService/testSecret` (`testService` `0440`) | Machine-private access |
+| vm1 machine | `admin/testPassword` | `machines/vm1.yaml` | vm1, admin | `/home/admin/secrets/testPassword` (`admin` `0440`) | Machine-private access with user ownership |
+
+The rendered templates are also part of the result:
+
+- `/run/secrets/rendered/cluster.env` on every VM.
+- `/run/secrets/rendered/monitoring.env` on vm0 and vm1.
+- `/run/secrets/rendered/monitoring-cluster.env` on vm0 and vm1 only.
+
+The important part is not just which paths exist. vm2 can decrypt the cluster and
+custom files while being excluded from the monitoring group file and the vm0/vm1
+machine files. That is the isolation boundary demonstrated by this example.
 
 ## Layout
 
@@ -160,88 +192,35 @@ The tracked `secrets/.secret-service-root` marker identifies this secret root.
 a brand-new sops root. The marker must stay tracked because it is part of the
 evaluated-store/working-tree check.
 
-## Setup
+## Deployment
 
-All example sops files and example key material are checked in, so there is no
-bootstrap step for a fresh checkout:
+Install or repair the test host keys, then deploy the three machines:
 
 ```bash
-cd examples/04-secretDeployment
-ssh-add ../00-exampleConfigs/secrets/sshKey
+./installKeys.sh
+./deploy.sh
 ```
 
-Use the normal deploy commands below. The example files are public test
-material and must never be reused for a real deployment.
-
-## Commands
-
-Edit a machine file or set one machine value:
+Or run the individual commands:
 
 ```bash
-nix run .#example.vm0.secretEdit
-printf '%s\n' 'new-value' | nix run .#example.vm0.secretSet -- --key testService/testSecret
-```
-
-Edit the cluster file or set one cluster value:
-
-```bash
-nix run .#example.secrets.secretEdit
-printf '%s\n' 'new-token' | nix run .#example.secrets.secretSet -- --key monitoring/token
-```
-
-Edit or set a value in the monitoring group file:
-
-```bash
-nix run .#example.secrets.secretMonitoringEdit
-printf '%s\n' 'new-token' | nix run .#example.secrets.secretMonitoringSet -- --key monitoring/token
-```
-
-Generate a new key directly in its key source:
-
-```bash
-# age source: refuses to overwrite without --force
-nix run .#example.vm0.secretsKeyGenerate -- --force
-
-# Keepass source: requires --force to replace an existing entry
-nix run .#example.vm1.secretsKeyGenerate -- --force
-
-# Admin key or all managed keys
-nix run .#example.secrets.secretsAdminKeyGenerate -- --force
-nix run .#example.secrets.secretsKeyGenerateAll -- --force
-
-# Then synchronize recipients and install the new host keys
-nix run .#example.secrets.secretsSyncKeyHolders
 nix run .#example.vm0.secretsInstallKey
 nix run .#example.vm1.secretsInstallKey
-```
+nix run .#example.vm2.secretsInstallKey
 
-The public key is derived from the resulting private key and written to `secrets/.sops.yaml` by `secretsSyncKeyHolders`. Do not add public keys to the cluster configuration.
-
-Regenerate `secrets/.sops.yaml` and update the file key holders:
-
-```bash
-nix run .#example.secrets.secretsSyncKeyHolders
-```
-
-Synchronization only rotates data keys when the generated recipient configuration changed. To rotate all managed data keys unconditionally:
-
-```bash
-nix run .#example.secrets.secretsRotate
-```
-
-Check the machine and install its key. Deploy the system separately:
-
-```bash
-nix run .#example.vm0.secretsCheck
-nix run .#example.vm0.secretsInstallKey
 nix run .#example.vm0.deploy
+nix run .#example.vm1.deploy
+nix run .#example.vm2.deploy
 ```
 
-`secretsInstallKey` installs the age key from `deployment.secrets.keySource`; it does not deploy the system. Use the normal `deploy` command for the system closure.
+`secretsInstallKey` installs or repairs the age key from
+`deployment.secrets.keySource`; it does not deploy the system. A normal deploy
+copies the encrypted sops files as part of the system closure and activates them
+on the target.
 
 ## Test
 
-After deploying all three VMs, run the user-facing integration test:
+After deploying all three VMs, run the automated integration test:
 
 ```bash
 nix shell nixpkgs#age nixpkgs#keepassxc -c bash ./test.sh
@@ -259,6 +238,52 @@ nix shell nixpkgs#age nixpkgs#keepassxc -c bash ./test.sh
 - root can read each secret and `nobody` cannot,
 - `secretsCheck` passes for every VM.
 
+### What to check manually
+
+The test script is the quick regression check. These commands show the
+interesting behavior directly.
+
+Run the service's read-only check on every VM:
+
+```bash
+nix run .#example.vm0.secretsCheck
+nix run .#example.vm1.secretsCheck
+nix run .#example.vm2.secretsCheck
+```
+
+Inspect target permissions and a rendered template:
+
+```bash
+ssh root@192.168.122.200 'stat -c "%a %U:%G %n" \
+  /run/secrets/cluster/clusterPassword \
+  /run/secrets/monitoring/token \
+  /run/secrets/testService/testSecret \
+  /run/secrets/rendered/monitoring-cluster.env'
+
+ssh root@192.168.122.200 \
+  'cat /run/secrets/rendered/monitoring-cluster.env'
+```
+
+You should see the declared owner and mode for each file, and the rendered
+template should contain a `TOKEN=` line. Prove the group isolation and access
+boundaries:
+
+```bash
+# The monitoring secret and group template are absent on vm2.
+ssh root@192.168.122.202 'test ! -e /run/secrets/monitoring/token'
+ssh root@192.168.122.202 'test ! -e /run/secrets/rendered/monitoring-cluster.env'
+
+# Root can read the secret; an unprivileged user cannot.
+ssh root@192.168.122.200 'cat /run/secrets/testService/testSecret >/dev/null'
+ssh root@192.168.122.200 \
+  'su -s /bin/sh nobody -c "cat /run/secrets/testService/testSecret"'
+```
+
+The first two commands should succeed silently. The `nobody` command should
+fail with `Permission denied`.
+
+### Helper tests
+
 The implementation-level helper tests do not need deployed VMs:
 
 ```bash
@@ -266,25 +291,134 @@ bash ./test-helpers.sh
 ```
 
 `test-helpers.sh` checks nested-directory invocation and the missing-marker
-error. It restores the marker with a trap if a check fails.
+error. It runs `secretsSyncKeyHolders`, which can touch tracked sops files, so
+review `git diff` afterward.
 
-### Manual helper checks
+### Reset the example
 
-These mutate the example sops files. Run them only on a disposable checkout and
-review the resulting diff:
+Cleanup and resetting are example-only operations, not part of the normal secret
+workflow. Run this before starting a new review so manual experiments do not
+carry over:
 
 ```bash
-# Set one machine secret from stdin.
-printf '%s
-' 'new-value' | nix run .#example.vm0.secretSet -- --key testService/testSecret
-
-# Edit a file interactively.
-nix run .#example.vm0.secretEdit
-
-# Update recipients or rotate data keys.
-nix run .#example.secrets.secretUpdateKeys
-nix run .#example.secrets.secretsRotate
+bash ./cleanupSecrets.sh
 ```
+
+This restores tracked sops files, age keys, the KeePass database and test key
+material from `HEAD`, and removes untracked generated files under the example
+secret roots. To also remove ignored build outputs such as `result`, `build` and
+`.direnv`:
+
+```bash
+bash ./cleanupSecrets.sh --all
+```
+
+The script is intentionally local to this example and is not exposed as a
+service package.
+
+## Changing Secrets
+
+Edit a machine file or set one machine value:
+
+```bash
+nix run .#example.vm0.secretEdit
+printf '%s\n' 'new-value' \
+  | nix run .#example.vm0.secretSet -- --key testService/testSecret
+```
+
+Edit the cluster file or set one cluster value:
+
+```bash
+nix run .#example.secrets.secretEdit
+printf '%s\n' 'new-password' \
+  | nix run .#example.secrets.secretSet -- --key cluster/clusterPassword
+```
+
+Edit or set a value in the monitoring group file:
+
+```bash
+nix run .#example.secrets.secretMonitoringEdit
+printf '%s\n' 'new-token' \
+  | nix run .#example.secrets.secretMonitoringSet -- --key monitoring/token
+```
+
+`secretEdit` opens the file in `$EDITOR`. `secretSet` reads the value from stdin.
+Both change the encrypted value stored in the sops file; they do not rotate the
+file's data key. Review the diff, commit the sops file, deploy normally, and run
+the checks from [Test](#test).
+
+## Key Rotation and Key Management
+
+These operations are deliberately separate:
+
+- `secretsSyncKeyHolders` regenerates recipients from the current key sources and
+  groups. It runs `sops updatekeys` and rotates data keys only when the generated
+  recipient configuration changed. Use it after adding or removing a machine or
+  changing a key source.
+- `secretsRotate` rotates the data key for every managed sops file without
+  changing `.sops.yaml`, host identities or logical secret values. Use it for an
+  explicit data-key refresh or compromise recovery.
+- `secretUpdateKeys` applies the current recipients to the existing data key
+  without rotating it. For compromise recovery, follow it with `secretsRotate`.
+- `secretSet`/`secretEdit` change the actual secret value; they are not a data-key
+  rotation.
+
+Rotate all managed files to try the operation on this disposable example:
+
+```bash
+git diff -- secrets
+git restore -- secrets
+nix run .#example.secrets.secretsRotate
+git diff -- secrets
+```
+
+The sops metadata and ciphertext change, but the decrypted values do not. If a
+key holder was removed because of a possible compromise, update recipients,
+rotate data keys, then rotate the actual secret values. Old ciphertext remains
+decryptable, so this order matters.
+
+Generate a host key directly in its key source:
+
+```bash
+# age source: refuses to overwrite without --force
+nix run .#example.vm0.secretsKeyGenerate -- --force
+
+# KeePass source: requires --force to replace an existing entry
+nix run .#example.vm1.secretsKeyGenerate -- --force
+
+# Then synchronize recipients, install the new host keys, and deploy
+nix run .#example.secrets.secretsSyncKeyHolders
+nix run .#example.vm0.secretsInstallKey
+nix run .#example.vm1.secretsInstallKey
+./deploy.sh
+```
+
+The public key is derived from the resulting private key and written to
+`secrets/.sops.yaml` by `secretsSyncKeyHolders`. Do not add public keys to the
+cluster configuration. `secretsAdminKeyGenerate` replaces the recovery identity
+for every generated rule, and `secretsKeyGenerateAll --force` replaces every
+managed key, including the admin key. Treat the latter as a bootstrap or
+recovery operation, not a routine command.
+
+Do not hand-edit `secrets/.sops.yaml`; `secretsSyncKeyHolders` regenerates it.
+Commit it together with the updated sops files. See
+[Sync, rotate and key generation](../../src/services/secret-service/Readme.md#sync-rotate-and-key-generation)
+and [Rotation and recovery](../../src/services/secret-service/Readme.md#rotation-and-recovery)
+for the full operation reference.
+
+## What's Next
+
+- [Example 05: Vault Raft Cluster](../05-vault-raftCluster/readme.md) — run a
+  highly available Vault cluster.
+- Continue with the service documentation below when adapting this example to
+  real key sources and deployment targets.
+
+## Further Reading
+
+- [Secret service user guide](../../src/services/secret-service/Readme.md)
+- [Secret service specification](../../src/services/secret-service/SPEC.md)
+- [Design decisions](../../src/services/secret-service/DECISIONS.md)
+- [Architecture and lifecycle](../../src/services/secret-service/concept.md)
 
 ## Important Notes
 

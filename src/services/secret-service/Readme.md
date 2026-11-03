@@ -182,7 +182,7 @@ Public keys are derived at runtime from `age.sourceKeyFile`, the KeePass entry o
 nix run .#<cluster>.secrets.secretsSyncKeyHolders
 ```
 
-This derives public keys from the machine and admin key sources at runtime, generates `<sopsRoot>/.sops.yaml`, runs `sops updatekeys` and rotates data keys.
+This derives public keys from the machine and admin key sources at runtime, generates `<sopsRoot>/.sops.yaml`, runs `sops updatekeys`, and rotates data keys only when the generated recipient configuration changed.
 
 ### 4. Declare secrets
 
@@ -253,7 +253,6 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
-| `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on all managed files. |
 | `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file, for example `secretMonitoringEdit`. |
 | `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
 | `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
@@ -304,11 +303,42 @@ Custom `sopsFile` values participate in recipient generation. The expected recip
 
 These are separate operations:
 
-- `secretsSyncKeyHolders` regenerates `<sopsRoot>/.sops.yaml`, updates recipients and only rotates data keys when the recipient configuration changed.
-- `secretsRotate` rotates data keys for every managed sops file.
-- `secretsKeyGenerate` generates or replaces a host identity.
+| Operation | Rewrites `.sops.yaml` | Re-wraps existing data key | Creates new data key | Changes encrypted values | Typical use |
+|---|---:|---:|---:|---:|---|
+| `secretsSyncKeyHolders` | yes | yes | only if generated recipient config changed | no | Add/remove machines, groups, or key sources |
+| `secretUpdateKeys` | no | yes | no | no | Manually apply changed recipients |
+| `secretsRotate` | no | yes | yes, every managed file | no | Periodic rotation or compromise recovery |
+| `secretsKeyGenerate` | no | no | no | no | Replace one host or admin identity |
+| `secretSet` / `secretEdit` | no | no | no | yes | Change an actual secret value |
 
-`secretsSyncKeyHolders` and `secretsRotate` work on the discovered managed file set, not on every YAML file below `sopsRoot`. They stage changes and restore the previous files if a sops operation fails.
+`secretSet` and `secretEdit` change the encrypted value stored in the sops file.
+`secretsRotate` re-encrypts existing values under a new data key; it does not
+change the logical secret value.
+
+`secretsSyncKeyHolders` is the configuration-driven command. It regenerates
+`<sopsRoot>/.sops.yaml` from the current machine and admin key sources, runs
+`sops updatekeys` on every managed file, and rotates data keys only when the
+generated recipient configuration changed. Use it after adding or removing a
+machine, changing a group, or changing a key source.
+
+`secretUpdateKeys` runs `sops updatekeys` without regenerating `.sops.yaml` or
+rotating data keys. It is mainly for manually edited recipients. After removing
+a holder because of a possible compromise, follow it with `secretsRotate`; see
+[Rotation and recovery](#rotation-and-recovery).
+
+`secretsRotate` rotates the data keys for every managed sops file. It does not
+regenerate `.sops.yaml`, change host identities, or change the logical secret
+values. Use it for explicit data-key refresh, periodic rotation, or compromise
+recovery. Use `secret<Group>Rotate` to rotate only one group file.
+
+`secretsKeyGenerate` generates or replaces a host identity. After generating a
+key, run `secretsSyncKeyHolders`, install the affected host keys, and deploy.
+`secretsKeyGenerateAll --force` replaces every managed identity, including the
+admin key; treat it as a bootstrap or recovery operation, not a routine command.
+
+`secretsSyncKeyHolders` and `secretsRotate` work on the discovered managed file
+set, not on every YAML file below `sopsRoot`. They stage changes and restore the
+previous files if a sops operation fails.
 
 ## Deployment
 

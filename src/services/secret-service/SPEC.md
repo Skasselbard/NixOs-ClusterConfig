@@ -310,7 +310,6 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
-| `nix run .#<clusterName>.secrets.secretRotate` | Run `sops rotate` on all managed files. |
 | `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file. |
 | `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
 | `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
@@ -360,14 +359,14 @@ Per machine. Generates a key directly in the configured key source.
 
 The public key is derived from the resulting private key; it is not written to cluster configuration.
 
-### 10.8 `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate`
+### 10.8 `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretsRotate`
 
 These are thin wrappers around the corresponding sops commands:
 
 - `secretEdit` opens the default scope file. Machine scope edits the machine file; cluster scope edits the cluster file.
 - `secretSet` sets one key in the default scope file. The value is read from stdin.
 - `secretUpdateKeys` runs `sops updatekeys` on all managed files.
-- `secretRotate` runs `sops rotate` on all managed files.
+- `secretsRotate` runs `sops rotate` on all managed files.
 
 The wrappers use the same path resolution as the projection; see [§7.2](#72-string-shorthands).
 

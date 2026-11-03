@@ -577,15 +577,6 @@ in
               rotate = true;
             }
           );
-
-        secretRotate =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretRotate" (
-            scripts.mkUpdateKeysScript {
-              inherit clusterConfig;
-              rotate = true;
-            }
-          );
       } // groupPackages;
     };
 

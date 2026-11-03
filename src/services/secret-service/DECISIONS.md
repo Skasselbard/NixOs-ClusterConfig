@@ -163,7 +163,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D15 — Parameterless commands
 
-**Decision:** commands are generated per machine/cluster with all parameters embedded. Use separate commands for separate operations: `secretsCheck`, `secretsInstallKey`, `secretsSyncKeyHolders`, `secretsRotate`, plus the `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` helpers.
+**Decision:** commands are generated per machine/cluster with all parameters embedded. Use separate commands for separate operations: `secretsCheck`, `secretsInstallKey`, `secretsSyncKeyHolders`, `secretsRotate`, plus the `secretEdit`, `secretSet` and `secretUpdateKeys` helpers.
 
 **Reasoning:**
 
@@ -225,7 +225,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D21 — `secret*` helper packages
 
-**Decision:** provide `secretEdit`, `secretSet`, `secretUpdateKeys` and `secretRotate` packages that operate on the resolved default sops files, plus `secret<Group>Edit`, `secret<Group>Set`, `secret<Group>UpdateKeys` and `secret<Group>Rotate` for each configured group. Use `secret*` naming, not `sops*`.
+**Decision:** provide `secretEdit`, `secretSet` and `secretUpdateKeys` packages that operate on the resolved default sops files, plus `secret<Group>Edit`, `secret<Group>Set`, `secret<Group>UpdateKeys` and `secret<Group>Rotate` for each configured group. All-files rotation is provided by `secretsRotate`. Use `secret*` naming, not `sops*`.
 
 **Reasoning:**
 
