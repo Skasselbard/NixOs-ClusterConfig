@@ -791,7 +791,13 @@ let
       ${sopsRootPreamble { inherit service clusterName; }}
       export SOPS_CONFIG="$sops_config"
       ${keyEnv}
-      ${sops} edit "$(sops_path ${escapeShellArg file})" "$@"
+      sops_file="$(sops_path ${escapeShellArg file})"
+      if [ ! -s "$sops_file" ]; then
+        mkdir -p "$(dirname "$sops_file")"
+        printf '%s\n' '{}' \
+          | ${sops} --encrypt --filename-override "$sops_file" --output "$sops_file" /dev/stdin
+      fi
+      ${sops} edit "$sops_file" "$@"
     '';
 
   mkSecretSetScript =

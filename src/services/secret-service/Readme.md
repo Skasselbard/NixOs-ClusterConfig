@@ -253,10 +253,10 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
-| `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file, for example `secretMonitoringEdit`. |
-| `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
-| `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
-| `nix run .#<clusterName>.secrets.secret<Group>Rotate` | Run `sops rotate` on one group file. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Edit` | Edit a group sops file, for example `secretsMonitoringEdit`. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
+| `nix run .#<clusterName>.secrets.secrets<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Rotate` | Run `sops rotate` on one group file. |
 
 The package path determines the scope: machine commands live under `<clusterName>.<machineName>`, cluster and group commands under `<clusterName>.secrets`. Group names are capitalized and `-` is replaced with `_` in package names.
 
@@ -329,7 +329,7 @@ a holder because of a possible compromise, follow it with `secretsRotate`; see
 `secretsRotate` rotates the data keys for every managed sops file. It does not
 regenerate `.sops.yaml`, change host identities, or change the logical secret
 values. Use it for explicit data-key refresh, periodic rotation, or compromise
-recovery. Use `secret<Group>Rotate` to rotate only one group file.
+recovery. Use `secrets<Group>Rotate` to rotate only one group file.
 
 `secretsKeyGenerate` generates or replaces a host identity. After generating a
 key, run `secretsSyncKeyHolders`, install the affected host keys, and deploy.

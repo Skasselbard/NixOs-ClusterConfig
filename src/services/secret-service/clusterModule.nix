@@ -347,7 +347,7 @@ let
 
   groupPackageName =
     suffix: group:
-    "secret${capitalize (builtins.replaceStrings [ "-" ] [ "_" ] group)}${suffix}";
+    "secrets${capitalize (builtins.replaceStrings [ "-" ] [ "_" ] group)}${suffix}";
 
   groupNames = lib.unique (
     builtins.concatMap (

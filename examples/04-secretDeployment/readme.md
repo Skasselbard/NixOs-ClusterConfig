@@ -407,9 +407,9 @@ printf '%s\n' 'new-password' \
 Edit or set a value in the monitoring group file:
 
 ```bash
-nix run .#example.secrets.secretMonitoringEdit
+nix run .#example.secrets.secretsMonitoringEdit
 printf '%s\n' 'new-token' \
-  | nix run .#example.secrets.secretMonitoringSet -- --key monitoring/token
+  | nix run .#example.secrets.secretsMonitoringSet -- --key monitoring/token
 ```
 
 `secretEdit` opens the file in `$EDITOR`. `secretSet` reads the value from stdin.

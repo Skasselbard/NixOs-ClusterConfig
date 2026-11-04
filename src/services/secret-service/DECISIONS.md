@@ -225,7 +225,7 @@ The encryption key was derived from deployment metadata (`configHash`), which is
 
 ### D21 — `secret*` helper packages
 
-**Decision:** provide `secretEdit`, `secretSet` and `secretUpdateKeys` packages that operate on the resolved default sops files, plus `secret<Group>Edit`, `secret<Group>Set`, `secret<Group>UpdateKeys` and `secret<Group>Rotate` for each configured group. All-files rotation is provided by `secretsRotate`. Use `secret*` naming, not `sops*`.
+**Decision:** provide `secretEdit`, `secretSet` and `secretUpdateKeys` packages that operate on the resolved default sops files, plus `secrets<Group>Edit`, `secrets<Group>Set`, `secrets<Group>UpdateKeys` and `secrets<Group>Rotate` for each configured group. All-files rotation is provided by `secretsRotate`. Use `secret*` naming for default-file helpers and `secrets<Group>*` for group helpers, not `sops*`.
 
 **Reasoning:**
 

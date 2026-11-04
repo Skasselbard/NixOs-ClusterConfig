@@ -310,10 +310,10 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
 | `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
-| `nix run .#<clusterName>.secrets.secret<Group>Edit` | Edit a group sops file. |
-| `nix run .#<clusterName>.secrets.secret<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
-| `nix run .#<clusterName>.secrets.secret<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
-| `nix run .#<clusterName>.secrets.secret<Group>Rotate` | Run `sops rotate` on one group file. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Edit` | Edit a group sops file. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
+| `nix run .#<clusterName>.secrets.secrets<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Rotate` | Run `sops rotate` on one group file. |
 
 The package path determines the scope: a machine command lives under `<clusterName>.<machineName>`, a cluster or group command under `<clusterName>.secrets`. Group names are capitalized and `-` is replaced with `_` in package names.
 
