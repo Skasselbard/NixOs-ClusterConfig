@@ -305,7 +305,7 @@ let
         );
       };
       nodeCommands = map nodeCommand selected;
-      adminCommand = secretLib.keySourcePublicKeyCommand service.adminKeySource;
+      adminCommand = secretLib.keySourcePublicKeyCommand (secretLib.adminKeySourceOf clusterConfig);
       publicKeyCase = concatStringsSep "\n" (
         [ ''
           "admin") key="$(
@@ -554,34 +554,35 @@ let
       clusterConfig,
       keySource,
       keyName,
-      keepassEntryOverride ? null,
       nextCommands ? "",
     }:
     let
       clusterName = secretLib.clusterNameOf clusterConfig;
       service = secretLib.serviceOf clusterConfig;
       keepass = keySource.keepass;
-      keyFileArg = secretLib.keepassKeyFileArg keepass;
-      passwordCommand = secretLib.keepassPasswordCommand keepass;
+      keepassEntryValue = secretLib.keepassEntry {
+        inherit clusterName keepass;
+        machineName = keyName;
+      };
+      keepassWithEntry = keepass // { entry = keepassEntryValue; };
+      keySourceWithEntry =
+        if keySource.type == "keepass" then
+          keySource // { keepass = keepassWithEntry; }
+        else
+          keySource;
+      keyFileArg = secretLib.keepassKeyFileArg keepassWithEntry;
+      passwordCommand = secretLib.keepassPasswordCommand keepassWithEntry;
       passwordSetup = optionalString (passwordCommand != "") ''
         password="$(${passwordCommand})"
       '';
       keepassExtract =
         if keySource.type == "keepass" then
-          secretLib.keepassExtractCommand keepass
+          secretLib.keepassExtractCommand keepassWithEntry
         else
           "";
       keepassDb = escapeShellArg (if keepass.databasePath == null then "" else toString keepass.databasePath);
-      keepassEntryValue =
-        if keepassEntryOverride != null then
-          keepassEntryOverride
-        else
-          secretLib.keepassEntry {
-            inherit clusterName keepass;
-            machineName = keyName;
-          };
       keepassEntry = escapeShellArg keepassEntryValue;
-      publicCommand = secretLib.keySourcePublicKeyCommand keySource;
+      publicCommand = secretLib.keySourcePublicKeyCommand keySourceWithEntry;
     in
     ''
       set -euo pipefail
@@ -703,19 +704,12 @@ let
   mkAdminKeyGenerateScript =
     { clusterConfig }:
     let
-      service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
-      keySource = service.adminKeySource;
-      keepassEntry =
-        if keySource.keepass.entry != null then
-          keySource.keepass.entry
-        else
-          "clusterConfig/${clusterName}/admin";
+      keySource = secretLib.adminKeySourceOf clusterConfig;
     in
     mkKeyGenerateScript {
       inherit clusterConfig keySource;
       keyName = "admin";
-      keepassEntryOverride = keepassEntry;
       nextCommands = optionalString (keySource.type == "age" || keySource.type == "keepass") ''
         echo ""
         echo "Next:"
@@ -727,15 +721,9 @@ let
     { clusterConfig }:
     let
       service = secretLib.serviceOf clusterConfig;
-      clusterName = secretLib.clusterNameOf clusterConfig;
       adminTarget = {
         name = "admin";
-        keySource = service.adminKeySource;
-        keepassEntryOverride =
-          if service.adminKeySource.keepass.entry != null then
-            service.adminKeySource.keepass.entry
-          else
-            "clusterConfig/${clusterName}/admin";
+        keySource = secretLib.adminKeySourceOf clusterConfig;
       };
       machineTargets = map (
         name:
@@ -745,7 +733,6 @@ let
         {
           inherit name;
           keySource = machine.deployment.secrets.keySource;
-          keepassEntryOverride = null;
         }
       ) (secretLib.selectedNodes service);
       managedTargets = filter (
@@ -756,7 +743,7 @@ let
         "${pkgs.writeShellScriptBin "secretsKeyGenerate-${target.name}" (
           mkKeyGenerateScript {
             inherit clusterConfig;
-            inherit (target) keySource keepassEntryOverride;
+            inherit (target) keySource;
             keyName = target.name;
           }
         )}/bin/secretsKeyGenerate-${target.name}"
@@ -796,7 +783,7 @@ let
         if scope == "machine" then
           (secretLib.machineOf clusterConfig).deployment.secrets.keySource
         else
-          service.adminKeySource
+          secretLib.adminKeySourceOf clusterConfig
       );
     in
     ''
@@ -843,7 +830,7 @@ let
         if scope == "machine" then
           (secretLib.machineOf clusterConfig).deployment.secrets.keySource
         else
-          service.adminKeySource
+          secretLib.adminKeySourceOf clusterConfig
       );
     in
     ''
@@ -974,7 +961,7 @@ let
         );
       };
       nodeCommands = map nodeCommand managedSelected;
-      adminCommand = secretLib.keySourcePublicKeyCommand service.adminKeySource;
+      adminCommand = secretLib.keySourcePublicKeyCommand (secretLib.adminKeySourceOf clusterConfig);
       publicKeyCase = concatStringsSep "\n" (
         [ ''
           "admin") key="$(
@@ -994,7 +981,7 @@ let
         file:
         "append_rule_file ${escapeShellArg file} ${shellList fileRecipients.${file}}"
       ) managedFiles;
-      adminKeyEnv = secretLib.keySourceEnv service.adminKeySource;
+      adminKeyEnv = secretLib.keySourceEnv (secretLib.adminKeySourceOf clusterConfig);
     in
     ''
       set -euo pipefail
@@ -1172,7 +1159,7 @@ let
     let
       service = secretLib.serviceOf clusterConfig;
       clusterName = secretLib.clusterNameOf clusterConfig;
-      adminKeyEnv = secretLib.keySourceEnv service.adminKeySource;
+      adminKeyEnv = secretLib.keySourceEnv (secretLib.adminKeySourceOf clusterConfig);
       command = if rotate then "rotate --in-place" else "updatekeys --yes";
       fileRecipients = managedFileRecipients {
         inherit service clusterName clusterConfig;

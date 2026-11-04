@@ -95,7 +95,7 @@ These live under `machines.<machine>` (and are also available on VMs where appli
 | `targetKeyFile` | string | `/var/lib/sops-nix/key.txt` | Target key path for `age` and `keepass`. |
 | `age.sourceKeyFile` | null or string | required for age | Build-host private age key. A string, not a Nix path, so it is not copied into the store. |
 | `keepass.databasePath` | null or string | required for keepass | KeePass database path on the admin machine. A host/working-tree string, not a Nix path. |
-| `keepass.entry` | string | `clusterConfig/<cluster>/machines/<machine>` for machine sources | Entry path. The password field contains the age private key. |
+| `keepass.entry` | string | `clusterConfig/<cluster>/admin` for the admin source; `clusterConfig/<cluster>/machines/<machine>` for machine sources | Entry path. The password field contains the age private key. |
 | `keepass.passwordFile` | null or string | `null` | File containing the KeePass password. Kept as a string so it is not copied into the Nix store. |
 | `keepass.passwordCommand` | null or string | `null` | Command that prints the KeePass password. Use instead of `passwordFile`. |
 | `keepass.keyFilePath` | null or string | `null` | KeePass key file. A host/working-tree string, not a Nix path. |

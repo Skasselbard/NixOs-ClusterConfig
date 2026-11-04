@@ -68,6 +68,23 @@ let
   clusterNameOf = clusterConfig: clusterConfig.clusters.this.name;
   machineNameOf = clusterConfig: clusterConfig.clusters.this.machines.this.name;
 
+  adminKeySourceOf =
+    clusterConfig:
+    let
+      service = serviceOf clusterConfig;
+      clusterName = clusterNameOf clusterConfig;
+      keySource = service.adminKeySource;
+    in
+    if keySource.type == "keepass" && keySource.keepass.entry == null then
+      keySource
+      // {
+        keepass = keySource.keepass // {
+          entry = "clusterConfig/${clusterName}/admin";
+        };
+      }
+    else
+      keySource;
+
   isAbsolute = hasPrefix "/";
 
   sopsRootSpec =
@@ -345,6 +362,7 @@ let
 in
 {
   inherit
+    adminKeySourceOf
     clusterNameOf
     clusterRoot
     clusterRootCommand

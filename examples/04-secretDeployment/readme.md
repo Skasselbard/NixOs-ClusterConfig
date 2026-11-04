@@ -22,20 +22,11 @@ This example uses the `secret-service` cluster service based on `sops-nix` to in
   helpers use `StrictHostKeyChecking=accept-new`, so the first connection trusts
   the host key.
 
-The example intentionally checks in public test age keys, a KeePass database, and
-encrypted sops files, so a fresh checkout already contains example secret
-material rather than starting empty. If you want to start with a completely
-clean setup, or if you have used this example before, run:
-
-```bash
-bash ./cleanupSecrets.sh --all
-```
-
-This restores the tracked example fixtures and removes untracked and ignored
-generated state such as `result`, `build` and `.direnv`. See
-[Reset the example](#reset-the-example) for details. Never reuse this material
-for a real deployment; real deployments must also commit their encrypted sops
-files.
+The example intentionally checks in test keys, a KeePass database and encrypted
+sops files, so a fresh checkout is already populated. See
+[Initial Setup](#initial-setup) for the clean-start sequence, including
+`cleanupSecrets.sh --all`. Never reuse this test material in a real deployment;
+real deployments must also commit their encrypted sops files.
 
 ## What You Will Learn
 
@@ -79,7 +70,8 @@ machine files. That is the isolation boundary demonstrated by this example.
         ├── custom.yaml            # custom sopsFile example
         ├── cluster/monitoring.yaml # shared group secrets
         ├── machines/vm0.yaml      # vm0-only secrets
-        └── machines/vm1.yaml      # vm1-only secrets
+        ├── machines/vm1.yaml      # vm1-only secrets
+        └── machines/vm2.yaml      # empty placeholder; no vm2 secrets
 ```
 
 `secrets/` is the conventional `./secrets` location relative to this flake. The
@@ -192,31 +184,109 @@ The tracked `secrets/.secret-service-root` marker identifies this secret root.
 a brand-new sops root. The marker must stay tracked because it is part of the
 evaluated-store/working-tree check.
 
-## Deployment
+## Initial Setup
 
-Install or repair the test host keys, then deploy the three machines:
+This is the complete setup order from a clean checkout. The example intentionally
+checks in its keys and encrypted sops files, so a fresh checkout is already
+bootstrapped. Reset it before deploying, and only regenerate keys when creating a
+new secret root.
+
+### 1. Reset the example
+
+Start from the committed example state and remove local generated files:
+
+```bash
+bash ./cleanupSecrets.sh --all
+```
+
+This restores the tracked sops files, test keys and KeePass database from `HEAD`,
+then removes untracked and ignored build outputs. See
+[Reset the example](#reset-the-example) for details.
+
+### 2. Initialize the secret root
+
+Ensure the root marker and any missing placeholder sops files exist:
+
+```bash
+nix run .#example.secrets.secretsInitRoot
+git add secrets/.secret-service-root
+```
+
+The command is safe to repeat. `--force` is only for replacing the root marker.
+
+### 3. Generate initial keys (new secret roots only)
+
+A brand-new secret root with no encrypted values can generate all managed keys:
+
+```bash
+nix run .#example.secrets.secretsKeyGenerateAll
+```
+
+Skip this step for the checked-in example: its keys already exist and match the
+encrypted fixtures. Do not run `secretsKeyGenerateAll --force` against the
+example. Replacing every key holder at once leaves no current identity that can
+decrypt and re-wrap the existing sops files.
+
+For a new root, run this before adding secret values. To replace one machine key
+later, use `<machine>.secretsKeyGenerate -- --force`, then run
+`secretsSyncKeyHolders`; the admin key remains available to re-wrap the files.
+
+### 4. Regenerate recipients and re-wrap files
+
+```bash
+nix run .#example.secrets.secretsSyncKeyHolders
+```
+
+This derives public keys, writes `secrets/.sops.yaml`, runs `sops updatekeys`,
+and rotates data keys only when recipients changed. Review and commit any changed
+sops files and `.sops.yaml`.
+
+### 5. Install host keys
 
 ```bash
 ./installKeys.sh
+```
+
+Or install each key individually:
+
+```bash
+nix run .#example.vm0.secretsInstallKey
+nix run .#example.vm1.secretsInstallKey
+nix run .#example.vm2.secretsInstallKey
+```
+
+`secretsInstallKey` installs or repairs the age identity from
+`deployment.secrets.keySource`; it does not deploy the system.
+
+### 6. Verify each machine
+
+```bash
+nix run .#example.vm0.secretsCheck
+nix run .#example.vm1.secretsCheck
+nix run .#example.vm2.secretsCheck
+```
+
+`secretsCheck` is read-only. It verifies the installed target key, expected key
+holders, declared secrets and templates before deployment.
+
+## Deployment
+
+Deploy the three machines:
+
+```bash
 ./deploy.sh
 ```
 
 Or run the individual commands:
 
 ```bash
-nix run .#example.vm0.secretsInstallKey
-nix run .#example.vm1.secretsInstallKey
-nix run .#example.vm2.secretsInstallKey
-
 nix run .#example.vm0.deploy
 nix run .#example.vm1.deploy
 nix run .#example.vm2.deploy
 ```
 
-`secretsInstallKey` installs or repairs the age key from
-`deployment.secrets.keySource`; it does not deploy the system. A normal deploy
-copies the encrypted sops files as part of the system closure and activates them
-on the target.
+A normal deploy copies the encrypted sops files as part of the system closure and
+activates them on the target.
 
 ## Test
 
