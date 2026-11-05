@@ -298,7 +298,7 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | `nix run .#<clusterName>.secrets.secretsAdminKeyGenerate [-- --force]` | Generate or update the admin key source. |
 | `nix run .#<clusterName>.secrets.secretsKeyGenerateAll [-- --force]` | Generate all managed admin and host keys. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
-| `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
+| `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one declared machine secret from stdin. |
 
 ### 10.2 Cluster commands
 
@@ -308,10 +308,10 @@ All commands are parameterless except `secretSet`, which takes `--key` and reads
 | `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Regenerate `<sopsRoot>/.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
 | `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for all managed sops files. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
-| `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
+| `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one declared cluster secret from stdin; group files are inferred. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
 | `nix run .#<clusterName>.secrets.secrets<Group>Edit` | Edit a group sops file. |
-| `nix run .#<clusterName>.secrets.secrets<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Set -- --key <user>/<secret>` | Set one declared group secret from stdin. |
 | `nix run .#<clusterName>.secrets.secrets<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
 | `nix run .#<clusterName>.secrets.secrets<Group>Rotate` | Run `sops rotate` on one group file. |
 
@@ -363,10 +363,12 @@ The public key is derived from the resulting private key; it is not written to c
 
 These are thin wrappers around the corresponding sops commands:
 
-- `secretEdit` opens the default scope file. Machine scope edits the machine file; cluster scope edits the cluster file.
-- `secretSet` sets one key in the default scope file. The value is read from stdin.
+- `secretEdit` opens the default scope file. Machine scope edits the machine file; cluster scope edits the cluster file; group commands edit their group file.
+- `secretSet` sets one declared key in the file inferred from its declaration. The value is read from stdin. Cluster declarations with `sopsFile = "cluster/<group>"` map to the group file, whichever set command is used. Undeclared keys fail with a hint naming the command that owns the declaration. Validation happens before the key source is read.
 - `secretUpdateKeys` runs `sops updatekeys` on all managed files.
 - `secretsRotate` runs `sops rotate` on all managed files.
+
+Group-specific `Set` commands remain explicit group-file targets.
 
 The wrappers use the same path resolution as the projection; see [§7.2](#72-string-shorthands).
 

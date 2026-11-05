@@ -246,19 +246,21 @@ Most commands are parameterless. Everything they need is embedded at Nix evaluat
 | `nix run .#<clusterName>.secrets.secretsAdminKeyGenerate [-- --force]` | Generate or update the admin key source. |
 | `nix run .#<clusterName>.secrets.secretsKeyGenerateAll [-- --force]` | Generate every managed age/KeePass key, including the admin key. One-time bootstrap convenience. |
 | `nix run .#<clusterName>.<machineName>.secretEdit` | Edit the machine's default sops file. |
-| `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one machine secret from stdin. |
+| `nix run .#<clusterName>.<machineName>.secretSet -- --key <user>/<secret>` | Set one declared machine secret from stdin. |
 | `nix run .#<clusterName>.secrets.secretsInitRoot` | Create the initial secret-root marker and empty placeholder sops files. Safe to repeat; use `--force` to replace the marker. |
 | `nix run .#<clusterName>.secrets.secretsSyncKeyHolders` | Derive public keys, regenerate `<sopsRoot>/.sops.yaml`, run `sops updatekeys`, and rotate data keys when recipients changed. |
 | `nix run .#<clusterName>.secrets.secretsRotate` | Rotate data keys for every managed sops file. |
 | `nix run .#<clusterName>.secrets.secretEdit` | Edit the cluster sops file. |
-| `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one cluster secret from stdin. |
+| `nix run .#<clusterName>.secrets.secretSet -- --key <user>/<secret>` | Set one declared cluster secret from stdin; group files are inferred. |
 | `nix run .#<clusterName>.secrets.secretUpdateKeys` | Run `sops updatekeys` on all managed files. |
 | `nix run .#<clusterName>.secrets.secrets<Group>Edit` | Edit a group sops file, for example `secretsMonitoringEdit`. |
-| `nix run .#<clusterName>.secrets.secrets<Group>Set -- --key <user>/<secret>` | Set one group secret from stdin. |
+| `nix run .#<clusterName>.secrets.secrets<Group>Set -- --key <user>/<secret>` | Set one declared group secret from stdin. |
 | `nix run .#<clusterName>.secrets.secrets<Group>UpdateKeys` | Run `sops updatekeys` on one group file. |
 | `nix run .#<clusterName>.secrets.secrets<Group>Rotate` | Run `sops rotate` on one group file. |
 
 The package path determines the scope: machine commands live under `<clusterName>.<machineName>`, cluster and group commands under `<clusterName>.secrets`. Group names are capitalized and `-` is replaced with `_` in package names.
+
+`secretSet` infers the target sops file from the declaration. A cluster secret with `sopsFile = "cluster/<group>"` is written to that group file, including when using the cluster-level `secretSet`. Undeclared keys are rejected, and the error points to the command that owns the declaration. Key-source setup happens only after that validation. Group-specific `Set` commands remain available as explicit group-file targets.
 
 ## Key sources
 

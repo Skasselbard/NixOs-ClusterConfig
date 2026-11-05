@@ -412,10 +412,7 @@ printf '%s\n' 'new-token' \
   | nix run .#example.secrets.secretsMonitoringSet -- --key monitoring/token
 ```
 
-`secretEdit` opens the file in `$EDITOR`. `secretSet` reads the value from stdin.
-Both change the encrypted value stored in the sops file; they do not rotate the
-file's data key. Review the diff, commit the sops file, deploy normally, and run
-the checks from [Test](#test).
+`secretEdit` opens the file in `$EDITOR`. `secretSet` reads the value from stdin and infers the target file from the secret declaration, including for group files. It rejects undeclared keys and points to the command that owns the declaration. Both commands change the encrypted value stored in the sops file; they do not rotate the file's data key. Review the diff, commit the sops file, deploy normally, and run the checks from [Test](#test).
 
 ## Key Rotation and Key Management
 

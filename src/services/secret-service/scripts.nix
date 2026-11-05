@@ -203,6 +203,7 @@ let
       clusterName,
       machine,
       machineName,
+      includeAllClusterSecrets ? false,
     }:
     let
       clusterSecrets = service.secrets or { };
@@ -229,7 +230,8 @@ let
       ) (
         filter (
           secretName:
-          secretLib.clusterSecretVisibleToMachine {
+          includeAllClusterSecrets
+          || secretLib.clusterSecretVisibleToMachine {
             inherit service machineName;
             secret = clusterSecrets.${user}.${secretName};
           }
@@ -819,19 +821,103 @@ let
         machineName = if scope == "machine" then machineName else null;
         value = if group == null then null else "cluster/${group}";
       };
+      includeAllClusterSecrets = scope == "cluster";
       entries = secretEntries {
         inherit
           service
           clusterName
+          includeAllClusterSecrets
           ;
         machine = if scope == "machine" then secretLib.machineOf clusterConfig else { secrets = { }; };
         machineName = if scope == "machine" then machineName else "";
       };
+      selectedEntries = if group == null then entries else filter (entry: entry.sopsFile == defaultFile) entries;
       fileCase = concatStringsSep "\n" (
-        map (entry: "    ${escapeShellArg entry.key}) file=${escapeShellArg entry.sopsFile} ;;") (
-          if group == null then entries else filter (entry: entry.sopsFile == defaultFile) entries
-        )
+        map (entry: "    ${escapeShellArg entry.key}) file=${escapeShellArg entry.sopsFile} ;;") selectedEntries
       );
+      declaredKeys = unique (map (entry: entry.key) selectedEntries);
+      declaredKeyLines = optionalString (declaredKeys != [ ]) ''
+            echo "Declared keys:" >&2
+            printf '  %s\n' ${shellList declaredKeys} >&2
+            echo "" >&2
+      '';
+      secretKey = user: secretName: secret: if secret.key != null then secret.key else "${user}/${secretName}";
+      groupOfSopsFile =
+        secret:
+        let
+          value = secret.sopsFile or null;
+        in
+        if value != null && lib.isString value && lib.hasPrefix "cluster/" value then
+          let
+            groupName = lib.removePrefix "cluster/" value;
+          in
+          if groupName != "" && !(lib.hasInfix "/" groupName) then groupName else null
+        else
+          null;
+      clusterHintEntries = concatMap (
+        user:
+        map (
+          secretName:
+          let
+            secret = service.secrets.${user}.${secretName};
+            key = secretKey user secretName secret;
+            groupName = groupOfSopsFile secret;
+            groupCommand =
+              lib.optional (groupName != null && builtins.hasAttr groupName (service.groups or { })) (
+                "${clusterName}.secrets.${secretLib.groupPackageName "Set" groupName}"
+              );
+          in
+          {
+            inherit key;
+            commands = [ "${clusterName}.secrets.secretSet" ] ++ groupCommand;
+          }
+        ) (attrNames service.secrets.${user})
+      ) (attrNames (service.secrets or { }));
+      machineHintEntries = concatMap (
+        nodeName:
+        let
+          node = secretLib.nodeByName clusterConfig nodeName;
+        in
+        if node == null then
+          [ ]
+        else
+          let
+            machineSecrets = builtins.removeAttrs (node.secrets or { }) [ "templates" ];
+          in
+          concatMap (
+            user:
+            map (
+              secretName:
+              {
+                key = secretKey user secretName machineSecrets.${user}.${secretName};
+                commands = [ "${clusterName}.${nodeName}.secretSet" ];
+              }
+            ) (attrNames machineSecrets.${user})
+          ) (attrNames machineSecrets)
+      ) (secretLib.selectedNodes service);
+      hintCommandsByKey = builtins.foldl' (
+        acc: entry:
+        let
+          existing = acc.${entry.key} or [ ];
+        in
+        acc // { ${entry.key} = unique (existing ++ entry.commands); }
+      ) { } (clusterHintEntries ++ machineHintEntries);
+      hintCase = concatStringsSep "\n" (
+        map (
+          key:
+          let
+            commandLines = map (command: "  nix run .#${command} -- --key ${key}") hintCommandsByKey.${key};
+          in
+          "    ${escapeShellArg key}) hint=${escapeShellArg (concatStringsSep "\n  or:\n" commandLines)} ;;"
+        ) (attrNames hintCommandsByKey)
+      );
+      genericHint =
+        if scope == "machine" then
+          "Declare the secret under machines.${machineName}.secrets.<user>.<secret>, then run:\n  nix run .#${clusterName}.secrets.secretsSyncKeyHolders"
+        else if group != null then
+          "Declare the secret under services.secrets.secrets.<user>.<secret> with sopsFile = \"cluster/${group}\", then run:\n  nix run .#${clusterName}.secrets.secretsSyncKeyHolders"
+        else
+          "Declare the secret under services.secrets.secrets.<user>.<secret>, then run:\n  nix run .#${clusterName}.secrets.secretsSyncKeyHolders";
       keyEnv = secretLib.keySourceEnv (
         if scope == "machine" then
           (secretLib.machineOf clusterConfig).deployment.secrets.keySource
@@ -843,7 +929,6 @@ let
             set -euo pipefail
             ${sopsRootPreamble { inherit service clusterName; }}
             export SOPS_CONFIG="$sops_config"
-            ${keyEnv}
             key=""
             if [ "${"$"}{1:-}" = "--key" ]; then
               shift
@@ -855,10 +940,27 @@ let
               echo "Usage: secretSet --key <user>/<secret> < value" >&2
               exit 1
             fi
-            file=${escapeShellArg defaultFile}
+            file=""
             case "$key" in
       ${fileCase}
             esac
+            if [ -z "$file" ]; then
+              echo "ERROR: secret '$key' is not declared for this command." >&2
+              echo "" >&2
+      ${declaredKeyLines}
+              hint=""
+              case "$key" in
+      ${hintCase}
+              esac
+              if [ -n "$hint" ]; then
+                printf 'Hint:\n%s\n' "$hint" >&2
+              else
+                echo "Hint:" >&2
+                printf '  %s\n' ${escapeShellArg genericHint} >&2
+              fi
+              exit 1
+            fi
+            ${keyEnv}
             key_path="$(printf '%s' "$key" | ${jq} -Rr 'split("/") | if any(. == "") then error("secret key contains an empty path segment") else map("[" + @json + "]") | join("") end')"
             sops_file="$(sops_path "$file")"
             if [ ! -s "$sops_file" ]; then

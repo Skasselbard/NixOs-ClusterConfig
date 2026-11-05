@@ -85,6 +85,17 @@ let
     else
       keySource;
 
+  capitalize =
+    name:
+    if name == "" then
+      name
+    else
+      lib.toUpper (builtins.substring 0 1 name) + builtins.substring 1 (builtins.stringLength name) name;
+
+  groupPackageName =
+    suffix: group:
+    "secrets${capitalize (builtins.replaceStrings [ "-" ] [ "_" ] group)}${suffix}";
+
   isAbsolute = hasPrefix "/";
 
   sopsRootSpec =
@@ -367,6 +378,7 @@ in
     clusterRoot
     clusterRootCommand
     clusterSecretVisibleToMachine
+    groupPackageName
     keepassEntry
     keepassExtractCommand
     keepassKeyFileArg
