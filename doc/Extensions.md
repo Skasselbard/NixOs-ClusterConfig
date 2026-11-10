@@ -64,13 +64,13 @@ Add options, late-evaluated config, and packages at the cluster level.
 }
 ```
 
-### 2. Node-Level Extensions (`extensions.clusterNode`)
+### 2. Node-Level Extensions (`extensions.nodes`)
 
 Add options, NixOS modules, and packages at the per-node level (applies to **both machines and VMs**).
 
 ```nix
 {
-  config.extensions.clusterNode = {
+  config.extensions.nodes = {
 
     # New options available under domain.clusters.<name>.<nodes>.machines.<name> AND domain.clusters.<name>.<nodes>.vms.<name>
     options.myNodeOption = lib.mkOption {
@@ -99,7 +99,7 @@ Add options, NixOS modules, and packages at the per-node level (applies to **bot
 }
 ```
 
-> **Tip:** Use `extensions.clusterNode` when you want options/modules/packages that apply to both machines and VMs (e.g., monitoring agents, logging, DNS). Use `extensions.clusterMachine` when the extension only makes sense for physical/standalone machines (e.g., hardware configuration scripts, ISO building).
+For packages, use `extensions.nodes.packages` for both kinds of node, `extensions.machines.packages` for standalone machines, and `extensions.vms.packages` for VMs. Defining the same package in both an applicable specific scope and the node scope is an error. Options and NixOS modules remain under `extensions.nodes`.
 
 ### 3. Service Definitions (`extensions.clusterServices`)
 
@@ -177,15 +177,15 @@ ClusterConfig provides helper functions through `clusterlib`:
 | `update.nodes config fn` | Updates both machine and VM attributes simultaneously |
 | `update.clusters config fn` | Updates cluster attributes |
 | `update.services config fn` | Updates service attributes |
-| `get.machines config` | Returns all machines across all clusters |
-| `get.vms config` | Returns all VMs across all clusters |
-| `get.nodes config` | Returns all nodes (machines + VMs) across all clusters |
+| `get.machines config` | Returns all machines keyed by `<cluster>-<node>` |
+| `get.vms config` | Returns all VMs keyed by `<cluster>-<node>` |
+| `get.nodes config` | Returns all machines and VMs keyed by `<cluster>-<node>` |
 | `get.ips nodeNixosConfig` | Extracts static IPs from a NixOS config |
 <!-- | `ip.tag`, `ip.openTcp`, `ip.staticIpV4OpenTcp` | Helpers for defining service address entries | -->
 
 ## Important Limitations
 
-- Extension options (in `extensions.cluster.options`, `extensions.clusterMachine.options`, etc.) **must have default values**. Options without defaults will cause evaluation errors because the clusterConfig representation accesses all option values during construction. Use `lib.types.nullOr` with a default of `null` if a value is inherently optional.
+- Extension options (in `extensions.cluster.options`, `extensions.nodes.options`, etc.) **must have default values**. Options without defaults will cause evaluation errors because the clusterConfig representation accesses all option values during construction. Use `lib.types.nullOr` with a default of `null` if a value is inherently optional.
 
 - Cluster modules operate at the cluster level and are evaluated separately from machine NixOS modules. During cluster module evaluation, individual machine NixOS configurations are not yet available (unless you are in a `late.config` closure or a deployment transformation).
 
@@ -199,7 +199,7 @@ Here is a module that adds a `monitoring.enable` option to each node (machine or
 {
   config.extensions = {
 
-    clusterNode.options.monitoring.enable = lib.mkOption {
+    nodes.options.monitoring.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = "Whether to enable monitoring on this node.";

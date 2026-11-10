@@ -49,11 +49,10 @@ nix run .#colmena apply
 If the `secret-service` module is loaded:
 
 ```bash
-# Deploy the system first (to update the service itself)
+# Install the target identity, check secrets, then deploy the system
+nix run .#<cluster>.<machine>.secretsInstallKey
+nix run .#<cluster>.<machine>.secretsCheck
 nix run .#<cluster>.<machine>.deploy
-
-# Then deploy secrets
-nix run .#<cluster>.<machine>.deploySecrets
 ```
 
 ## Retrieving Hardware Configuration
@@ -64,10 +63,4 @@ To fetch the auto-detected hardware configuration from a running machine:
 nix run .#<cluster>.<machine>.hardware-configuration
 ```
 
-## Connecting to Machines
-
-```bash
-nix run .#<cluster>.<machine>.connect
-```
-
-Additional SSH arguments can be appended after the command.
+See the [secret-service guide](../src/services/secret-service/Readme.md) for key management and initial setup.

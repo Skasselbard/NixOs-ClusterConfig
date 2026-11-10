@@ -586,7 +586,8 @@ in
         };
       };
 
-      packages = {
+    };
+    machines.packages = {
         secretsCheck =
           { clusterConfig }:
           let
@@ -642,6 +643,5 @@ in
             }
           );
       };
-    };
   };
 }

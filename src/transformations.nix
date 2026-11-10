@@ -157,7 +157,25 @@ let # imports
 
   packageTransformation =
     config:
-
+    let
+      scopedPackages =
+        scope: clusterName: nodeName:
+        let
+          common = config.extensions.nodes.packages;
+          specific = config.extensions.${scope}.packages;
+          conflicts = builtins.filter (name: builtins.hasAttr name specific) (builtins.attrNames common);
+        in
+        if conflicts != [ ] then
+          throw "clusterConfig: conflicting ${scope} and node packages: ${builtins.concatStringsSep ", " conflicts}"
+        else
+          forEachAttrIn (common // specific) (
+            _: scriptClosure:
+            callLeafFunctions {
+              node = scriptClosure;
+              clusterConfig = eval.clusterConfig config { inherit clusterName nodeName; };
+            }
+          );
+    in
     lib.foldl (acc: elem: attrsets.recursiveUpdate acc elem) config (
       [
 
@@ -178,21 +196,8 @@ let # imports
         ))
 
         # Add a package for each node to the flake output
-        (add.nodePackages config (
-          clusterName: nodeName:
-
-          # For each script a package is added
-          forEachAttrIn config.extensions.nodes.packages (
-            scriptName: scriptClosure:
-
-            # call the script closure with the evaluated cluster config representation
-            callLeafFunctions {
-              node = scriptClosure;
-              clusterConfig = (eval.clusterConfig config { inherit clusterName nodeName; });
-            }
-
-          )
-        ))
+        (add.machinePackages config (scopedPackages "machines"))
+        (add.vmPackages config (scopedPackages "vms"))
 
       ]
       ++ (lib.attrValues (

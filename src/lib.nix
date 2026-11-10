@@ -106,7 +106,10 @@ let
       config:
       update.nodes config (
         clusterName: nodeName: nodeConfig: {
-          nixosConfiguration = nixpkgs.lib.nixosSystem { system = nodeConfig.system; modules = nodeConfig.nixosModules; };
+          nixosConfiguration = nixpkgs.lib.nixosSystem {
+            system = nodeConfig.system;
+            modules = nodeConfig.nixosModules;
+          };
         }
       );
 
@@ -128,11 +131,8 @@ let
       config: updatePackageFn:
       attrsets.recursiveUpdate config {
 
-        packages =
-          # The deployment options are generated for all system  configurations (by using flake utils)
-          (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-
-            packages = forEachAttrIn config.domain.clusters (
+        packages = {
+          ${config.packageSystem} = forEachAttrIn config.domain.clusters (
               clusterName: clusterDefinition:
 
               forEachAttrIn (clusterDefinition.machines) (
@@ -140,8 +140,7 @@ let
               )
 
             );
-
-          })).packages;
+        };
       };
 
     # Add a package that can be build with `nix build #clusterName.vmName.package` or run with `nix run #clusterName.vmName.package`
@@ -150,11 +149,8 @@ let
       config: updatePackageFn:
       attrsets.recursiveUpdate config {
 
-        packages =
-          # The deployment options are generated for all system  configurations (by using flake utils)
-          (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-
-            packages = forEachAttrIn config.domain.clusters (
+        packages = {
+          ${config.packageSystem} = forEachAttrIn config.domain.clusters (
               clusterName: clusterDefinition:
 
               forEachAttrIn (clusterDefinition.vms) (
@@ -162,8 +158,7 @@ let
               )
 
             );
-
-          })).packages;
+        };
       };
 
     # Add a package that can be build with `nix build #clusterName.nodeName.package` or run with `nix run #clusterName.nodeName.package`
@@ -178,11 +173,8 @@ let
       config: serviceName: updatePackageFn:
       attrsets.recursiveUpdate config {
 
-        packages =
-          # The deployment options are generated for all system  configurations (by using flake utils)
-          (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-
-            packages = forEachAttrIn config.domain.clusters (
+        packages = {
+          ${config.packageSystem} = forEachAttrIn config.domain.clusters (
               clusterName: clusterDefinition:
 
               {
@@ -190,8 +182,7 @@ let
               }
 
             );
-
-          })).packages;
+        };
       };
 
     # Add a package that can be build with `nix build #clusterName.attrName` or run with `nix run #clusterName.attrName`
@@ -201,13 +192,11 @@ let
     clusterPackage =
       config: updatePackageFn:
       attrsets.recursiveUpdate config {
-        packages =
-          # The deployment options are generated for all system  configurations (by using flake utils)
-          (flake-utils.lib.eachSystem flake-utils.lib.allSystems (system: {
-            packages = forEachAttrIn config.domain.clusters (
+        packages = {
+          ${config.packageSystem} = forEachAttrIn config.domain.clusters (
               clusterName: _clusterDefinition: updatePackageFn clusterName
             );
-          })).packages;
+        };
       };
 
   };
@@ -372,26 +361,29 @@ let
   };
 
   get = {
-    # Returns the set of all machines for all clusters.
-    # Each machine is defined by a key value pair of machineName = machineConfig; in the set.
+    # Return globally qualified names to avoid overwriting nodes from different clusters.
     machines =
       config:
-      attrsets.mergeAttrsList (
-        lists.flatten (
-          attrsets.attrValues (
-            forEachAttrIn config.domain.clusters (clusterName: clusterValue: clusterValue.machines)
-          )
-        )
+      builtins.listToAttrs (
+        lib.concatMap (
+          clusterName:
+          lib.mapAttrsToList (nodeName: value: {
+            name = "${clusterName}-${nodeName}";
+            inherit value;
+          }) config.domain.clusters.${clusterName}.machines
+        ) (builtins.attrNames config.domain.clusters)
       );
 
     vms =
       config:
-      attrsets.mergeAttrsList (
-        lists.flatten (
-          attrsets.attrValues (
-            forEachAttrIn config.domain.clusters (clusterName: clusterValue: clusterValue.vms or { })
-          )
-        )
+      builtins.listToAttrs (
+        lib.concatMap (
+          clusterName:
+          lib.mapAttrsToList (nodeName: value: {
+            name = "${clusterName}-${nodeName}";
+            inherit value;
+          }) (config.domain.clusters.${clusterName}.vms or { })
+        ) (builtins.attrNames config.domain.clusters)
       );
 
     nodes = config: get.machines config // get.vms config;
@@ -450,8 +442,9 @@ let
           Searched for any path: domain.clusters.<cluster>.machines.<machine>
           Available clusters: ${toString (builtins.attrNames config.domain.clusters)}
         ''
+      else if builtins.length matches > 1 then
+        throw "clusterConfig: VM host '${hostFqdn}' matches multiple machines"
       else
-        # Take the first match (there should only be one)
         (builtins.head matches);
 
     interface = {

@@ -14,7 +14,6 @@ nix run .#<cluster>.<machine>.create                   # Initial install (nixos-
 nix run .#<cluster>.<machine>.deploy                   # Update system (nixos-rebuild)
 
 # Utilities
-nix run .#<cluster>.<machine>.connect                  # SSH into machine
 nix run .#<cluster>.<machine>.hardware-configuration   # Print hardware config
 nix run .#<cluster>.<machine>.format                   # Run format script remotely
 ```
@@ -23,12 +22,13 @@ nix run .#<cluster>.<machine>.format                   # Run format script remot
 
 ```bash
 nix run .#colmena apply                                # Deploy all machines
-nix run .#colmena apply -- --on <machine>              # Deploy one machine
+nix run .#colmena apply -- --on <cluster>-<machine>    # Deploy one machine
 nix run .#colmena build                                # Build without deploying
 ```
 
 ## Secret Deployment
 
 ```bash
-nix run .#<cluster>.<machine>.deploySecrets            # Deploy encrypted secrets
+nix run .#<cluster>.<machine>.secretsCheck             # Check encrypted secrets
+nix run .#<cluster>.<machine>.secretsInstallKey        # Install the target identity
 ```

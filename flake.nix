@@ -82,6 +82,18 @@
         })
         // (import "${self}/src/lib.nix" { inherit lib nixpkgs flake-utils; });
 
+      checks.x86_64-linux.evaluation =
+        let
+          tests = (import ./tests/eval.nix {
+            clusterLib = self.lib;
+            modules = self.clusterConfigModules;
+            inherit lib pkgs;
+          }).tests;
+          failures = builtins.filter (name: !tests.${name}) (builtins.attrNames tests);
+        in
+        assert lib.assertMsg (failures == [ ]) "ClusterConfig evaluation tests failed: ${builtins.concatStringsSep ", " failures}";
+        pkgs.runCommand "clusterconfig-evaluation-tests" { } "touch $out";
+
       clusterConfigModules = {
 
         # Imports a selection of useful deployment modules

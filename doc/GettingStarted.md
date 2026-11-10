@@ -55,7 +55,7 @@ Create a `flake.nix` that imports ClusterConfig and your machine configurations:
 
         # Load modules for deployment capabilities
         modules = [
-          clusterConfigFlake.clusterConfigModules.default  # home-manager + nixos-anywhere + colmena
+          clusterConfigFlake.clusterConfigModules.default  # home-manager + nixos-anywhere + colmena + vms
           clusterConfigFlake.clusterConfigModules.simple-dns  # static DNS via /etc/hosts
         ];
 
@@ -212,7 +212,6 @@ nix run .#<cluster>.<machine>.deploy      # Update system config (nixos-rebuild)
 nix run .#<cluster>.<machine>.build       # Build system locally without deploying
 
 # Utilities
-nix run .#<cluster>.<machine>.connect     # SSH into the machine
 nix run .#<cluster>.<machine>.hardware-configuration  # Print hardware config
 
 # Fleet management

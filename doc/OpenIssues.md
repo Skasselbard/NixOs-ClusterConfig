@@ -1,0 +1,6 @@
+# Open features and issues
+
+- **VM deployment capabilities:** machine, VM and shared node package scopes are available, but backend-specific VM lifecycle commands are not designed. MicroVM guests are deployed through their host; future backends may support independent installation or deployment. Secret identity provisioning for host-managed guests also needs a design. Machine-only secret helpers are not generated for VMs.
+- **Selector performance:** selectors are evaluated repeatedly across nodes and transformations. A per-stage index could reduce work, but must preserve custom filters' inputs and evaluation timing. Profile before changing behavior.
+- **Cluster snapshots:** the NixOS module view uses the initial pre-service configuration, so service-added IPs are not reflected in that view. Changing this has recursion and compatibility implications.
+- **Multiple deployment-host systems:** `packageSystem` currently selects one package platform per cluster build. Generating tools for multiple platforms needs a per-system extension API and compatibility tests.

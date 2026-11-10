@@ -28,7 +28,6 @@ These commands are always available (provided by the core deployment module).
 
 | Command | Description |
 | --- | --- |
-| `nix run .#<cluster>.<machine>.connect` | Open an SSH session to `deployment.targetHost`. Additional arguments are passed to SSH. |
 | `nix run .#<cluster>.<machine>.hardware-configuration` | Connect to the machine via SSH and print the auto-detected `hardware-configuration.nix`. |
 
 ## Nixos-Anywhere Commands
@@ -57,8 +56,10 @@ Available when the `colmena` module is loaded (included in `default`).
 | Command | Description |
 | --- | --- |
 | `nix run .#colmena apply` | Deploy all machines across all clusters using [colmena](https://github.com/zhaofengli/colmena). |
-| `nix run .#colmena apply -- --on <machine>` | Deploy a specific machine with colmena. |
+| `nix run .#colmena apply -- --on <cluster>-<machine>` | Deploy a specific machine with colmena. |
 | `nix run .#colmena <subcommand>` | Run any colmena subcommand (e.g., `build`, `apply-local`, `exec`). |
+
+Colmena node names are qualified; `apply-local` may need `--node <cluster>-<machine>` because the local hostname remains the short machine name.
 
 ## Secret Service Commands
 
@@ -66,7 +67,11 @@ Available when the `secret-service` module is loaded.
 
 | Command | Description |
 | --- | --- |
-| `nix run .#<cluster>.<machine>.deploySecrets` | Retrieve secrets from configured backends, encrypt them, and deploy the encrypted archive to the machine. Secrets are decrypted at runtime by a systemd service on the machine. |
+| `nix run .#<cluster>.<machine>.secretsCheck` | Check the target key and declared encrypted secrets. |
+| `nix run .#<cluster>.<machine>.secretsInstallKey` | Install or repair a managed target key. |
+| `nix run .#<cluster>.<machine>.secretSet -- --key <user>/<secret>` | Set a declared secret from stdin. |
+
+Secret changes are deployed as part of the normal NixOS closure. See the [secret-service guide](../src/services/secret-service/Readme.md) for the complete workflow.
 
 ## Deployment Workflow Summary
 
@@ -88,7 +93,6 @@ Stage 2: Configuration Updates
   nix run .#colmena apply
   → Deploys all machines at once
 
-Secret Deployment (if using secret-service):
-  nix run .#<cluster>.<machine>.deploySecrets
-  → Encrypts and copies secrets to the machine
+Secret checks (if using secret-service):
+  nix run .#<cluster>.<machine>.secretsCheck
 ```

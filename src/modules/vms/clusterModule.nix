@@ -34,7 +34,7 @@ in
           microvmTransform.vmTransformation
         ];
 
-        moduleTransformations = [
+        hostTransformations = [
           microvmTransform.hostTransformation
         ];
       };

@@ -130,7 +130,7 @@ let
         { users.users.root = lib.mkForce users.root; }
 
         # useful settings to inherit from the node configuration
-        {
+        ({ pkgs, ... }: {
           environment.systemPackages = [
             pkgs.jq # needed for disko formatting
           ];
@@ -152,7 +152,7 @@ let
 
           # Maybe some scripts could be copied for custom stuff?
           # isoImage.contents https://github.com/NixOS/nixpkgs/blob/27c13997bf450a01219899f5a83bd6ffbfc70d3c/nixos/modules/installer/cd-dvd/iso-image.nix#L543C5-L543C22
-        }
+        })
       ];
     };
 
@@ -164,8 +164,17 @@ let
     attrsets.recursiveUpdate config {
       # add nixos configurations to flake structure
       # otherwise the build commands have no target
-      nixosConfigurations = forEachAttrIn (get.nodes config) (
-        nodeName: nodeConfig: nodeConfig.nixosConfiguration
+      nixosConfigurations = builtins.listToAttrs (
+        lib.concatMap (
+          clusterName:
+          let
+            cluster = config.domain.clusters.${clusterName};
+          in
+          lib.mapAttrsToList (nodeName: nodeConfig: {
+            name = "${clusterName}-${nodeName}";
+            value = nodeConfig.nixosConfiguration;
+          }) (cluster.machines // cluster.vms)
+        ) (builtins.attrNames config.domain.clusters)
       );
 
     };
@@ -213,45 +222,64 @@ in
             };
           };
 
-      # TODO: VMs cannot be build and deployed (in the same way) and need to be gated.
-      packages = {
-        build =
-          { clusterConfig }:
-          let
-            nodeName = clusterConfig.clusters.this.nodes.this.name;
-          in
-          pkgs.writeShellScriptBin "build-${nodeName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${nodeName} build \${@:1}";
+    };
+    machines.packages = {
+      build =
+        { clusterConfig }:
+        let
+          nodeName = clusterConfig.clusters.this.nodes.this.name;
+          configName = "${clusterConfig.clusters.this.name}-${nodeName}";
+        in
+        pkgs.writeShellScriptBin "build" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake ${lib.escapeShellArg ".#${configName}"} build \"$@\"";
 
-        deploy =
-          { clusterConfig }:
-          let
-            this = clusterConfig.clusters.this.nodes.this;
-            nodeName = this.name;
-            cfg = this.deployment;
-            host = cfg.targetHost;
-            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
-          in
-          pkgs.writeShellScriptBin "deploy-${nodeName}" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake .#${nodeName} switch --target-host '${user}${host}' \${@:1}";
+      deploy =
+        { clusterConfig }:
+        let
+          this = clusterConfig.clusters.this.nodes.this;
+          nodeName = this.name;
+          configName = "${clusterConfig.clusters.this.name}-${nodeName}";
+          cfg = this.deployment;
+          host =
+            if cfg.targetHost == null then
+              throw "clusterConfig: ${configName} has no remote targetHost"
+            else if cfg.targetHost == "{hostname}" then
+              nodeName
+            else
+              cfg.targetHost;
+          user = lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@";
+          port = lib.optionalString (
+            cfg.targetPort != null
+          ) ''export NIX_SSHOPTS="-p ${toString cfg.targetPort} ''${NIX_SSHOPTS:-}"'';
+        in
+        pkgs.writeShellScriptBin "deploy" ''
+          ${port}
+          exec ${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake ${lib.escapeShellArg ".#${configName}"} switch --target-host ${lib.escapeShellArg "${user}${host}"} "$@"
+        '';
 
-        hardware-configuration =
-          { clusterConfig }:
-          let
-            this = clusterConfig.clusters.this.nodes.this;
-            nodeName = this.name;
-            cfg = this.deployment;
-            host = cfg.targetHost;
-            user = if cfg ? targetUser && cfg.targetUser != null then cfg.targetUser + "@" else "";
-            port = if cfg ? targetPort && cfg.targetPort != null then ":" + cfg.targetPort else "";
-          in
-          pkgs.writeShellScriptBin "hardware-configuration-${nodeName}" "${pkgs.openssh}/bin/ssh ${user}${host}${port} -t 'nixos-generate-config --show-hardware-config --no-filesystems'";
+      hardware-configuration =
+        { clusterConfig }:
+        let
+          this = clusterConfig.clusters.this.nodes.this;
+          nodeName = this.name;
+          cfg = this.deployment;
+          host =
+            if cfg.targetHost == null then
+              throw "clusterConfig: ${nodeName} has no remote targetHost"
+            else if cfg.targetHost == "{hostname}" then
+              nodeName
+            else
+              cfg.targetHost;
+          user = lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@";
+          port = lib.optionalString (cfg.targetPort != null) "-p ${toString cfg.targetPort}";
+        in
+        pkgs.writeShellScriptBin "hardware-configuration" "${pkgs.openssh}/bin/ssh ${port} -t ${lib.escapeShellArg "${user}${host}"} 'nixos-generate-config --show-hardware-config --no-filesystems'";
 
-        iso =
-          { clusterConfig }:
-          let
-            this = clusterConfig.clusters.this.nodes.this;
-          in
-          nixos-generators.nixosGenerate ((bootImageNixosConfiguration this) // { format = "iso"; });
-      };
+      iso =
+        { clusterConfig }:
+        let
+          this = clusterConfig.clusters.this.nodes.this;
+        in
+        nixos-generators.nixosGenerate ((bootImageNixosConfiguration this) // { format = "iso"; });
     };
   };
 

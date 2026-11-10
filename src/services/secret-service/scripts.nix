@@ -249,9 +249,12 @@ let
     machine:
     let
       user = machine.deployment.targetUser or "root";
-      host = machine.deployment.targetHost;
+      host = if machine.deployment.targetHost == "{hostname}" then machine.name else machine.deployment.targetHost;
     in
-    "${if user == null || user == "" then "root" else user}@${host}";
+    if host == null || host == "" then
+      ""
+    else
+      "${optionalString (user != null && user != "") "${user}@"}${host}";
 
   sshArgsOf =
     machine:
@@ -280,7 +283,7 @@ let
       };
       files = uniqueFiles entries;
       keySource = machine.deployment.secrets.keySource;
-      targetHost = machine.deployment.targetHost;
+      targetHost = if machine.deployment.targetHost == null then "" else if machine.deployment.targetHost == "{hostname}" then machineName else machine.deployment.targetHost;
       target = sshTargetOf machine;
       sshArgs = sshArgsOf machine;
       targetKeyFile = escapeShellArg keySource.targetKeyFile;
@@ -487,13 +490,16 @@ let
       target = sshTargetOf machine;
       sshArgs = sshArgsOf machine;
       keyFile = escapeShellArg keySource.targetKeyFile;
-      installFromStdin = "${ssh} ${sshArgs} ${escapeShellArg target} \"umask 077; mkdir -p \\\"$(dirname ${keyFile})\\\"; cat > ${keyFile}; chmod 600 ${keyFile}\"";
+      installFromStdin = if target == "" then
+        "umask 077; mkdir -p \"$(dirname ${keyFile})\"; cat > ${keyFile}; chmod 600 ${keyFile}"
+      else
+        "${ssh} ${sshArgs} ${escapeShellArg target} \"umask 077; mkdir -p \\\"$(dirname ${keyFile})\\\"; cat > ${keyFile}; chmod 600 ${keyFile}\"";
       verifyInstalledKey = ''
         expected_key="$(
           ${secretLib.keySourcePublicKeyCommand keySource}
         )"
         target_key_tmp="$(mktemp)"
-        ${ssh} ${sshArgs} ${escapeShellArg target} "cat -- ${keyFile}" > "$target_key_tmp"
+        ${if target == "" then "cat -- ${keyFile}" else "${ssh} ${sshArgs} ${escapeShellArg target} \"cat -- ${keyFile}\""} > "$target_key_tmp"
         actual_key="$(${ageKeygen} -y "$target_key_tmp" 2>/dev/null || true)"
         rm -f "$target_key_tmp"
         if [ -z "$actual_key" ] || [ "$actual_key" != "$expected_key" ]; then

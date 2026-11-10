@@ -49,83 +49,107 @@ in
         default = null;
       };
 
-      packages = {
-
-        create =
-          { clusterConfig }:
-          let
-            this = clusterConfig.clusters.this.nodes.this;
-            nodeName = this.name;
-            deploymentConfig = this.deployment;
-            nixosConfig = this.config.system.build.toplevel.outPath;
-            formatScript = getFormatScript { inherit clusterConfig; };
-            extraFiles = this.deployment.extraFiles;
-            extraFileSetup = lib.concatStringsSep "\n" (
-              lib.mapAttrsToList (
-                target: entry:
-                let
-                  hasSource = (entry.source or null) != null;
-                  hasCommand = (entry.command or null) != null;
-                  sourceCommand =
-                    if hasSource == hasCommand then
-                      throw "deployment.extraFiles.${target} must set exactly one of source or command"
-                    else if hasSource then
-                      "cp ${lib.escapeShellArg entry.source} \"$tmp_extra_dir${target}\""
-                    else
-                      "${entry.command} > \"$tmp_extra_dir${target}\"";
-                in
-                ''
-                  mkdir -p "$tmp_extra_dir$(dirname ${lib.escapeShellArg target})"
-                  ${sourceCommand}
-                  chmod ${entry.mode or "0400"} "$tmp_extra_dir${target}"
-                ''
-              ) extraFiles
-            );
-          in
-          pkgs.writeShellScriptBin "create-${nodeName}" ''
-            set -euo pipefail
-            extra_files=()
-            tmp_extra_dir=""
-            cleanup() { [ -z "$tmp_extra_dir" ] || rm -rf "$tmp_extra_dir"; }
-            trap cleanup EXIT
-            ${
-              if extraFiles == { } then
-                ""
-              else
-                ''
-                  tmp_extra_dir="$(mktemp -d)"
-                  ${extraFileSetup}
-                  extra_files=(--extra-files "$tmp_extra_dir")
-                ''
-            }
-            ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} "''${extra_files[@]}" ${nixosConfig} ${deploymentConfig.targetUser}@${deploymentConfig.targetHost}
-          '';
-
-        format =
-          { clusterConfig }:
-          let
-            this = clusterConfig.clusters.this.nodes.this;
-            nodeName = this.name;
-            formatScript = getFormatScript { inherit clusterConfig; };
-            ip = this.deployment.targetHost;
-            sshArgs = [ "-t" ];
-          in
-          if this.deployment.formatScript == null then
-            pkgs.writeShellScriptBin "format-${nodeName}" "echo no format script configured"
-          else
-            pkgs.writeShellScriptBin "deploy" ''
-              echo "Run format script on host ${nodeName}?"
-              echo "WARNING: disk content will be erased if you select yes!"
-              [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] &&  echo "Canceld formating disko config." && exit
-              echo "Formatting ${nodeName}."
-              script=$(${pkgs.nix}/bin/nix build ${formatScript} --print-out-paths)
-
-              ${pkgs.nix}/bin/nix copy --to "ssh://root@${ip}" "$script"
-              ssh ${builtins.concatStringsSep " " sshArgs} root@${ip} $script
-            '';
-
-      };
     };
-  };
+    machines.packages = {
+      create =
+        { clusterConfig }:
+        let
+          this = clusterConfig.clusters.this.nodes.this;
+          nodeName = this.name;
+          deploymentConfig = this.deployment;
+          host =
+            if deploymentConfig.targetHost == null then
+              throw "clusterConfig: ${nodeName} has no remote targetHost"
+            else if deploymentConfig.targetHost == "{hostname}" then
+              nodeName
+            else
+              deploymentConfig.targetHost;
+          target =
+            (lib.optionalString (deploymentConfig.targetUser != null) "${deploymentConfig.targetUser}@") + host;
+          port = lib.optionalString (
+            deploymentConfig.targetPort != null
+          ) "--ssh-port ${toString deploymentConfig.targetPort}";
+          nixosConfig = this.config.system.build.toplevel.outPath;
+          formatScript = getFormatScript { inherit clusterConfig; };
+          extraFiles = this.deployment.extraFiles;
+          extraFileSetup = lib.concatStringsSep "\n" (
+            lib.mapAttrsToList (
+              extraTarget: entry:
+              let
+                hasSource = (entry.source or null) != null;
+                hasCommand = (entry.command or null) != null;
+                sourceCommand =
+                  if hasSource == hasCommand then
+                    throw "deployment.extraFiles.${extraTarget} must set exactly one of source or command"
+                  else if !lib.hasPrefix "/" extraTarget || builtins.elem ".." (lib.splitString "/" extraTarget) then
+                    throw "deployment.extraFiles.${extraTarget} must be an absolute path without '..'"
+                  else if hasSource then
+                    "cp -- ${lib.escapeShellArg entry.source} \"$tmp_extra_dir\"${lib.escapeShellArg extraTarget}"
+                  else
+                    "${entry.command} > \"$tmp_extra_dir\"${lib.escapeShellArg extraTarget}";
+              in
+              ''
+                mkdir -p "$tmp_extra_dir$(dirname ${lib.escapeShellArg extraTarget})"
+                ${sourceCommand}
+                chmod ${lib.escapeShellArg (entry.mode or "0400")} "$tmp_extra_dir"${lib.escapeShellArg extraTarget}
+              ''
+            ) extraFiles
+          );
+        in
+        pkgs.writeShellScriptBin "create" ''
+          set -euo pipefail
+          extra_files=()
+          tmp_extra_dir=""
+          cleanup() { [ -z "$tmp_extra_dir" ] || rm -rf "$tmp_extra_dir"; }
+          trap cleanup EXIT
+          ${
+            if extraFiles == { } then
+              ""
+            else
+              ''
+                tmp_extra_dir="$(mktemp -d)"
+                ${extraFileSetup}
+                extra_files=(--extra-files "$tmp_extra_dir")
+              ''
+          }
+          ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${port} "''${extra_files[@]}" ${lib.escapeShellArg target} "$@"
+        '';
+
+      format =
+        { clusterConfig }:
+        let
+          this = clusterConfig.clusters.this.nodes.this;
+          nodeName = this.name;
+          formatScript = getFormatScript { inherit clusterConfig; };
+          cfg = this.deployment;
+          host =
+            if cfg.targetHost == null then
+              throw "clusterConfig: ${nodeName} has no remote targetHost"
+            else if cfg.targetHost == "{hostname}" then
+              nodeName
+            else
+              cfg.targetHost;
+          target = (lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@") + host;
+          port = lib.optionalString (cfg.targetPort != null) "-p ${toString cfg.targetPort}";
+          uriHost = if lib.hasInfix ":" host then "[${host}]" else host;
+          uri = "ssh://${lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@"}${uriHost}${
+            lib.optionalString (cfg.targetPort != null) ":${toString cfg.targetPort}"
+          }";
+        in
+        if this.deployment.formatScript == null then
+          pkgs.writeShellScriptBin "format" "echo no format script configured"
+        else
+          pkgs.writeShellScriptBin "format" ''
+            echo "Run format script on host ${nodeName}?"
+            echo "WARNING: disk content will be erased if you select yes!"
+            [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] && echo "Cancelled formatting." && exit
+            echo "Formatting ${nodeName}."
+            script=$(${pkgs.nix}/bin/nix build ${formatScript} --print-out-paths)
+
+            ${pkgs.nix}/bin/nix copy --to ${lib.escapeShellArg uri} "$script"
+            ${pkgs.openssh}/bin/ssh ${port} -t ${lib.escapeShellArg target} "$script"
+          '';
+    };
+    };
 
 }

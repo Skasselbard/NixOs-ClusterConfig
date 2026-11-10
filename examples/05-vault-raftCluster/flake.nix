@@ -195,7 +195,7 @@
 
                   vm0 =
                     let
-                      machineConfig = self.nixosConfigurations.vm0.config;
+                      machineConfig = self.nixosConfigurations.example-vm0.config;
                       ip = "192.168.122.200";
                     in
                     {
@@ -234,7 +234,7 @@
 
                   vm1 =
                     let
-                      machineConfig = self.nixosConfigurations.vm1.config;
+                      machineConfig = self.nixosConfigurations.example-vm1.config;
                       ip = "192.168.122.201";
                     in
                     {
@@ -253,7 +253,7 @@
 
                   vm2 =
                     let
-                      machineConfig = self.nixosConfigurations.vm2.config;
+                      machineConfig = self.nixosConfigurations.example-vm2.config;
                       ip = "192.168.122.202";
                     in
                     {

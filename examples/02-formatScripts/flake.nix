@@ -7,7 +7,7 @@
     # Import the ClusterConfig flake
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
-      url = "github:Skasselbard/NixOs-ClusterConfig";
+      url = "path:../..";
     };
 
     # Import disko for declarative disk partitioning.
@@ -135,7 +135,7 @@
                       let
                         # Access the generated NixOS config via self.nixosConfigurations.
                         # The disko module exposes a `_disko` script under `disko.devices`.
-                        cfg = self.nixosConfigurations.vm2.config;
+                        cfg = self.nixosConfigurations.example-vm2.config;
 
                         # Pre-format message (your custom logic goes here)
                         customStartMessage = ''echo "This could be the result of your pre-format command"'';

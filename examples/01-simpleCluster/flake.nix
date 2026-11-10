@@ -12,7 +12,7 @@
     # `inputs.nixpkgs.follows` ensures it uses the same nixpkgs as above,
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
-      url = "github:Skasselbard/NixOs-ClusterConfig";
+      url = "path:../..";
     };
 
     # Import disko for declarative disk partitioning.
@@ -190,7 +190,7 @@
                     # using `self.nixosConfigurations`. Here we extract the static IP
                     # from the machine's NixOS config to avoid duplicating it.
                     # Be careful to avoid circular dependencies when doing this!
-                    cfg = self.nixosConfigurations.vm1.config;
+                    cfg = self.nixosConfigurations.example-vm1.config;
                     ip = (builtins.head cfg.networking.interfaces."eth0".ipv4.addresses).address;
                   in
                   {

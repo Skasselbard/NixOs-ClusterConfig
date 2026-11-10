@@ -12,7 +12,7 @@ Common configurations (NixOS machine configs, SSH keys, password hashes) are sha
 | [01](./01-simpleCluster/) | Simple Cluster | Flake structure, machines/users/services, ISO creation, and the `create` deployment workflow |
 | [02](./02-formatScripts/) | Format Scripts | The three `formatScript` modes: `null` (skip), `"disko"` (automatic), and custom scripts |
 | [03](./03-homeManager/) | Home Manager | Per-user Home Manager modules, the `stateVersion` requirement, and `colmena` updates |
-| [04](./04-secretDeployment/) | Secret Deployment (experimental)| Encrypted file secrets with the `secret-service` module, per-user permissions, and the `deploySecrets` command |
+| [04](./04-secretDeployment/) | Secret Deployment | Encrypted file secrets with the `secret-service` module and per-user permissions |
 | [08](./08-vms/) | Virtual Machines | Defining microVMs alongside machines, the microvm.nix backend, port forwarding, and VM state persistence with impermanence |
 
 > **Note:** Examples 05–07 (Vault, Kubernetes) use older configurations and have not been re-tested with the current version of ClusterConfig.

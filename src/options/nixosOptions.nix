@@ -101,6 +101,22 @@ let
 
   machineType.options = config.extensions.nodes.options // {
 
+    host = mkOption {
+      type = nullOr str;
+      default = null;
+      description = "Host reference for a VM, or null for a machine.";
+    };
+    autostart = mkOption {
+      type = nullOr lib.types.bool;
+      default = null;
+      description = "Whether a VM starts automatically.";
+    };
+    restartIfChanged = mkOption {
+      type = nullOr lib.types.bool;
+      default = null;
+      description = "Whether a VM restarts when its configuration changes.";
+    };
+
     config = mkOption {
       description = ''
         The evaluated nixos configuration for this machine.

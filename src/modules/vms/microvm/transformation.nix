@@ -66,13 +66,14 @@ let
   buildVmModule =
     vm:
     let
-    mvm = vm.backend.microvm or { };
-    shareConfig = if mvm.shareNixStore or true then
-      {
-        shares = (mvm.shares or [ ]) ++ [ nixStoreShare ];
-      }
-    else
-      { };
+      mvm = vm.backend.microvm or { };
+      shareConfig =
+        if mvm.shareNixStore or true then
+          {
+            shares = (mvm.shares or [ ]) ++ [ nixStoreShare ];
+          }
+        else
+          { };
     in
     {
       microvm = mapBackendToMicrovmConfig vm.backend // shareConfig;
@@ -82,8 +83,7 @@ let
     flakeInputs.microvm.nixosModules.microvm
     (buildVmModule vmConfig)
   ];
-  
-  
+
   buildHostModules = vmName: vmConfig: hostConfig: [
     flakeInputs.microvm.nixosModules.host
     {
@@ -96,36 +96,51 @@ let
     }
   ];
 
-  hostTransformation = config:
-    add.nixosModule config (
+  hostTransformation =
+    config:
+    clusterlib.update.machines config (
       clusterName: nodeName: nodeConfig:
       let
-        vms = map (vm: 
-          let
-            hostResolution = get.vmHost (vm.value.host or "") config;
-          in
-          if hostResolution.machine == nodeName && hostResolution.cluster == clusterName then
-            {name = vm.name; config = vm.value;}
-          else
-            null
-        ) (lib.attrsToList config.domain.clusters."${clusterName}".vms);
-       filteredVMs = builtins.filter (vm: vm != null) vms;
+        vms = lib.concatMap (
+          vmCluster:
+          map (
+            vm:
+            let
+              hostResolution = get.vmHost (vm.value.host or "") config;
+            in
+            if hostResolution.machine == nodeName && hostResolution.cluster == clusterName then
+              {
+                name = vm.name;
+                config = vm.value;
+              }
+            else
+              null
+          ) (lib.attrsToList config.domain.clusters.${vmCluster}.vms)
+        ) (builtins.attrNames config.domain.clusters);
+        filteredVMs = builtins.filter (vm: vm != null) vms;
       in
       if filteredVMs == [ ] then
-        # If its a node with no vms configured: add nothing
-        [ ]
+        { }
       else
-        # If its a host, add all host vm configurations
-        map (vm: buildHostModules vm.name vm.config nodeConfig) filteredVMs
+        let
+          modules =
+            lib.flatten (map (vm: buildHostModules vm.name vm.config nodeConfig) filteredVMs)
+            ++ nodeConfig.nixosModules;
+        in
+        {
+          nixosModules = modules;
+          nixosConfiguration = flakeInputs.nixpkgs.lib.nixosSystem {
+            system = nodeConfig.system;
+            inherit modules;
+          };
+        }
     );
 
-  vmTransformation = config:
+  vmTransformation =
+    config:
     add.nixosModule config (
       clusterName: nodeName: nodeConfig:
-      if nodeConfig?host then
-        buildVmModules nodeConfig
-      else
-        []
+      if nodeConfig.host or null != null then buildVmModules nodeConfig else [ ]
     );
 
 in

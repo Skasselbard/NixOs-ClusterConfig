@@ -19,7 +19,7 @@
     clusterConfigFlake = {
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
-      url = "github:Skasselbard/NixOs-ClusterConfig";
+      url = "path:../..";
     };
 
     # Import disko for declarative disk partitioning

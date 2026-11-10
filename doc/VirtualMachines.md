@@ -11,7 +11,9 @@ A **VM** is a guest system that runs *on* a host machine, managed by a hyperviso
 
 Instead of being deployed separately via SSH, a VM's NixOS configuration is **injected into the host machine's configuration**.
 The host's hypervisor module (e.g. [microvm.nix](https://github.com/astro/microvm.nix)) builds the VM and creates the systemd service.
-Rebuilding and switching the host also updates the VM.
+Rebuilding and switching the host also updates the VM. A VM may be hosted by a machine in another cluster: it remains a member of its declared cluster and receives only that cluster's users, services and selectors. Placement does not imply cross-cluster DNS visibility or networking. The host has full control over the VM, so cluster membership is not a security boundary against the host.
+
+Two VMs with the same short name may exist in different clusters, but cannot be assigned to the same host: microVM uses that name for host-side services and state. Cluster and node names cannot contain dots.
 
 ### Machines vs. VMs
 
@@ -23,7 +25,7 @@ Rebuilding and switching the host also updates the VM.
 | `host` | N/A (self-hosted) | FQDN of the machine that hosts this VM |
 | `deployment.targetHost` | Required | N/A |
 | `deployment.formatScript` | Optional | N/A |
-| **Packages** | `build`, `deploy`, `create`, `iso`, `format`, `connect` | No dedicated VM packages (built as part of host) |
+| **Packages** | `build`, `deploy`, `create`, `iso`, `format` | Shared node or explicitly registered VM packages; no machine-only deployment commands |
 
 ## How It Works
 

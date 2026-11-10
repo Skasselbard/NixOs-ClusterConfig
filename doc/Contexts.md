@@ -11,7 +11,7 @@ The build context is everything that happens inside Nix expressions during evalu
 - **Cluster services** and their definitions
 - **Deployment scripts** that are generated as derivations
 
-**Key property:** Everything in the build context ends up in the **Nix store**, which is world-readable. This means sensitive data (passwords, private keys, certificates) should **not** be embedded directly in NixOS modules or Nix expressions.
+**Key property:** Values embedded in derivations or copied as paths can end up in the world-readable **Nix store**. Sensitive data (passwords and private keys) must not be embedded in NixOS modules, scripts or store paths.
 
 **Output:** A set of derivations — system configurations, scripts, ISOs — that can be deployed or inspected.
 
@@ -26,7 +26,7 @@ The machine context describes the **actual state** of a deployed machine at runt
 
 **Key property:** Unlike the build context, this deals with **what is**, not what should be.
 
-**Example:** The secret-service module creates a systemd unit that runs on the machine. At runtime, this unit decrypts an encrypted archive and bind-mounts secrets to user-specific paths. These paths and their contents exist only in the machine context — they are not part of any Nix derivation.
+**Example:** sops-nix decrypts encrypted files on the target and exposes the plaintext at configured runtime paths; the plaintext is not part of the Nix store.
 
 ## 3. Scripting Context — Automation Layer
 
@@ -41,7 +41,7 @@ This context operates **outside the target cluster** — typically from your wor
 
 **Examples:**
 - The `nix run .#<cluster>.<machine>.create` command connects to a machine via SSH, runs the format script, and installs NixOS
-- The `nix run .#<cluster>.<machine>.deploySecrets` command retrieves secrets from local backends, encrypts them, and copies the archive to the machine via rsync
+- The `nix run .#<cluster>.<machine>.secretsInstallKey` command provisions a managed target identity.
 
 ## Context Boundaries
 
@@ -68,9 +68,9 @@ Understanding where one context ends and another begins helps avoid common mista
 
 The secret-service module touches all three contexts:
 
-1. **Build context:** Declares the `secrets` option on each machine, defines which secrets each user needs, and generates the deployment script as a Nix derivation
-2. **Scripting context:** The `deploySecrets` script runs on your workstation — it retrieves secrets from local backends, encrypts them with `gocryptfs`, and copies the archive to the machine via SSH
-3. **Machine context:** A `secret-service` systemd unit on the machine decrypts the archive at boot, sets file permissions, and bind-mounts secrets to the appropriate user directories
+1. **Build context:** Declares secret locations and includes encrypted sops files in the NixOS closure.
+2. **Scripting context:** Helpers manage sops recipients and provision target identities without putting private keys in the store.
+3. **Machine context:** sops-nix decrypts secrets on the target and sets their ownership and permissions.
 
 ## Context Targets of Modules and Services
 

@@ -1,0 +1,303 @@
+{
+  clusterLib,
+  modules,
+  lib,
+  pkgs,
+}:
+let
+  inherit (clusterLib) buildCluster filters;
+  node = {
+    system = "x86_64-linux";
+    nixosModules = [
+      {
+        system.stateVersion = "25.05";
+        fileSystems."/" = {
+          device = "/dev/disk/by-label/nixos";
+          fsType = "ext4";
+        };
+        boot.loader.grub.device = "nodev";
+      }
+    ];
+  };
+  build = domain: buildCluster { inherit domain; };
+  failed = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
+  baseDomain = {
+    suffix = "example.com";
+  };
+  duplicate = build (
+    baseDomain
+    // {
+      clusters.lab = {
+        machines.same = node;
+        vms.same = node // {
+          host = "same.lab.example.com";
+        };
+      };
+    }
+  );
+  dotted = build (baseDomain // { clusters."prod.us".machines.node = node; });
+  dottedNode = build (baseDomain // { clusters.lab.machines."web.1" = node; });
+  collision = build (
+    baseDomain
+    // {
+      clusters = {
+        "prod-west".machines.web = node;
+        prod.machines."west-web" = node;
+      };
+    }
+  );
+  missingSelector = buildCluster {
+    modules = [ modules.simple-dns ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines.node = node;
+        services.dns = {
+          selectors = [ (filters.machineName "missing") ];
+          roles.hosts = [ ];
+        };
+      };
+    };
+  };
+  missingRole = buildCluster {
+    modules = [ modules.simple-dns ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines.node = node;
+        services.dns = {
+          selectors = [ ];
+          roles.hosts = [ (filters.vmName "missing") ];
+        };
+      };
+    };
+  };
+  cluster = buildCluster {
+    modules = [
+      modules.vms
+      modules.simple-dns
+      modules.nixos-anywhere
+      ({ pkgs, ... }: {
+        extensions.nodes.packages.shared =
+          { clusterConfig }: pkgs.writeShellScriptBin "shared" "echo ${clusterConfig.clusters.this.name}";
+        extensions.machines.packages.machineOnly =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "machineOnly" "echo ${clusterConfig.clusters.this.nodes.this.name}";
+        extensions.vms.packages.vmOnly =
+          { clusterConfig }:
+          pkgs.writeShellScriptBin "vmOnly" "echo ${clusterConfig.clusters.this.nodes.this.name}";
+      })
+    ];
+    domain = baseDomain // {
+      clusters = {
+        alpha = {
+          users.alphaUser.systemConfig.isNormalUser = true;
+          machines.host = node // {
+            deployment = {
+              targetHost = "192.0.2.1";
+              targetUser = "admin";
+              targetPort = 2222;
+              formatScript = pkgs.writeShellScript "format" "exit 0";
+            };
+          };
+        };
+        beta = {
+          users.betaUser.systemConfig.isNormalUser = true;
+          services.dns = {
+            selectors = [ filters.clusterNodes ];
+            roles.hosts = [ filters.clusterNodes ];
+          };
+          machines.other = node;
+          vms.guest = node // {
+            host = "host.alpha.example.com";
+          };
+        };
+      };
+    };
+  };
+  guest = cluster.nixosConfigurations.beta-guest.config;
+  hosted = cluster.nixosConfigurations.alpha-host.config.microvm.vms.guest.evaluatedConfig.config;
+  duplicateHost = buildCluster {
+    modules = [ modules.vms ];
+    domain = baseDomain // {
+      clusters = {
+        alpha.machines.host = node;
+        beta.vms.guest = node // {
+          host = "host.alpha.example.com";
+        };
+        gamma.vms.guest = node // {
+          host = "host.alpha.example.com";
+        };
+      };
+    };
+  };
+  arm = buildCluster {
+    packageSystem = "aarch64-linux";
+    domain = baseDomain // {
+      clusters.lab.machines.node = node;
+    };
+  };
+  conflictingPackages = buildCluster {
+    modules = [
+      ({ pkgs, ... }: {
+        extensions.nodes.packages.same = { clusterConfig }: pkgs.hello;
+        extensions.machines.packages.same = { clusterConfig }: pkgs.hello;
+      })
+    ];
+    domain = baseDomain // {
+      clusters.lab.machines.node = node;
+    };
+  };
+  repeatNames = build (
+    baseDomain
+    // {
+      clusters = {
+        alpha.machines.node = node;
+        beta.machines.node = node;
+      };
+    }
+  );
+  armTarget = build (
+    baseDomain
+    // {
+      clusters.lab.machines.node = node // {
+        system = "aarch64-linux";
+      };
+    }
+  );
+  sameCluster = buildCluster {
+    modules = [
+      modules.vms
+      modules.simple-dns
+    ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines.host = node;
+        vms.guest = node // {
+          host = "host.lab.example.com";
+        };
+        services.dns = {
+          selectors = [ filters.clusterNodes ];
+          roles.hosts = [ filters.clusterNodes ];
+        };
+      };
+    };
+  };
+  secretCluster = buildCluster {
+    modules = [ modules.secret-service ];
+    domain = baseDomain // {
+      clusters.lab = {
+        services.secrets = {
+          selectors = [ filters.clusterMachines ];
+          sopsRoot = ../examples/04-secretDeployment/secrets;
+          adminKeySource.type = "native";
+        };
+        machines = {
+          remote = node // {
+            deployment = {
+              targetHost = "192.0.2.50";
+              targetUser = null;
+              targetPort = 2222;
+              secrets.keySource = { type = "age"; age.sourceKeyFile = "/tmp/test-age-key"; };
+            };
+          };
+          local = node // {
+            deployment = {
+              targetHost = null;
+              secrets.keySource = { type = "age"; age.sourceKeyFile = "/tmp/test-age-key"; };
+            };
+          };
+        };
+      };
+    };
+  };
+  remoteKeyScript = secretCluster.packages.x86_64-linux.lab.remote.secretsInstallKey.text;
+  localKeyScript = secretCluster.packages.x86_64-linux.lab.local.secretsInstallKey.text;
+  emptySelector = buildCluster {
+    modules = [ modules.simple-dns ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines.node = node;
+        services.dns = {
+          selectors = [ ];
+          roles.hosts = [ ];
+        };
+      };
+    };
+  };
+in
+{
+  tests = {
+    qualifiedNames =
+      builtins.attrNames repeatNames.nixosConfigurations == [
+        "alpha-node"
+        "beta-node"
+      ];
+    duplicateMachineVm = failed duplicate.nixosConfigurations;
+    qualifiedCollision = failed collision.nixosConfigurations;
+    dottedCluster = failed dotted.nixosConfigurations;
+    dottedNode = failed dottedNode.nixosConfigurations;
+    invalidSelector = failed missingSelector.nixosConfigurations;
+    missingFilterPath = failed (filters.resolve [ (filters.machineName "missing") ] "lab" { domain.clusters.lab.machines = { }; });
+    invalidRole = failed missingRole.nixosConfigurations;
+    duplicateHostVm = failed duplicateHost.nixosConfigurations;
+    crossClusterHosting = hosted.networking.extraHosts == guest.networking.extraHosts
+      && builtins.elem "dns" guest.clusterConfig.clusters.this.nodes.this.services;
+    sameClusterHosting =
+      sameCluster.nixosConfigurations.lab-host.config.microvm.vms.guest.evaluatedConfig.config.networking.extraHosts
+      == sameCluster.nixosConfigurations.lab-guest.config.networking.extraHosts;
+    emptySelectorAllowed = builtins.attrNames emptySelector.nixosConfigurations == [ "lab-node" ];
+    guestClusterUsers = hosted.users.users ? betaUser && !(hosted.users.users ? alphaUser);
+    guestClusterDomain = hosted.networking.domain == "beta.example.com";
+    guestRole = builtins.length guest.clusterConfig.clusters.this.services.dns.roles.hosts == 2;
+    hostHasNoGuestService = !(cluster.domain.clusters.alpha.machines.host.services ? dns);
+    scopesMachine =
+      cluster.packages.x86_64-linux.alpha.host ? shared
+      && cluster.packages.x86_64-linux.alpha.host ? machineOnly
+      && !(cluster.packages.x86_64-linux.alpha.host ? vmOnly);
+    scopesVm =
+      cluster.packages.x86_64-linux.beta.guest ? shared
+      && cluster.packages.x86_64-linux.beta.guest ? vmOnly
+      && !(cluster.packages.x86_64-linux.beta.guest ? machineOnly);
+    noMachineDeployOnVm = !(cluster.packages.x86_64-linux.beta.guest ? deploy);
+    qualifiedColmenaNames =
+      let
+        c = buildCluster {
+          modules = [ modules.colmena ];
+          domain = baseDomain // { clusters = { alpha.machines.node = node; beta.machines.node = node; }; };
+        };
+      in builtins.attrNames c.colmena == [ "alpha-node" "beta-node" "meta" ]
+        && c.colmena.alpha-node.deployment.targetHost == "node";
+    deployCommand =
+      lib.hasInfix "--flake '.#alpha-host'" cluster.packages.x86_64-linux.alpha.host.deploy.text
+      && lib.hasInfix "-p 2222" cluster.packages.x86_64-linux.alpha.host.deploy.text
+      && lib.hasInfix "admin@192.0.2.1" cluster.packages.x86_64-linux.alpha.host.deploy.text;
+    hardwareCommand = lib.hasInfix "ssh -p 2222 -t admin@192.0.2.1" cluster.packages.x86_64-linux.alpha.host.hardware-configuration.text;
+    formatCommand =
+      lib.hasInfix "ssh://admin@192.0.2.1:2222" cluster.packages.x86_64-linux.alpha.host.format.text
+      && lib.hasInfix "ssh -p 2222 -t admin@192.0.2.1" cluster.packages.x86_64-linux.alpha.host.format.text;
+    createCommand =
+      lib.hasInfix "--ssh-port 2222" cluster.packages.x86_64-linux.alpha.host.create.text
+      && lib.hasInfix "admin@192.0.2.1" cluster.packages.x86_64-linux.alpha.host.create.text
+      && builtins.match ".* -s /nix/store/[^ ]+ /nix/store/[^ ]+ --ssh-port 2222 .*" (lib.replaceStrings [ "\n" ] [ " " ] cluster.packages.x86_64-linux.alpha.host.create.text) != null;
+    helperBinaryNames =
+      map (name: cluster.packages.x86_64-linux.alpha.host.${name}.name) [
+        "build"
+        "deploy"
+        "hardware-configuration"
+        "create"
+        "format"
+      ] == [
+        "build"
+        "deploy"
+        "hardware-configuration"
+        "create"
+        "format"
+      ];
+    secretSshTarget = lib.hasInfix "-p 2222 192.0.2.50" remoteKeyScript && !(lib.hasInfix "root@192.0.2.50" remoteKeyScript);
+    secretLocalInstall = lib.hasInfix "mkdir -p \"$(dirname /var/lib/sops-nix/key.txt)\"" localKeyScript && !(lib.hasInfix "StrictHostKeyChecking=accept-new" localKeyScript);
+    packageSystem =
+      arm.packages.aarch64-linux.lab.node.build.system == "aarch64-linux"
+      && !(arm.packages ? x86_64-linux);
+    isoTarget = armTarget.packages.x86_64-linux.lab.node.iso.system == "aarch64-linux";
+    packageConflict = failed conflictingPackages.nixosConfigurations;
+  };
+}

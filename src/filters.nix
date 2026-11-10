@@ -63,12 +63,10 @@ in
       lists.forEach (filtersToPaths filter clusterName config) (
         path:
         let
-          resolvedElement = (
-            attrsets.attrByPath (strings.splitString "." path) {
-              # this is the default element if the path was not found
-              # TODO: throw an error if the path cannot be found?
-            } config
-          );
+          parts = strings.splitString "." path;
+          resolvedElement = if attrsets.hasAttrByPath parts config then
+            attrsets.getAttrFromPath parts config
+          else throw "clusterConfig: filter references missing path '${path}'";
         in
         resolvedElement
       )
@@ -134,10 +132,9 @@ in
     lists.flatten (
       lists.forEach (filtersToPaths filter clusterName config) (
         path:
-        (attrsets.attrByPath (strings.splitString "." path) {
-          # this is the default element if the path was not found
-          # TODO: throw an error if the path cannot be found?
-        } config)
+        let parts = strings.splitString "." path;
+        in if attrsets.hasAttrByPath parts config then attrsets.getAttrFromPath parts config
+        else throw "clusterConfig: filter references missing path '${path}'"
       )
     );
 

@@ -275,7 +275,7 @@
                     # In fact the secret service module is a proof of concept and that probably shows.
                     # If you decide to use another method, you can reuse the account definitions from the kubernetes service to generate and deploy the required certificates.
                     secrets = generateSecrets {
-                      machineConfig = self.nixosConfigurations.${machineName}.config;
+                      machineConfig = self.nixosConfigurations."example-${machineName}".config;
                       lib = pkgs.lib;
                     };
 
@@ -308,7 +308,7 @@
                     };
 
                     secrets = generateSecrets {
-                      machineConfig = self.nixosConfigurations.${machineName}.config;
+                      machineConfig = self.nixosConfigurations."example-${machineName}".config;
                       lib = pkgs.lib;
                     };
 
@@ -336,7 +336,7 @@
                     };
 
                     secrets = generateSecrets {
-                      machineConfig = self.nixosConfigurations.${machineName}.config;
+                      machineConfig = self.nixosConfigurations."example-${machineName}".config;
                       lib = pkgs.lib;
                     };
 

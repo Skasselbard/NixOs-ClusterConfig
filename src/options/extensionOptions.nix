@@ -101,6 +101,18 @@ let
 
     };
 
+    machines.packages = mkOption {
+      description = "Packages generated only for standalone machines.";
+      type = attrsOf scriptType;
+      default = { };
+    };
+
+    vms.packages = mkOption {
+      description = "Packages generated only for virtual machines.";
+      type = attrsOf scriptType;
+      default = { };
+    };
+
     clusterServices = mkOption {
       description = ''
         A set of cluster services that should be enabled in the cluster.
@@ -164,6 +176,12 @@ let
 
     };
     transformations = {
+
+      hostTransformations = mkOption {
+        description = "Transform hosts after final guest configurations are available.";
+        type = listOf raw;
+        default = [ ];
+      };
 
       clusterTransformations = mkOption {
         description = ''

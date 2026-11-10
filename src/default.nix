@@ -2,12 +2,7 @@
 
 let # imports
 
-  pkgs = import flakeInputs.nixpkgs {
-    # the exact value of 'system' should be unimportant since we only use lib
-    system = "x86_64-linux";
-  };
-
-  lib = pkgs.lib;
+  lib = flakeInputs.nixpkgs.lib;
 
   clusterlib =
     with flakeInputs;
@@ -29,6 +24,8 @@ let # imports
     clusterConfig:
     let
       clusterModules = if clusterConfig ? modules then clusterConfig.modules else [ ];
+      packageSystem = clusterConfig.packageSystem or "x86_64-linux";
+      pkgs = import flakeInputs.nixpkgs { system = packageSystem; };
     in
     evalModules {
       modules = clusterModules ++ [
@@ -78,16 +75,21 @@ let # imports
     let
       # Step 1:
       # Evaluate the cluster to check for type conformity
-      evaluatedCluster = (evalCluster config).config;
+      evaluatedCluster = (evalCluster config).config // {
+        packageSystem = config.packageSystem or "x86_64-linux";
+      };
+
+      validatedCluster = (import ./validation.nix { inherit lib clusterlib filters; }) evaluatedCluster;
 
       # Step 2:
       # Transform the cluster configuration
-      clusterAnnotatedCluster = applyClusterTransformations evaluatedCluster evaluatedCluster.extensions.transformations.clusterTransformations;
+      clusterAnnotatedCluster = applyClusterTransformations validatedCluster validatedCluster.extensions.transformations.clusterTransformations;
 
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
       # This config will be overwritten later.
-      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
+      selectorsCheckedCluster = (import ./validate-selectors.nix { inherit lib filters; }) clusterAnnotatedCluster;
+      machineEvaluatedCluster = evalMachines selectorsCheckedCluster;
 
       # Step 4:
       # DEPRECATED!
@@ -98,7 +100,9 @@ let # imports
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets
-      nixosConfiguredCluster = evalMachines serviceAnnotatedCluster;
+      guestConfiguredCluster = evalMachines serviceAnnotatedCluster;
+      hostsAnnotatedCluster = applyClusterTransformations guestConfiguredCluster guestConfiguredCluster.extensions.transformations.hostTransformations;
+      nixosConfiguredCluster = hostsAnnotatedCluster;
 
       # Step 7:
       # Transformations to add packages for deployment scripts and other tools

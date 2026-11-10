@@ -39,6 +39,8 @@ Larger deployments are still possible but massive scaling is not considered in t
 | [Virtual Machines](doc/VirtualMachines.md) | Defining and managing VMs with the microvm.nix backend |
 | [Extending ClusterConfig](doc/Extensions.md) | How to write cluster modules and extend the configuration |
 | [Command Reference](doc/CommandReference.md) | All generated `nix build` and `nix run` commands |
+| [Tests](tests/README.md) | Evaluation tests, integration tests, and performance benchmark |
+| [Open Issues](doc/OpenIssues.md) | Deferred features and known limitations |
 | [Examples](examples/readme.md) | Walkthrough examples from a minimal cluster to the different built in cluster services |
 
 ## Quick Start
@@ -110,13 +112,17 @@ nix run .#colmena apply
 
 See the [Getting Started guide](doc/GettingStarted.md) and [Examples](examples/readme.md) for detailed walkthroughs.
 
+NixOS configurations and Colmena nodes use `<cluster>-<node>` names, e.g. `nixos-rebuild --flake .#mycluster-node1 build`. Unqualified NixOS configuration names are no longer exported. Cluster and node names cannot contain dots. Names must be unique within a cluster across machines and VMs, and qualified names must not collide.
+
+Set `packageSystem = "aarch64-linux";` in the `buildCluster` arguments when deployment tools run on an ARM host. The default is `x86_64-linux`. Each machine's `system` still controls its NixOS and ISO target; building for a different architecture requires a suitable builder or emulation.
+
 ## Available Modules
 
 The flake provides these cluster config modules under `clusterConfigFlake.clusterConfigModules`:
 
 | Module | Description |
 | --- | --- |
-| `default` | Bundle of `home-manager`, `nixos-anywhere`, and `colmena` |
+| `default` | Bundle of `home-manager`, `nixos-anywhere`, `colmena`, and `vms` |
 | `home-manager` | Adds `homeManagerModules` option to user definitions |
 | `nixos-anywhere` | Adds `create` and `format` deployment scripts per machine |
 | `colmena` | Generates a colmena hive definition and adds the `colmena` app to the flake |

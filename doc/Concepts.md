@@ -31,6 +31,8 @@ domain (suffix: "example.com")
 - A **node** is a generic term for any cluster participant — either a machine or a VM
 - Each node gets an automatically generated FQDN: `<nodeName>.<clusterName>.<suffix>`
 
+Cluster and node names must contain only letters, digits, underscores or hyphens, start with a letter, digit or underscore, and cannot be `this`. Dots are not allowed. Node names must be unique across machines and VMs within a cluster; short names may repeat in different clusters. Generated `<cluster>-<node>` names must also be unique, since hyphens in either component can produce collisions.
+
 In the flake, this maps to:
 
 ```nix
@@ -275,23 +277,24 @@ A second round of transformations runs with access to the initial node configura
 - The `clusterConfig` representation is generated and injected into each node's NixOS modules
 - Service definition modules and extra-config modules are added to the selected nodes' NixOS modules
 - Additional NixOS modules from cluster modules are added
-- VM configurations are injected into host machine configurations
 
 ### Step 5: Final Node Evaluation
 
-NixOS configurations are rebuilt a final time, now including all service modules and the `clusterConfig` representation. This produces the definitive system configuration for each node.
+NixOS configurations are evaluated again with all service modules and the `clusterConfig` representation. After final guest evaluation, host modules inject the final guest configurations; affected hosts are then evaluated again.
+
+The `clusterConfig` injected into these modules reflects the **initial** NixOS evaluation. In particular, its IP addresses and `node.config` do not include changes introduced by service modules. Package and late-config closures receive a later view. The microVM host transformation runs after final guest evaluation and injects that final guest configuration into the host; affected hosts are evaluated again.
 
 ### Step 6: Deployment Transformations
 
 The cluster config is extended with deployment artifacts:
 
-- `nixosConfigurations.<nodeName>` — standard flake attribute for each node
-- `packages.<system>.<clusterName>.<nodeName>.*` — build and deployment scripts (ISO, deploy, connect, etc.)
+- `nixosConfigurations.<cluster>-<node>` — standard flake attribute for each node. The old unqualified names are no longer provided.
+- `packages.<system>.<clusterName>.<nodeName>.*` — build and deployment scripts (ISO, deploy, etc.)
 - `packages.<system>.<clusterName>.<serviceName>.*` — service-level scripts
 - `colmena` — colmena hive definition (if the colmena module is loaded)
 - `apps` — flake apps including the colmena runner
 
-> **Note:** Not all deployment packages work for VMs. VMs do not have `deployment.targetHost`, so scripts like `deploy` and `hardware-configuration` require special handling or gating. VMs are updated by rebuilding and switching their host machine.
+> **Note:** Machine-only deployment packages are not generated for VMs. MicroVM guests are updated by rebuilding and switching their host machine.
 
 ### Step 7: Info Transformations
 
@@ -303,9 +306,9 @@ After `buildCluster` completes, the result is a complete flake output. The key a
 
 ```text
 nixosConfigurations
-├── node1       # NixosConfiguration for node1 (machine)
-├── node2       # NixosConfiguration for node2 (machine)
-└── my-vm       # NixosConfiguration for my-vm (VM)
+├── production-node1
+├── production-node2
+└── production-my-vm
 
 packages.<system>
 └── <clusterName>
@@ -313,11 +316,10 @@ packages.<system>
     │   ├── iso                     # Bootable installation ISO (machines only)
     │   ├── build                   # Local nix build
     │   ├── deploy                  # Remote nixos-rebuild switch (machines only)
-    │   ├── connect                 # SSH connection script (machines only)
     │   ├── create                  # nixos-anywhere initial install (machines only)
     │   ├── format                  # Run format script remotely (machines only)
     │   ├── hardware-configuration  # Fetch hardware config (machines only)
-    │   └── deploySecrets           # Deploy encrypted secrets (if secret-service is loaded)
+    │   └── secretsCheck            # Check secrets (if secret-service is loaded)
     └── <serviceName>
         └── ...                     # Service-specific scripts
 
@@ -325,4 +327,4 @@ colmena                             # Colmena hive definition (if colmena module
 apps                                # Flake apps (colmena runner, etc.)
 ```
 
-VMs appear in `nixosConfigurations` (their NixOS config is available) but most deployment scripts (`deploy`, `create`, `iso`, `format`, `hardware-configuration`) are designed for machines and may not work for VMs.
+VMs appear in `nixosConfigurations`, but machine-only deployment scripts are not generated for them.

@@ -1,5 +1,6 @@
 {
   lib,
+  pkgs,
   clusterlib,
   flakeInputs,
   ...
@@ -39,17 +40,22 @@ let
     in
     attrsets.recursiveUpdate config {
 
-      apps = colmena.apps;
+      apps = lib.optionalAttrs (builtins.hasAttr config.packageSystem colmena.apps) {
+        ${config.packageSystem} = colmena.apps.${config.packageSystem};
+      };
 
       colmena = {
-        meta.nixpkgs = import flakeInputs.nixpkgs {
-          system = "x86_64-linux"; # TODO: is this used for all machines?
-          overlays = [ ];
-        };
+        meta.nixpkgs = pkgs;
       }
       // forEachAttrIn machines (
         machineName: machineConfig: {
-          deployment = colmenaConfigFrom machineConfig.deployment;
+          deployment = (colmenaConfigFrom machineConfig.deployment) // {
+            targetHost =
+              if machineConfig.deployment.targetHost == "{hostname}" then
+                machineConfig.nixosConfiguration.config.networking.hostName
+              else
+                machineConfig.deployment.targetHost;
+          };
           imports = machineConfig.nixosModules;
         }
       );
