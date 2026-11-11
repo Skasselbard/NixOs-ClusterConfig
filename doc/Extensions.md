@@ -36,6 +36,20 @@ Cluster modules receive the following arguments:
 
 All extensions are configured under `config.extensions`. The extension system provides several targets:
 
+Option namespaces can be extended by multiple modules, but each individual
+`lib.mkOption` declaration must have a single owner. Duplicate declarations,
+including an option and a namespace at the same path, are rejected. Configure
+the option's value separately in the cluster definition.
+
+This restriction is a workaround. The extension trees are merged by a
+permissive type so that several modules can contribute to the same namespace.
+nixpkgs' `types.anything` would also descend into the `lib.mkOption`
+declarations themselves, which forces their deprecated `functor.wrapped`
+attribute and prints `evaluation warning: The deprecated functor.wrapped
+attribute is accessed`. Instead, extension merging stops at the first
+declaration. Declarations are opaque to the module system, so merging two of
+them was never meaningful, and this keeps the warning out of evaluations.
+
 ### 1. Cluster-Level Extensions (`extensions.cluster`)
 
 Add options, late-evaluated config, and packages at the cluster level.

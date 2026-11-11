@@ -7,11 +7,57 @@ let
   attrsOf = lib.types.attrsOf;
   listOf = lib.types.listOf;
   raw = lib.types.raw;
-  anything = lib.types.anything;
   str = lib.types.str;
   submodule = lib.types.submodule;
 
   scriptType = raw;
+
+  # WORKAROUND for nixpkgs' `types.anything` merging option declarations.
+  #
+  # The `extensions.*.options` trees hold option *declarations* (`mkOption`
+  # values), e.g. `extensions.nodes.options.deployment.targetHost`. With
+  # `attrsOf anything`, merging recurses into every attribute set it finds,
+  # including a `mkOption` value. Descending into a declaration forces its
+  # internals, notably `option.type.functor.wrapped`, which nixpkgs 26.05
+  # deprecated in favour of `nestedTypes.elemType`. That is what produced the
+  # repeated warning during evaluation:
+  #
+  #   evaluation warning: The deprecated `functor.wrapped` attribute is
+  #   accessed, use `nestedTypes.elemType` instead.
+  #
+  # Recursing into an option declaration is not intended behaviour: to the
+  # module system a declaration is an opaque value, and only the surrounding
+  # namespaces are meant to be merged. `types.anything` cannot express that
+  # distinction, so this type stops the recursion at the first declaration and
+  # keeps merging plain attribute sets, which is what extensions need to let
+  # several modules contribute options to the same namespace.
+  #
+  # Deliberately a little stricter than before: two declarations of the same
+  # option path now fail with an explicit error instead of silently merging
+  # their (deprecated) type internals. Repeated identical declarations were
+  # never meaningful, and nixpkgs' own option merging rejects them too.
+  #
+  # Remove this once `extensions.*.options` no longer has to be merged through
+  # a permissive type, or once nixpkgs drops the `functor.wrapped` deprecation.
+  optionTreeValueWorkaround = lib.types.mkOptionType {
+    name = "extensionOptionTreeValue";
+    description = "extension option declaration or namespace";
+    check = _: true;
+    merge =
+      loc: defs:
+      let
+        values = map (def: def.value) defs;
+      in
+      if lib.any lib.isOption values then
+        if builtins.length defs == 1 then
+          builtins.head values
+        else
+          throw "Conflicting extension option declarations at `${lib.showOption loc}' (defined in ${lib.concatStringsSep ", " (map (def: def.file) defs)})."
+      else if lib.all (value: builtins.isAttrs value && !lib.isStringLike value) values then
+        (attrsOf optionTreeValueWorkaround).merge loc defs
+      else
+        lib.types.anything.merge loc defs;
+  };
 
   extensionType = {
 
@@ -24,7 +70,7 @@ let
         '';
         default = { };
 
-        type = attrsOf anything;
+        type = attrsOf optionTreeValueWorkaround;
       };
 
       late.config = mkOption {
@@ -62,7 +108,7 @@ let
         '';
         default = { };
 
-        type = attrsOf anything;
+        type = attrsOf optionTreeValueWorkaround;
       };
 
       nixosModules = mkOption {
@@ -143,7 +189,7 @@ let
               A set of options that can be used e.g. to give service scripts additional information.
             '';
             default = { };
-            type = attrsOf anything;
+            type = attrsOf optionTreeValueWorkaround;
           };
 
           late.config = mkOption {

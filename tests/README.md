@@ -8,6 +8,15 @@ nix flake check
 
 The `checks.x86_64-linux.evaluation` check evaluates structural validation, naming, cross-cluster VM hosting, guest service and user isolation, package scopes, deployment command arguments, and the deployment-host package system. It does not deploy machines or format disks. `nix flake check --no-build` evaluates the checks without building the small success derivation.
 
+To catch evaluation warnings as errors when running the suite, use:
+
+```sh
+nix flake check --no-build --option abort-on-warn true
+```
+
+This is stricter than checking for a particular warning and can also fail on
+unrelated evaluation warnings from inputs.
+
 During local development, Git flakes only include tracked files. Add new files to the Git index before using the Git flake, or evaluate the working tree explicitly:
 
 ```sh

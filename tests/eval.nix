@@ -108,6 +108,11 @@ let
           machines.other = node;
           vms.guest = node // {
             host = "host.alpha.example.com";
+            backend.microvm = {
+              vcpu = 2;
+              mem = 1024;
+              interfaces = [ { type = "user"; id = "test"; mac = "02:00:00:00:00:01"; } ];
+            };
           };
         };
       };
@@ -223,6 +228,66 @@ let
       };
     };
   };
+  extensionCluster = buildCluster {
+    modules = [
+      ({ lib, ... }: {
+        extensions.cluster.options.shared.deep.first = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [ "cluster-first" ];
+        };
+        extensions.nodes.options.shared.deep.first = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = { name = "node-first"; };
+        };
+        extensions.clusterServices.demo = {
+          defaultModule = { ... }: { };
+          options.shared.deep.first = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = "service-first";
+          };
+        };
+      })
+      ({ lib, ... }: {
+        extensions.cluster.options.shared.deep.second = lib.mkOption {
+          type = lib.types.str;
+          default = "cluster-second";
+        };
+        extensions.nodes.options.shared.deep.second = lib.mkOption {
+          type = lib.types.str;
+          default = "node-second";
+        };
+        extensions.clusterServices.demo.options.shared.deep.second = lib.mkOption {
+          type = lib.types.str;
+          default = "service-second";
+        };
+      })
+    ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines.node = node // { shared.deep.second = "configured-node"; };
+        shared.deep.second = "configured-cluster";
+        services.demo = {
+          selectors = [ filters.clusterNodes ];
+          shared.deep.second = "configured-service";
+        };
+      };
+    };
+  };
+  extensionView = extensionCluster.nixosConfigurations.lab-node.config.clusterConfig.clusters.this;
+  optionDeclarations = declarations: (lib.evalModules {
+    modules = [ ../src/options/extensionOptions.nix ] ++ declarations;
+  }).config.extensions.nodes.options;
+  duplicateOptionModules = [
+    { _file = "first-extension.nix"; extensions.nodes.options.shared.value = lib.mkOption { type = lib.types.str; default = "a"; }; }
+    { _file = "second-extension.nix"; extensions.nodes.options.shared.value = lib.mkOption { type = lib.types.str; default = "b"; }; }
+  ];
+  optionNamespaceModules = [
+    { extensions.nodes.options.shared.value = lib.mkOption { type = lib.types.str; default = "a"; }; }
+    { extensions.nodes.options.shared.value.child = lib.mkOption { type = lib.types.str; default = "b"; }; }
+  ];
+  optionDeclarationsIn = path: declarations: lib.attrByPath path null ((lib.evalModules {
+    modules = [ ../src/options/extensionOptions.nix ] ++ declarations;
+  }).config.extensions);
 in
 {
   tests = {
@@ -247,6 +312,11 @@ in
     emptySelectorAllowed = builtins.attrNames emptySelector.nixosConfigurations == [ "lab-node" ];
     guestClusterUsers = hosted.users.users ? betaUser && !(hosted.users.users ? alphaUser);
     guestClusterDomain = hosted.networking.domain == "beta.example.com";
+    configuredVmOptions =
+      guest.microvm.vcpu == 2 && guest.microvm.mem == 1024
+      && (builtins.head guest.microvm.interfaces).id == "test"
+      && hosted.microvm.vcpu == guest.microvm.vcpu
+      && (builtins.head hosted.microvm.interfaces).mac == "02:00:00:00:00:01";
     guestRole = builtins.length guest.clusterConfig.clusters.this.services.dns.roles.hosts == 2;
     hostHasNoGuestService = !(cluster.domain.clusters.alpha.machines.host.services ? dns);
     scopesMachine =
@@ -299,5 +369,34 @@ in
       && !(arm.packages ? x86_64-linux);
     isoTarget = armTarget.packages.x86_64-linux.lab.node.iso.system == "aarch64-linux";
     packageConflict = failed conflictingPackages.nixosConfigurations;
+    nestedClusterOptions =
+      extensionView.shared.deep.first == [ "cluster-first" ]
+      && extensionView.shared.deep.second == "configured-cluster";
+    nestedNodeOptions =
+      extensionView.nodes.this.shared.deep.first.name == "node-first"
+      && extensionView.nodes.this.shared.deep.second == "configured-node";
+    nestedServiceOptions =
+      extensionView.services.demo.shared.deep.first == "service-first"
+      && extensionView.services.demo.shared.deep.second == "configured-service";
+    duplicateExtensionOption = failed (optionDeclarations duplicateOptionModules).shared.value;
+    duplicateIdenticalExtensionOption = failed (optionDeclarations [
+      { extensions.nodes.options.value = lib.mkOption { type = lib.types.str; default = "same"; }; }
+      { extensions.nodes.options.value = lib.mkOption { type = lib.types.str; default = "same"; }; }
+    ]).value;
+    duplicateClusterExtensionOption = failed (optionDeclarationsIn [ "cluster" "options" "value" ] [
+      { extensions.cluster.options.value = lib.mkOption { type = lib.types.str; default = "a"; }; }
+      { extensions.cluster.options.value = lib.mkOption { type = lib.types.str; default = "b"; }; }
+    ]);
+    duplicateServiceExtensionOption = failed (optionDeclarationsIn [ "clusterServices" "demo" "options" "value" ] [
+      { extensions.clusterServices.demo.options.value = lib.mkOption { type = lib.types.str; default = "a"; }; }
+      { extensions.clusterServices.demo.options.value = lib.mkOption { type = lib.types.str; default = "b"; }; }
+    ]);
+    optionNamespaceConflict = failed (optionDeclarations optionNamespaceModules).shared.value;
+    optionNamespaceConflictReversed = failed (optionDeclarations (lib.reverseList optionNamespaceModules)).shared.value;
+    extensionOptionPriority =
+      ((optionDeclarations [
+        { extensions.nodes.options.shared.value = lib.mkDefault (lib.mkOption { type = lib.types.str; default = "default"; }); }
+        { extensions.nodes.options.shared.value = lib.mkOption { type = lib.types.str; default = "override"; }; }
+      ]).shared.value.default) == "override";
   };
 }
