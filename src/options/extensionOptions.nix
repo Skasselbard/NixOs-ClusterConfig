@@ -235,7 +235,12 @@ let
 
           These functions get called after the first cluster evaluation.
           In this step, information declared in the cluster options can be transformed and used for annotations.
-          The machine NixOsModules are unevaluated at this point.
+          The machine NixOsModules are unevaluated at this point, so nothing that is
+          derived from an evaluated node configuration is available.
+
+          Services are selected after the first node evaluation, so ``node.services``
+          is not populated in this step. Use ``selectors`` or ``roles`` instead of
+          computing service membership here.
 
           For example, in this step, the default clusterConfig workflow takes the names of all defined machines
           and sets the ``networking.hostname`` option for each machine.
@@ -252,6 +257,9 @@ let
           and the networking annotations (ips and fqdns) where set.
           In this step, cluster and machine information can be used to modify the cluster config.
           After this step, the NixOsModules for each machine will be evaluated once again.
+
+          Services are selected before this step, so ``node.services`` holds the
+          services that were selected for each node.
 
           For example, in this step, the default clusterConfig workflow takes the service and user configuration
           from the cluster and adds them to the nixOsModules of each machine.

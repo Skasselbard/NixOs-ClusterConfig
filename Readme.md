@@ -40,6 +40,7 @@ Larger deployments are still possible but massive scaling is not considered in t
 | [Extending ClusterConfig](doc/Extensions.md) | How to write cluster modules and extend the configuration |
 | [Command Reference](doc/CommandReference.md) | All generated `nix build` and `nix run` commands |
 | [Tests](tests/README.md) | Evaluation tests, integration tests, and performance benchmark |
+| [Decisions](doc/Decisions.md) | Design decisions, including features that were deliberately not added |
 | [Open Issues](doc/OpenIssues.md) | Deferred features and known limitations |
 | [Examples](examples/readme.md) | Walkthrough examples from a minimal cluster to the different built in cluster services |
 

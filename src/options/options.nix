@@ -23,6 +23,12 @@ let
   forEachAttrIn = clusterlib.forEachAttrIn;
   listToAttrs = builtins.listToAttrs;
 
+  # Tags behave like a set: several modules may contribute tags for the same
+  # node and duplicates collapse instead of repeating or failing.
+  tagSetType = (listOf str) // {
+    merge = loc: defs: lib.unique ((listOf str).merge loc defs);
+  };
+
   vmType = import ../modules/vms/options.nix { inherit lib clusterlib config flakeInputs; };
 
   domainType = {
@@ -121,6 +127,48 @@ let
       description = "System architecture for this VM (e.g. x86_64-linux).";
       example = "x86_64-linux";
       type = str;
+    };
+
+    tags = mkOption {
+      description = ''
+        A set of tags that classify this node.
+
+        Tags are free-form data that no module has to declare first. They are
+        meant for consumers that do not care which option encodes a property:
+        selectors (`filters.tagsAny` / `filters.tagsAll`), documentation and
+        other tooling. The
+        vocabulary belongs to the cluster definition, not to ClusterConfig.
+
+        Use an extension node option (`extensions.nodes.options`) instead when
+        the data configures a specific option and needs a type, a default and
+        a description.
+
+        Tags are merged as a set, so several modules can add tags to a node.
+      '';
+      type = tagSetType;
+      default = [ ];
+      example = [
+        "prod"
+        "gpu"
+      ];
+    };
+
+    labels = mkOption {
+      description = ''
+        Key/value annotations for this node.
+
+        Labels complement `tags`: use a label when a consumer looks for a
+        specific key (for example `labels.tier`), and a tag when the node is
+        part of a group. Keys and values must match
+        `[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?`, so they stay usable
+        as YAML scalars and as Kubernetes label keys and values.
+      '';
+      type = attrsOf str;
+      default = { };
+      example = {
+        tier = "edge";
+        zone = "eu-west-1a";
+      };
     };
 
     users = mkOption {

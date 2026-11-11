@@ -200,6 +200,33 @@ let
       type = str;
     };
 
+    tags = mkOption {
+      description = ''
+        The tags declared for this node in the cluster definition.
+
+        See the `tags` option of the cluster node definition for details.
+      '';
+      type = listOf str;
+      default = [ ];
+      example = [
+        "prod"
+        "gpu"
+      ];
+    };
+
+    labels = mkOption {
+      description = ''
+        The labels declared for this node in the cluster definition.
+
+        See the `labels` option of the cluster node definition for details.
+      '';
+      type = attrsOf str;
+      default = { };
+      example = {
+        tier = "edge";
+      };
+    };
+
   };
 in
 {

@@ -14,6 +14,11 @@ let # imports
   add = clusterlib.add;
   evalModules = lib.evalModules;
 
+  # Internal pipeline step: copies cluster services onto the nodes their
+  # selectors resolve to. Not part of `extensions.transformations` on purpose,
+  # see src/serviceSelection.nix and doc/Decisions.md (D3).
+  serviceSelection = import ./serviceSelection.nix { inherit lib clusterlib filters; };
+
   # Use the NixOs module system to evaluate the clusterConfig
   #
   # - Add a list of clusterConfigModules from 'clusterConfig.modules' to the module list
@@ -88,15 +93,22 @@ let # imports
       # Step 3:
       # Evaluate the nixosModules from all machines to generate a first NixosConfiguration.
       # This config will be overwritten later.
-      selectorsCheckedCluster = (import ./validate-selectors.nix { inherit lib filters; }) clusterAnnotatedCluster;
-      machineEvaluatedCluster = evalMachines selectorsCheckedCluster;
+      machineEvaluatedCluster = evalMachines clusterAnnotatedCluster;
 
       # Step 4:
-      # DEPRECATED!
+      # Validate the selectors of all services, then select the services for
+      # every node.
+      #
+      # Selectors are validated and resolved after the first node evaluation, so
+      # they may query evaluated machine options (filters.machineOption) without
+      # an additional evaluation round. Service selection is an internal step
+      # rather than a cluster transformation for the same reason.
+      selectorsCheckedCluster = (import ./validate-selectors.nix { inherit lib filters; }) machineEvaluatedCluster;
+      serviceSelectedCluster = serviceSelection selectorsCheckedCluster;
 
       # Step 5:
       # Transform the machine configurations (and the cluster configuration)
-      serviceAnnotatedCluster = applyClusterTransformations machineEvaluatedCluster machineEvaluatedCluster.extensions.transformations.moduleTransformations;
+      serviceAnnotatedCluster = applyClusterTransformations serviceSelectedCluster serviceSelectedCluster.extensions.transformations.moduleTransformations;
 
       # Step 6:
       # Evaluate the final NixosConfigurations that can be added as build targets

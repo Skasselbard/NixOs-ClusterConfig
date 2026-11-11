@@ -192,8 +192,36 @@ ClusterConfig provides built-in filters via `clusterConfigFlake.lib.filters`:
 | `clusterNodes` | `filters.clusterNodes` | Matches **all nodes** (machines + VMs) in the cluster |
 | `machineName` | `filters.machineName "node1"` | Matches a **single machine** by name |
 | `vmName` | `filters.vmName "guest1"` | Matches a **single VM** by name |
+| `tagsAny` | `filters.tagsAny "prod"` / `filters.tagsAny [ "prod" "gpu" ]` | Matches **all nodes carrying at least one** of the tags |
+| `tagsAll` | `filters.tagsAll "prod"` / `filters.tagsAll [ "prod" "gpu" ]` | Matches **all nodes carrying every** given tag |
+| `labelsAny` | `filters.labelsAny { tier = "edge"; zone = "eu-west-1a"; }` | Matches **all nodes where at least one** label pair matches |
+| `labelsAll` | `filters.labelsAll { tier = "edge"; zone = "eu-west-1a"; }` | Matches **all nodes where every** label pair matches |
+| `hasLabel` | `filters.hasLabel "tier"` | Matches **all nodes declaring** the label key, whatever its value |
+| `nodeOption` | `filters.nodeOption [ "deployment" "formatScript" ] "disko"` | Matches **all nodes where the declared node option** at the path equals the value |
+| `machineOption` | `filters.machineOption [ "networking" "hostName" ] "web1"` | Matches **all nodes where the evaluated NixOS option** at the path equals the value |
 
-Filters can be combined in a list — the resulting node set is the union of all matches.
+`tagsAny` and `tagsAll` accept a single tag or a list of tags; with a single tag both select the same nodes, so `tagsAll "prod"` is the same as `tagsAny "prod"`. `labelsAny` and `labelsAll` take a set of label values. An empty tag list or an empty label set is rejected instead of silently matching every node.
+
+### Combining Filters
+
+A list of filters is a **union (logical OR)**: a node is selected when at least one filter in the list matches it. This applies to `selectors` and to every role list. Duplicates collapse — a node matched by several filters is returned once, in the order of the first filter that matched it.
+
+```nix
+selectors = [
+  (filters.tagsAny "prod")          # OR
+  (filters.machineName "node1")     # OR
+];
+```
+
+Use `tagsAll` / `labelsAll` when a node has to match several conditions at once, since a conjunction cannot be expressed by adding filters to the list.
+
+Ordering is not a contract: within one filter the nodes are returned in attribute-name order (machines before VMs), and tag or label lists keep the order of the definition — including across modules, as long as the module merge order is stable.
+
+### Declared and Evaluated Values
+
+`tagsAny`, `tagsAll`, `labelsAny`, `labelsAll`, `hasLabel` and `nodeOption` read the *declared* cluster config, so they work in every pipeline stage, including service `selectors` and `roles`. Both option filters compare Nix values, so query leaf options with plain values (strings, numbers, booleans); functions and derivations cannot be compared.
+
+`machineOption` reads the node's NixOS configuration and therefore needs the initial node evaluation, which happens before selectors are resolved. It is usable in `selectors` and `roles`, but it sees the **initial** configuration: options that service modules or the injected `clusterConfig` set are not part of it yet. It does not evaluate a whole node configuration — only the module-system scaffolding and the queried path — but because every node of the cluster is inspected, it costs a per-node evaluation that `nodeOption` does not. Prefer `nodeOption` when the information is declared in the cluster config.
 
 ### Example
 
@@ -209,6 +237,32 @@ services.myService = {
   roles.replicas = [ filters.clusterNodes ];
 };
 ```
+
+## Node Tags and Labels
+
+Every node (machine or VM) accepts two free-form metadata options, `tags` and `labels`:
+
+```nix
+clusters.prod.machines.web1 = {
+  system = "x86_64-linux";
+  tags = [ "prod" "web" "edge" ];
+  labels = {
+    tier = "edge";
+    zone = "eu-west-1a";
+  };
+  nixosModules = [ /* ... */ ];
+};
+```
+
+Tags and labels exist because not every classification deserves a typed option. They let a cluster definition describe nodes without a module having to declare the vocabulary first, and they are meaningful for consumers that do not care *which* option encodes a property: selectors, documentation and other tooling.
+
+- `tags` is a set of strings. Tags are merged as a set, so several modules can add tags to the same node and duplicates collapse.
+- `labels` is a set of key/value string pairs. Use a label when a consumer looks for a specific key, and a tag when a node is simply part of a group.
+- Tags, label keys and label values must match `[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?`. Invalid values fail validation before any node is evaluated, so they cannot silently break the consumers of that vocabulary.
+
+Both are available to service definitions under `config.clusterConfig.clusters.<name>.nodes.<node>.tags` and `.labels`, and both can be used for selection with `filters.tagsAny` / `filters.tagsAll` and `filters.labelsAny` / `filters.labelsAll`.
+
+`tags` and `labels` are **not** derived from other options. Facts that already exist as an option — the system, whether a node is a VM, its backend, its host — are queried with `filters.nodeOption` (or `clusterMachines`/`clusterVms`) instead of being duplicated into tags. See [Decisions](Decisions.md) for the reasoning.
 
 ## The `clusterConfig` in Machine Modules
 
@@ -270,21 +324,27 @@ A sequence of transformation functions rewrites the cluster config. Each transfo
 
 The NixOS configuration for each node (machine and VM) is built for the first time from its `nixosModules`. After this step, information like IP addresses, FQDNs, and other evaluated config values become available.
 
-### Step 4: Module Transformations
+### Step 4: Selector Validation and Service Selection
 
-A second round of transformations runs with access to the initial node configurations. In this step:
+The selectors and roles of every service are validated, and each service is copied onto the nodes its selectors resolve to. Selected nodes gain a `services` attribute that holds the service definition with `selectors` and `roles` resolved to node names.
+
+This step runs after the initial node evaluation and is not part of `extensions.transformations`, so that selectors can use `filters.machineOption` — they query the **initial** machine configuration, so options that only service modules or the injected `clusterConfig` set are not visible to a selector. See [Decisions](Decisions.md#d3-selectors-may-query-the-first-pass-machine-configuration).
+
+### Step 5: Module Transformations
+
+A second round of transformations runs with access to the initial node configurations and to the selected services. In this step:
 
 - The `clusterConfig` representation is generated and injected into each node's NixOS modules
 - Service definition modules and extra-config modules are added to the selected nodes' NixOS modules
 - Additional NixOS modules from cluster modules are added
 
-### Step 5: Final Node Evaluation
+### Step 6: Final Node Evaluation
 
 NixOS configurations are evaluated again with all service modules and the `clusterConfig` representation. After final guest evaluation, host modules inject the final guest configurations; affected hosts are then evaluated again.
 
 The `clusterConfig` injected into these modules reflects the **initial** NixOS evaluation. In particular, its IP addresses and `node.config` do not include changes introduced by service modules. Package and late-config closures receive a later view. The microVM host transformation runs after final guest evaluation and injects that final guest configuration into the host; affected hosts are evaluated again.
 
-### Step 6: Deployment Transformations
+### Step 7: Deployment Transformations
 
 The cluster config is extended with deployment artifacts:
 
@@ -296,7 +356,7 @@ The cluster config is extended with deployment artifacts:
 
 > **Note:** Machine-only deployment packages are not generated for VMs. MicroVM guests are updated by rebuilding and switching their host machine.
 
-### Step 7: Info Transformations
+### Step 8: Info Transformations
 
 A final pass extracts serializable cluster information and package metadata for inspection and tooling.
 

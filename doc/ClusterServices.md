@@ -54,8 +54,23 @@ services.myService = {
   selectors = [ filters.clusterNodes ];     # all machines AND VMs
   # or
   selectors = [ (filters.machineName "node1") (filters.vmName "guest1") ];  # specific nodes
+  # or
+  selectors = [ (filters.tagsAny "prod") ];                     # at least one of the tags
+  selectors = [ (filters.tagsAny [ "prod" "gpu" ]) ];
+  selectors = [ (filters.tagsAll [ "prod" "gpu" ]) ];           # every tag
+  selectors = [ (filters.labelsAll { tier = "edge"; }) ];        # every label pair
+  selectors = [ (filters.labelsAny { tier = "edge"; zone = "eu-west-1a"; }) ];  # at least one pair
+  selectors = [ (filters.hasLabel "tier") ];                     # label key exists, any value
+  # or select by a node option that the cluster definition declares
+  selectors = [ (filters.nodeOption [ "system" ] "aarch64-linux") ];
+  # or select by an option of the node's evaluated NixOS configuration
+  selectors = [ (filters.machineOption [ "networking" "hostName" ] "node1") ];
 };
 ```
+
+A list of filters is a union: a node is selected when at least one filter matches, and nodes matched by several filters are only selected once. Use `tagsAll` or `labelsAll` for a conjunction. Tag and label based selection is described in [Node Tags and Labels](Concepts.md#node-tags-and-labels), the difference between `nodeOption` and `machineOption` under [Declared and Evaluated Values](Concepts.md#declared-and-evaluated-values).
+
+`nodeOption` reads what the cluster definition declares, so it is available in every stage. `machineOption` reads the node's evaluated NixOS configuration; it only sees the configuration of the first evaluation — options that service modules add are not part of it — and it forces the scaffolding of every node's evaluation, so prefer `nodeOption` when the value is declared in the cluster config.
 
 ### Roles
 
@@ -98,6 +113,8 @@ During the ClusterConfig evaluation pipeline, services go through these steps:
 3. **Module injection** — For each selected node, the service's `definition` and `extraConfig` are added to the node's NixOS modules. When the node's NixOS configuration is rebuilt, these modules are included.
 
 4. **clusterConfig access** — Inside the service's NixOS module, the node can access `config.clusterConfig` to read resolved service information, including which nodes have which roles.
+
+Steps 1 and 2 run after the nodes were evaluated for the first time, so selectors may match on evaluated machine options (`filters.machineOption`). They see the *initial* configuration, which does not include what service modules add, so a service can never select nodes based on its own effects. See the [evaluation pipeline](Concepts.md#step-4-selector-validation-and-service-selection).
 
 ## Writing a Custom Service Module
 

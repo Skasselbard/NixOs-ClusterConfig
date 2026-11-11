@@ -26,6 +26,39 @@ let
       throw "clusterConfig: invalid ${kind} name '${name}': names must be non-empty, contain only letters, digits, '_' or '-', and cannot be 'this'"
     else
       true;
+
+  # Tags and labels are shared vocabulary: selectors, documentation and (later)
+  # Kubernetes labels consume them, so they are restricted to the characters
+  # that stay valid in all of those contexts.
+  labelValuePattern = "[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?";
+
+  checkNodeMetadata =
+    clusterName: nodeName: node:
+    let
+      check =
+        kind: value:
+        if builtins.match labelValuePattern value != null then
+          true
+        else
+          throw "clusterConfig: invalid ${kind} '${value}' on node '${clusterName}.${nodeName}': it must match ${labelValuePattern}";
+    in
+    map (check "tag") (node.tags or [ ])
+    ++ map (check "label key") (builtins.attrNames (node.labels or { }))
+    ++ map (check "label value") (builtins.attrValues (node.labels or { }));
+
+  metadataChecks = lib.concatMap (
+    clusterName:
+    let
+      cluster = clusters.${clusterName};
+    in
+    lib.concatMap (nodeName: checkNodeMetadata clusterName nodeName cluster.machines.${nodeName}) (
+      builtins.attrNames cluster.machines
+    )
+    ++ lib.concatMap (nodeName: checkNodeMetadata clusterName nodeName cluster.vms.${nodeName}) (
+      builtins.attrNames (cluster.vms or { })
+    )
+  ) clusterNames;
+
   checks =
     map (name: checkName "cluster" name) clusterNames
     ++ map (
@@ -81,4 +114,4 @@ let
         "vms"
       ];
 in
-builtins.deepSeq (checks ++ scopeConflicts) config
+builtins.deepSeq (checks ++ scopeConflicts ++ metadataChecks) config

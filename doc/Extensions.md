@@ -50,6 +50,29 @@ attribute is accessed`. Instead, extension merging stops at the first
 declaration. Declarations are opaque to the module system, so merging two of
 them was never meaningful, and this keeps the warning out of evaluations.
 
+### Typed Node Options vs Tags and Labels
+
+Per-node data has two channels:
+
+| | `extensions.nodes.options.<name>` | `tags` / `labels` |
+| --- | --- | --- |
+| Who defines the key | a module (`lib.mkOption` with type, default, description) | anyone, in the cluster definition |
+| Validation | per-option type | one grammar for all values |
+| Discoverability | `nix repl`, docs, option descriptions | the tag vocabulary itself |
+| Purpose | configuration consumed by a specific option | classification consumed generically (filters, docs, tooling) |
+| Merged | per option | tags as a set, labels per key |
+
+A cluster definition cannot invent node attributes on its own: `machines.<name>`
+and `vms.<name>` accept only declared options, so a custom per-node option
+requires a module. Tags and labels close that gap for data that only needs to
+be *classified*, not configured.
+
+Use an extension option when another module needs to read the value with a
+fixed name, and tags or labels when the value is a classification that
+selectors, documentation or tooling should be able to search without knowing
+which module introduced it. Do not mirror an existing option into a tag: query
+it with `filters.nodeOption` instead (see [Concepts](Concepts.md#filters)).
+
 ### 1. Cluster-Level Extensions (`extensions.cluster`)
 
 Add options, late-evaluated config, and packages at the cluster level.
@@ -153,6 +176,11 @@ Add custom transformation functions that run at specific stages of the evaluatio
   };
 }
 ```
+
+Service selection (copying services onto the nodes their selectors resolve to) runs as an internal step between the initial machine evaluation and `moduleTransformations`. It is intentionally not a transformation hook, because its position in the pipeline is what makes evaluated machine options available to selectors. Two consequences for modules:
+
+- `clusterTransformations` run before any node is evaluated, so `node.services` is not populated there. Declare `selectors`/`roles` instead of computing service membership yourself.
+- `moduleTransformations` run after services are selected, so `node.services` is available there.
 
 ## The `clusterConfig` Representation
 

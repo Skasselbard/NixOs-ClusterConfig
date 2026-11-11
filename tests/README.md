@@ -6,7 +6,7 @@ Run the evaluation regression suite with Nix flakes enabled:
 nix flake check
 ```
 
-The `checks.x86_64-linux.evaluation` check evaluates structural validation, naming, cross-cluster VM hosting, guest service and user isolation, package scopes, deployment command arguments, and the deployment-host package system. It does not deploy machines or format disks. `nix flake check --no-build` evaluates the checks without building the small success derivation.
+The `checks.x86_64-linux.evaluation` check evaluates structural validation, naming, node tags and labels, tag/label/option selectors (including selectors that query evaluated machine options), cross-cluster VM hosting, guest service and user isolation, package scopes, deployment command arguments, and the deployment-host package system. It does not deploy machines or format disks. `nix flake check --no-build` evaluates the checks without building the small success derivation.
 
 To catch evaluation warnings as errors when running the suite, use:
 

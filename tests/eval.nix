@@ -186,6 +186,117 @@ let
       };
     };
   };
+  # A cluster that classifies its nodes with tags and labels and uses them for
+  # service selection.
+  taggedCluster = buildCluster {
+    modules = [
+      modules.vms
+      {
+        extensions.nodes.options.priority = lib.mkOption {
+          description = "Test option used to select nodes by node option.";
+          type = lib.types.int;
+          default = 0;
+        };
+        extensions.clusterServices.demo = {
+          defaultModule = { ... }: { };
+          options = { };
+          roles = [ "primary" ];
+        };
+      }
+    ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines = {
+          web = node // {
+            tags = [
+              "prod"
+              "web"
+              "prod"
+            ];
+            labels.tier = "edge";
+          };
+          db = node // {
+            tags = [
+              "prod"
+              "db"
+            ];
+            labels = {
+              tier = "core";
+              zone = "eu-west-1a";
+            };
+            priority = 10;
+          };
+          stage = node // {
+            tags = [ "staging" ];
+          };
+        };
+        vms.guest = node // {
+          host = "web.lab.example.com";
+          tags = [
+            "prod"
+            "web"
+          ];
+          labels.tier = "edge";
+        };
+        services.demo = {
+          selectors = [ (filters.tagsAny "prod") ];
+          roles.primary = [ (filters.tagsAll [ "prod" "db" ]) ];
+        };
+      };
+    };
+  };
+  taggedView = taggedCluster.domain.clusters.lab;
+  # Node names selected by a filter, sorted for stable comparisons.
+  filterNames =
+    filter:
+    builtins.sort builtins.lessThan (
+      map (path: lib.last (lib.splitString "." path)) (filter "lab" taggedCluster)
+    );
+  # A cluster whose service selectors query evaluated machine options.
+  machineOptionCluster = buildCluster {
+    modules = [
+      {
+        extensions.clusterServices.machineOnly = {
+          defaultModule = { ... }: { };
+          options = { };
+        };
+      }
+    ];
+    domain = baseDomain // {
+      clusters.lab = {
+        machines = {
+          first = node;
+          second = node;
+        };
+        services.machineOnly.selectors = [ (filters.machineOption [ "networking" "hostName" ] "second") ];
+      };
+    };
+  };
+  machineOptionView = machineOptionCluster.domain.clusters.lab;
+  badTagCluster = build (
+    baseDomain
+    // {
+      clusters.lab.machines.node = node // {
+        tags = [ "bad tag" ];
+      };
+    }
+  );
+  badLabelKeyCluster = build (
+    baseDomain
+    // {
+      clusters.lab.machines.node = node // {
+        labels."bad key" = "value";
+      };
+    }
+  );
+  badLabelValueCluster = build (
+    baseDomain
+    // {
+      clusters.lab.machines.node = node // {
+        labels.tier = "edge/";
+      };
+    }
+  );
   secretCluster = buildCluster {
     modules = [ modules.secret-service ];
     domain = baseDomain // {
@@ -398,5 +509,67 @@ in
         { extensions.nodes.options.shared.value = lib.mkDefault (lib.mkOption { type = lib.types.str; default = "default"; }); }
         { extensions.nodes.options.shared.value = lib.mkOption { type = lib.types.str; default = "override"; }; }
       ]).shared.value.default) == "override";
+
+    # ── node tags, labels and node option filters ──
+    tagsMergedAsSet = taggedView.machines.web.tags == [ "prod" "web" ];
+    tagsAnySingle = filterNames (filters.tagsAny "prod") == [ "db" "guest" "web" ];
+    tagsAnyListOne = filterNames (filters.tagsAny [ "prod" ]) == [ "db" "guest" "web" ];
+    tagsAnyListMulti = filterNames (filters.tagsAny [ "prod" "staging" ]) == [ "db" "guest" "stage" "web" ];
+    tagsAnySingleTag = filterNames (filters.tagsAny "staging") == [ "stage" ];
+    tagsAllSingle = filterNames (filters.tagsAll "prod") == [ "db" "guest" "web" ];
+    tagsAllList = filterNames (filters.tagsAll [ "prod" "db" ]) == [ "db" ];
+    tagsAllListNoMatch = filterNames (filters.tagsAll [ "prod" "staging" ]) == [ ];
+    tagsAnyEmpty = failed (filters.tagsAny [ ] "lab" taggedCluster);
+    tagsAllEmpty = failed (filters.tagsAll [ ] "lab" taggedCluster);
+    tagsAnyWrongType = failed (filters.tagsAny 5 "lab" taggedCluster);
+    labelsAllSingle = filterNames (filters.labelsAll { tier = "edge"; }) == [ "guest" "web" ];
+    labelsAllMultiple = filterNames (filters.labelsAll { tier = "core"; zone = "eu-west-1a"; }) == [ "db" ];
+    labelsAllPartialMatch = filterNames (filters.labelsAll { tier = "edge"; zone = "eu-west-1a"; }) == [ ];
+    labelsAnyMultiple = filterNames (filters.labelsAny { tier = "edge"; zone = "eu-west-1a"; }) == [ "db" "guest" "web" ];
+    labelsAnyNoMatch = filterNames (filters.labelsAny { tier = "nowhere"; }) == [ ];
+    labelsAnyEmpty = failed (filters.labelsAny { } "lab" taggedCluster);
+    labelsAllWrongType = failed (filters.labelsAll "tier" "lab" taggedCluster);
+    hasLabelFilter = filterNames (filters.hasLabel "zone") == [ "db" ];
+    hasLabelFilterMissing = filterNames (filters.hasLabel "missing") == [ ];
+    # A list of filters is a union without duplicates, first mention wins.
+    filterUnionDeduplicated =
+      map (path: lib.last (lib.splitString "." path)) (filters.filtersToPaths [ filters.clusterVms filters.clusterNodes ] "lab" taggedCluster)
+      == [ "guest" "db" "stage" "web" ];
+    nodeOptionCoreFilter = filterNames (filters.nodeOption [ "system" ] "x86_64-linux") == [ "db" "guest" "stage" "web" ];
+    nodeOptionExtensionFilter = filterNames (filters.nodeOption [ "priority" ] 10) == [ "db" ];
+    nodeOptionMissingPath = failed (filters.nodeOption [ "missing" ] 1 "lab" taggedCluster);
+    taggedServiceSelection =
+      builtins.attrNames taggedView.machines.web.services == [ "demo" ]
+      && builtins.attrNames taggedView.vms.guest.services == [ "demo" ]
+      && taggedView.machines.stage.services == { };
+    taggedServiceResolution =
+      let
+        view = taggedCluster.nixosConfigurations.lab-web.config.clusterConfig.clusters.this.services.demo;
+        names = selected: builtins.sort builtins.lessThan (map (node: node.name) selected);
+      in
+      names view.selectors == [ "db" "guest" "web" ]
+      && names view.roles.primary == [ "db" ];
+    tagsInClusterView =
+      taggedCluster.nixosConfigurations.lab-web.config.clusterConfig.clusters.this.nodes.this.tags == [ "prod" "web" ]
+      && taggedCluster.nixosConfigurations.lab-guest.config.clusterConfig.clusters.this.nodes.this.tags == [ "prod" "web" ];
+    labelsInClusterView =
+      taggedCluster.nixosConfigurations.lab-db.config.clusterConfig.clusters.this.nodes.this.labels == {
+        tier = "core";
+        zone = "eu-west-1a";
+      };
+    invalidTag = failed badTagCluster.nixosConfigurations;
+    invalidLabelKey = failed badLabelKeyCluster.nixosConfigurations;
+    invalidLabelValue = failed badLabelValueCluster.nixosConfigurations;
+
+    # ── evaluated machine option filters ──
+    machineOptionSelection =
+      builtins.attrNames machineOptionView.machines.second.services == [ "machineOnly" ]
+      && machineOptionView.machines.first.services == { };
+    machineOptionMissingPath = failed (filters.machineOption [ "missing" ] 1 "lab" machineOptionCluster);
+    machineOptionBeforeEvaluation = failed (
+      filters.machineOption [ "networking" "hostName" ] "second" "lab" {
+        domain.clusters.lab.machines.first = node;
+      }
+    );
   };
 }
