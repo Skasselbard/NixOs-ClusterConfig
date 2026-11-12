@@ -37,6 +37,7 @@ let # imports
         ./deployment.nix
         ./transformations.nix
         ./services.nix
+        ./modules/tooling.nix
         ./options/options.nix
         ./options/extensionOptions.nix
         # ./info.nix

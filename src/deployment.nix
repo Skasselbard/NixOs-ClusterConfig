@@ -224,62 +224,76 @@ in
 
     };
     machines.packages = {
-      build =
-        { clusterConfig }:
-        let
-          nodeName = clusterConfig.clusters.this.nodes.this.name;
-          configName = "${clusterConfig.clusters.this.name}-${nodeName}";
-        in
-        pkgs.writeShellScriptBin "build" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake ${lib.escapeShellArg ".#${configName}"} build \"$@\"";
+      build = {
+        description = "Build the machine configuration locally with nixos-rebuild build";
+        package =
+          { clusterConfig }:
+          let
+            nodeName = clusterConfig.clusters.this.nodes.this.name;
+            configName = "${clusterConfig.clusters.this.name}-${nodeName}";
+          in
+          pkgs.writeShellScriptBin "build" "${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake ${lib.escapeShellArg ".#${configName}"} build \"$@\"";
+      };
 
-      deploy =
-        { clusterConfig }:
-        let
-          this = clusterConfig.clusters.this.nodes.this;
-          nodeName = this.name;
-          configName = "${clusterConfig.clusters.this.name}-${nodeName}";
-          cfg = this.deployment;
-          host =
-            if cfg.targetHost == null then
-              throw "clusterConfig: ${configName} has no remote targetHost"
-            else if cfg.targetHost == "{hostname}" then
-              nodeName
-            else
-              cfg.targetHost;
-          user = lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@";
-          port = lib.optionalString (
-            cfg.targetPort != null
-          ) ''export NIX_SSHOPTS="-p ${toString cfg.targetPort} ''${NIX_SSHOPTS:-}"'';
-        in
-        pkgs.writeShellScriptBin "deploy" ''
-          ${port}
-          exec ${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake ${lib.escapeShellArg ".#${configName}"} switch --target-host ${lib.escapeShellArg "${user}${host}"} "$@"
-        '';
+      deploy = {
+        description = "Deploy the machine configuration to the target host with nixos-rebuild switch";
+        destructive = true;
+        package =
+          { clusterConfig }:
+          let
+            this = clusterConfig.clusters.this.nodes.this;
+            nodeName = this.name;
+            configName = "${clusterConfig.clusters.this.name}-${nodeName}";
+            cfg = this.deployment;
+            host =
+              if cfg.targetHost == null then
+                throw "clusterConfig: ${configName} has no remote targetHost"
+              else if cfg.targetHost == "{hostname}" then
+                nodeName
+              else
+                cfg.targetHost;
+            user = lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@";
+            port = lib.optionalString (
+              cfg.targetPort != null
+            ) ''export NIX_SSHOPTS="-p ${toString cfg.targetPort} ''${NIX_SSHOPTS:-}"'';
+          in
+          pkgs.writeShellScriptBin "deploy" ''
+            ${port}
+            exec ${pkgs.nixos-rebuild}/bin/nixos-rebuild --flake ${lib.escapeShellArg ".#${configName}"} switch --target-host ${lib.escapeShellArg "${user}${host}"} "$@"
+          '';
+      };
 
-      hardware-configuration =
-        { clusterConfig }:
-        let
-          this = clusterConfig.clusters.this.nodes.this;
-          nodeName = this.name;
-          cfg = this.deployment;
-          host =
-            if cfg.targetHost == null then
-              throw "clusterConfig: ${nodeName} has no remote targetHost"
-            else if cfg.targetHost == "{hostname}" then
-              nodeName
-            else
-              cfg.targetHost;
-          user = lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@";
-          port = lib.optionalString (cfg.targetPort != null) "-p ${toString cfg.targetPort}";
-        in
-        pkgs.writeShellScriptBin "hardware-configuration" "${pkgs.openssh}/bin/ssh ${port} -t ${lib.escapeShellArg "${user}${host}"} 'nixos-generate-config --show-hardware-config --no-filesystems'";
+      hardware-configuration = {
+        description = "Fetch the hardware configuration from the target host";
+        package =
+          { clusterConfig }:
+          let
+            this = clusterConfig.clusters.this.nodes.this;
+            nodeName = this.name;
+            cfg = this.deployment;
+            host =
+              if cfg.targetHost == null then
+                throw "clusterConfig: ${nodeName} has no remote targetHost"
+              else if cfg.targetHost == "{hostname}" then
+                nodeName
+              else
+                cfg.targetHost;
+            user = lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@";
+            port = lib.optionalString (cfg.targetPort != null) "-p ${toString cfg.targetPort}";
+          in
+          pkgs.writeShellScriptBin "hardware-configuration" "${pkgs.openssh}/bin/ssh ${port} -t ${lib.escapeShellArg "${user}${host}"} 'nixos-generate-config --show-hardware-config --no-filesystems'";
+      };
 
-      iso =
-        { clusterConfig }:
-        let
-          this = clusterConfig.clusters.this.nodes.this;
-        in
-        nixos-generators.nixosGenerate ((bootImageNixosConfiguration this) // { format = "iso"; });
+      iso = {
+        description = "Build the installation ISO for this machine";
+        action = "build";
+        package =
+          { clusterConfig }:
+          let
+            this = clusterConfig.clusters.this.nodes.this;
+          in
+          nixos-generators.nixosGenerate ((bootImageNixosConfiguration this) // { format = "iso"; });
+      };
     };
   };
 

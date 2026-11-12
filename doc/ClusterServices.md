@@ -182,7 +182,7 @@ A cluster service module sets these attributes under `config.extensions.clusterS
 | `defaultModule` | NixOS module | The NixOS module applied to selected machines |
 | `roles` | `listOf str` | List of role names the service supports |
 | `options` | `attrsOf anything` | Additional options available in the cluster config |
-| `packages` | `attrsOf scriptType` | Scripts added to flake packages (closures receiving `{ clusterConfig }`) |
+| `packages` | `attrsOf packageType` | Package declarations (`description`, `action`, `destructive`, `package` closure) added to flake packages |
 | `late.config` | `attrsOf scriptType` | Config values set after final machine evaluation |
 
 ### Accessing Cluster Info in Service Modules

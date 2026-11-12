@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  clusterlib,
   ...
 }:
 let
@@ -167,85 +168,94 @@ in
     packages = {
 
       # Generate a root CA certificate using certstrap.
-      createRootCertificate =
-        { clusterConfig }:
-        let
-          vaultService = clusterConfig.clusters.this.services.vault or null;
-          certParams = buildCertParams clusterConfig;
-        in
-        if vaultService != null then
-          pkgs.writeShellScriptBin "createRootCertificate" ''
-            PATH=$PATH:${pkgs.certstrap}/bin
-            ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert root '${builtins.toJSON certParams}' "''${@:1}"
-          ''
-        else
-          pkgs.writeScriptBin "createRootCertificate" ''echo "vault is not configured for this cluster"'';
+      createRootCertificate = {
+        description = "Create the Vault root CA certificate";
+        package =
+          { clusterConfig }:
+          let
+            vaultService = clusterConfig.clusters.this.services.vault or null;
+            certParams = buildCertParams clusterConfig;
+          in
+          if vaultService != null then
+            pkgs.writeShellScriptBin "createRootCertificate" ''
+              PATH=$PATH:${pkgs.certstrap}/bin
+              ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert root '${builtins.toJSON certParams}' "''${@:1}"
+            ''
+          else
+            pkgs.writeScriptBin "createRootCertificate" ''echo "vault is not configured for this cluster"'';
+      };
 
       # Generate a TLS certificate for Vault, signed by the root CA.
-      createTlsCertificate =
-        { clusterConfig }:
-        let
-          vaultService = clusterConfig.clusters.this.services.vault or null;
-          certParams = buildCertParams clusterConfig;
-        in
-        if vaultService != null then
-          pkgs.writeShellScriptBin "createTlsCertificate" ''
-            PATH=$PATH:${pkgs.certstrap}/bin
-            ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert intermediate '${builtins.toJSON certParams}' "''${@:1}"
-          ''
-        else
-          pkgs.writeScriptBin "createTlsCertificate" ''echo "vault is not configured for this cluster"'';
+      createTlsCertificate = {
+        description = "Create the Vault TLS certificate signed by the root CA";
+        package =
+          { clusterConfig }:
+          let
+            vaultService = clusterConfig.clusters.this.services.vault or null;
+            certParams = buildCertParams clusterConfig;
+          in
+          if vaultService != null then
+            pkgs.writeShellScriptBin "createTlsCertificate" ''
+              PATH=$PATH:${pkgs.certstrap}/bin
+              ${pkgs.nushell}/bin/nu ${./certificates.nu} create cert intermediate '${builtins.toJSON certParams}' "''${@:1}"
+            ''
+          else
+            pkgs.writeScriptBin "createTlsCertificate" ''echo "vault is not configured for this cluster"'';
+      };
 
       # Run the Vault initialization script on the first reachable vault machine.
-      initialize =
-        { clusterConfig }:
-        let
-          vaultService = clusterConfig.clusters.this.services.vault or null;
-          vaultMachines = vaultService.selectors or [ ];
-          firstMachine = if vaultMachines != [ ] then builtins.head vaultMachines else null;
+      initialize = {
+        description = "Initialize Vault on the first reachable Vault machine";
+        package =
+          { clusterConfig }:
+          let
+            vaultService = clusterConfig.clusters.this.services.vault or null;
+            vaultMachines = vaultService.selectors or [ ];
+            firstMachine = if vaultMachines != [ ] then builtins.head vaultMachines else null;
 
-          connectionData = forEach vaultMachines (machine: {
-            host = machine.deployment.targetHost;
-            user =
-              if machine.deployment ? targetUser && machine.deployment.targetUser != null then
-                machine.deployment.targetUser + "@"
-              else
-                "";
-          });
-
-          initScript =
-            if firstMachine != null then
-              pkgs.writeShellScript "initialize-vault" firstMachine.config.services.vault.initialization.script
-            else
-              pkgs.writeShellScript "initialize-vault" "echo 'no vault machines configured'";
-        in
-        if vaultService != null && vaultMachines != [ ] then
-          pkgs.writeScriptBin "initialize-vault-remote" ''
-            connectionData=(
-              ${concatStringsSep " " (map (data: "${data.user}${data.host}") connectionData)}
-            )
-
-            script_path="${initScript.outPath}"
-
-            # SSH options
-            ssh_options="-o ConnectTimeout=5"
-
-            for conn in "''${connectionData[@]}"; do
-                echo "Attempting to connect to $conn..."
-                if ssh $ssh_options "$conn" "echo 'Connected successfully to $conn'"; then
-                    echo "Running script $script_path on $conn"
-                    ssh $ssh_options "$conn" 'bash -s' < "$script_path"
-                    exit 0
+            connectionData = forEach vaultMachines (machine: {
+              host = machine.deployment.targetHost;
+              user =
+                if machine.deployment ? targetUser && machine.deployment.targetUser != null then
+                  machine.deployment.targetUser + "@"
                 else
-                    echo "Unable to reach $conn, trying next entry..."
-                fi
-            done
+                  "";
+            });
 
-            echo "All machines are unreachable."
-            exit 1
-          ''
-        else
-          pkgs.writeScriptBin "initialize-vault-remote" ''echo "vault is not configured for this cluster"'';
+            initScript =
+              if firstMachine != null then
+                pkgs.writeShellScript "initialize-vault" firstMachine.config.services.vault.initialization.script
+              else
+                pkgs.writeShellScript "initialize-vault" "echo 'no vault machines configured'";
+          in
+          if vaultService != null && vaultMachines != [ ] then
+            pkgs.writeScriptBin "initialize-vault-remote" ''
+              connectionData=(
+                ${concatStringsSep " " (map (data: "${data.user}${data.host}") connectionData)}
+              )
+
+              script_path="${initScript.outPath}"
+
+              # SSH options
+              ssh_options="-o ConnectTimeout=5"
+
+              for conn in "''${connectionData[@]}"; do
+                  echo "Attempting to connect to $conn..."
+                  if ssh $ssh_options "$conn" "echo 'Connected successfully to $conn'"; then
+                      echo "Running script $script_path on $conn"
+                      ssh $ssh_options "$conn" 'bash -s' < "$script_path"
+                      exit 0
+                  else
+                      echo "Unable to reach $conn, trying next entry..."
+                  fi
+              done
+
+              echo "All machines are unreachable."
+              exit 1
+            ''
+          else
+            pkgs.writeScriptBin "initialize-vault-remote" ''echo "vault is not configured for this cluster"'';
+      };
     };
 
   };

@@ -10,7 +10,31 @@ let
   str = lib.types.str;
   submodule = lib.types.submodule;
 
+  # Closures used for late configuration values. These still receive the
+  # evaluated clusterConfig and return an arbitrary value.
   scriptType = raw;
+
+  # Package scopes are deliberately recursive. A scope can contain either a
+  # declaration:
+  #
+  #   {
+  #     description = "...";       # optional, defaults to ""
+  #     longDescription = "...";   # optional
+  #     action = "run";            # "run" or "build", defaults to "run"
+  #     destructive = false;       # defaults to false
+  #     package = { clusterConfig }: drv;
+  #   }
+  #
+  # or a namespace of declarations, e.g. `certificates.generate`. Legacy
+  # closure-style declarations are also accepted:
+  #
+  #   { clusterConfig }: drv
+  #
+  # A directly recursive typed option tree is possible, but forcing its type
+  # description recurses infinitely (attrsOf description -> either description
+  # -> attrsOf). Avoid that fragile custom type here; the package transformation
+  # handles both leaves and namespaces and supplies metadata defaults.
+  packageType = raw;
 
   # WORKAROUND for nixpkgs' `types.anything` merging option declarations.
   #
@@ -89,11 +113,10 @@ let
         description = ''
           A set of packages (e.g. executable scripts) that will be made available to the flake packages.
           Build the package with: ``nix build .#<clusterName>.<packageName>``
-          Run the package with: ``nix run .#<clusterName>.<packageName>``
-          Closure of type {clusterConfig}: <derivation>.
-          For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
+          Package declaration with `description`, `action`, `destructive`, and
+          a `package` closure of type {clusterConfig}: <derivation>.
         '';
-        type = attrsOf scriptType;
+        type = attrsOf packageType;
         default = { };
       };
 
@@ -136,10 +159,10 @@ let
           A set of packages (e.g. executable scripts) that will be made available to the flake packages.
           Build the package with: ``nix build .#<clusterName>.<machineName>.<packageName>``
           Run the package with: ``nix run .#<clusterName>.<machineName>.<packageName>``
-          Closure of type {clusterConfig}: <derivation>.
-          For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
+          Package declaration with `description`, `action`, `destructive`, and
+          a `package` closure of type {clusterConfig}: <derivation>.
         '';
-        type = attrsOf scriptType;
+        type = attrsOf packageType;
         default = { };
       };
 
@@ -149,13 +172,13 @@ let
 
     machines.packages = mkOption {
       description = "Packages generated only for standalone machines.";
-      type = attrsOf scriptType;
+      type = attrsOf packageType;
       default = { };
     };
 
     vms.packages = mkOption {
       description = "Packages generated only for virtual machines.";
-      type = attrsOf scriptType;
+      type = attrsOf packageType;
       default = { };
     };
 
@@ -209,10 +232,10 @@ let
               A set of packages (e.g. executable scripts) that will be made available to the flake packages.
               Build the package with: ``nix build .#<clusterName>.<serviceName>.<packageName>``
               Run the package with: ``nix run .#<clusterName>.<serviceName>.<packageName>``
-              Closure of type {clusterConfig}: <derivation>.
-              For evaluation, this closure will be called with an evaluated representation of the Cluster Config.
+              Package declaration with `description`, `action`, `destructive`, and
+              a `package` closure of type {clusterConfig}: <derivation>.
             '';
-            type = attrsOf scriptType;
+            type = attrsOf packageType;
             default = { };
           };
 

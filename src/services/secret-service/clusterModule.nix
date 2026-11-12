@@ -352,47 +352,60 @@ let
       [
         {
           name = groupPackageName "Edit" group;
-          value =
-            { clusterConfig }:
-            pkgs.writeShellScriptBin (groupPackageName "Edit" group) (
-              scripts.mkSecretEditScript {
-                inherit clusterConfig group;
-                scope = "cluster";
-              }
-            );
+          value = {
+            description = "Edit secrets in group ${group}";
+            package =
+              { clusterConfig }:
+              pkgs.writeShellScriptBin (groupPackageName "Edit" group) (
+                scripts.mkSecretEditScript {
+                  inherit clusterConfig group;
+                  scope = "cluster";
+                }
+              );
+          };
         }
         {
           name = groupPackageName "Set" group;
-          value =
-            { clusterConfig }:
-            pkgs.writeShellScriptBin (groupPackageName "Set" group) (
-              scripts.mkSecretSetScript {
-                inherit clusterConfig group;
-                scope = "cluster";
-              }
-            );
+          value = {
+            description = "Set a secret in group ${group}";
+            package =
+              { clusterConfig }:
+              pkgs.writeShellScriptBin (groupPackageName "Set" group) (
+                scripts.mkSecretSetScript {
+                  inherit clusterConfig group;
+                  scope = "cluster";
+                }
+              );
+          };
         }
         {
           name = groupPackageName "UpdateKeys" group;
-          value =
-            { clusterConfig }:
-            pkgs.writeShellScriptBin (groupPackageName "UpdateKeys" group) (
-              scripts.mkUpdateKeysScript {
-                inherit clusterConfig group;
-                rotate = false;
-              }
-            );
+          value = {
+            description = "Update sops recipients for secrets in group ${group}";
+            package =
+              { clusterConfig }:
+              pkgs.writeShellScriptBin (groupPackageName "UpdateKeys" group) (
+                scripts.mkUpdateKeysScript {
+                  inherit clusterConfig group;
+                  rotate = false;
+                }
+              );
+          };
         }
         {
           name = groupPackageName "Rotate" group;
-          value =
-            { clusterConfig }:
-            pkgs.writeShellScriptBin (groupPackageName "Rotate" group) (
-              scripts.mkUpdateKeysScript {
-                inherit clusterConfig group;
-                rotate = true;
-              }
-            );
+          value = {
+            description = "Rotate data keys for secrets in group ${group}";
+            destructive = true;
+            package =
+              { clusterConfig }:
+              pkgs.writeShellScriptBin (groupPackageName "Rotate" group) (
+                scripts.mkUpdateKeysScript {
+                  inherit clusterConfig group;
+                  rotate = true;
+                }
+              );
+          };
         }
       ]
     ) groupNames
@@ -509,65 +522,90 @@ in
       options = serviceOptions;
 
       packages = {
-        secretsInitRoot =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretsInitRoot" (
-            scripts.mkInitRootScript { inherit clusterConfig; }
-          );
+        secretsInitRoot = {
+          description = "Initialize the root sops key for the secrets service";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretsInitRoot" (
+              scripts.mkInitRootScript { inherit clusterConfig; }
+            );
+        };
 
-        secretsSyncKeyHolders =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretsSyncKeyHolders" (
-            scripts.mkSyncKeyHoldersScript { inherit clusterConfig; }
-          );
+        secretsSyncKeyHolders = {
+          description = "Sync sops key holders from the secrets configuration";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretsSyncKeyHolders" (
+              scripts.mkSyncKeyHoldersScript { inherit clusterConfig; }
+            );
+        };
 
-        secretsAdminKeyGenerate =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretsAdminKeyGenerate" (
-            scripts.mkAdminKeyGenerateScript { inherit clusterConfig; }
-          );
+        secretsAdminKeyGenerate = {
+          description = "Generate an admin sops key";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretsAdminKeyGenerate" (
+              scripts.mkAdminKeyGenerateScript { inherit clusterConfig; }
+            );
+        };
 
-        secretsKeyGenerateAll =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretsKeyGenerateAll" (
-            scripts.mkSecretsKeyGenerateAllScript { inherit clusterConfig; }
-          );
+        secretsKeyGenerateAll = {
+          description = "Generate all managed sops keys";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretsKeyGenerateAll" (
+              scripts.mkSecretsKeyGenerateAllScript { inherit clusterConfig; }
+            );
+        };
 
-        secretEdit =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretEdit" (
-            scripts.mkSecretEditScript {
-              inherit clusterConfig;
-              scope = "cluster";
-            }
-          );
+        secretEdit = {
+          description = "Edit cluster-level secrets";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretEdit" (
+              scripts.mkSecretEditScript {
+                inherit clusterConfig;
+                scope = "cluster";
+              }
+            );
+        };
 
-        secretSet =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretSet" (
-            scripts.mkSecretSetScript {
-              inherit clusterConfig;
-              scope = "cluster";
-            }
-          );
+        secretSet = {
+          description = "Set a cluster-level secret";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretSet" (
+              scripts.mkSecretSetScript {
+                inherit clusterConfig;
+                scope = "cluster";
+              }
+            );
+        };
 
-        secretUpdateKeys =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretUpdateKeys" (
-            scripts.mkUpdateKeysScript {
-              inherit clusterConfig;
-              rotate = false;
-            }
-          );
+        secretUpdateKeys = {
+          description = "Update sops recipients for cluster-level secrets";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretUpdateKeys" (
+              scripts.mkUpdateKeysScript {
+                inherit clusterConfig;
+                rotate = false;
+              }
+            );
+        };
 
-        secretsRotate =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "secretsRotate" (
-            scripts.mkUpdateKeysScript {
-              inherit clusterConfig;
-              rotate = true;
-            }
-          );
+        secretsRotate = {
+          description = "Rotate data keys for cluster-level secrets";
+          destructive = true;
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "secretsRotate" (
+              scripts.mkUpdateKeysScript {
+                inherit clusterConfig;
+                rotate = true;
+              }
+            );
+        };
       } // groupPackages;
     };
 
@@ -588,60 +626,75 @@ in
 
     };
     machines.packages = {
-        secretsCheck =
-          { clusterConfig }:
-          let
-            machineName = secretLib.machineNameOf clusterConfig;
-          in
-          scripts.mkCheckScript {
-            inherit clusterConfig machineName;
-          };
-
-        secretsInstallKey =
-          { clusterConfig }:
-          let
-            machineName = secretLib.machineNameOf clusterConfig;
-          in
-          pkgs.writeShellScriptBin "secretsInstallKey" (
-            scripts.mkInstallKeyScript {
+        secretsCheck = {
+          description = "Check the machine's managed secrets";
+          package =
+            { clusterConfig }:
+            let
+              machineName = secretLib.machineNameOf clusterConfig;
+            in
+            scripts.mkCheckScript {
               inherit clusterConfig machineName;
-            }
-          );
+            };
+        };
 
-        secretsKeyGenerate =
-          { clusterConfig }:
-          let
-            machineName = secretLib.machineNameOf clusterConfig;
-          in
-          pkgs.writeShellScriptBin "secretsKeyGenerate" (
-            scripts.mkSecretsKeyGenerateScript {
-              inherit clusterConfig machineName;
-            }
-          );
+        secretsInstallKey = {
+          description = "Install or repair the machine's sops key";
+          package =
+            { clusterConfig }:
+            let
+              machineName = secretLib.machineNameOf clusterConfig;
+            in
+            pkgs.writeShellScriptBin "secretsInstallKey" (
+              scripts.mkInstallKeyScript {
+                inherit clusterConfig machineName;
+              }
+            );
+        };
 
-        secretEdit =
-          { clusterConfig }:
-          let
-            machineName = secretLib.machineNameOf clusterConfig;
-          in
-          pkgs.writeShellScriptBin "secretEdit" (
-            scripts.mkSecretEditScript {
-              inherit clusterConfig machineName;
-              scope = "machine";
-            }
-          );
+        secretsKeyGenerate = {
+          description = "Generate the machine's sops key";
+          package =
+            { clusterConfig }:
+            let
+              machineName = secretLib.machineNameOf clusterConfig;
+            in
+            pkgs.writeShellScriptBin "secretsKeyGenerate" (
+              scripts.mkSecretsKeyGenerateScript {
+                inherit clusterConfig machineName;
+              }
+            );
+        };
 
-        secretSet =
-          { clusterConfig }:
-          let
-            machineName = secretLib.machineNameOf clusterConfig;
-          in
-          pkgs.writeShellScriptBin "secretSet" (
-            scripts.mkSecretSetScript {
-              inherit clusterConfig machineName;
-              scope = "machine";
-            }
-          );
+        secretEdit = {
+          description = "Edit this machine's secrets";
+          package =
+            { clusterConfig }:
+            let
+              machineName = secretLib.machineNameOf clusterConfig;
+            in
+            pkgs.writeShellScriptBin "secretEdit" (
+              scripts.mkSecretEditScript {
+                inherit clusterConfig machineName;
+                scope = "machine";
+              }
+            );
+        };
+
+        secretSet = {
+          description = "Set a secret for this machine";
+          package =
+            { clusterConfig }:
+            let
+              machineName = secretLib.machineNameOf clusterConfig;
+            in
+            pkgs.writeShellScriptBin "secretSet" (
+              scripts.mkSecretSetScript {
+                inherit clusterConfig machineName;
+                scope = "machine";
+              }
+            );
+        };
       };
   };
 }

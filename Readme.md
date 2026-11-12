@@ -9,6 +9,10 @@ The cluster configuration is evaluated through a multi-stage pipeline and produc
 - A **NixOS system configuration** for each machine
 - **Flake packages** with scripts for building, deploying, connecting, and managing the machines
 
+Every generated flake exposes the `clusterConfig` browser/runner as its default
+app. Run `nix run .# -- list` (or `nix run .#clcli -- list`) to explore packages
+with Tab completion and descriptions. See [Package Tooling](doc/Tooling.md).
+
 ## Key Features
 
 - **Cluster-wide machine configuration** — define services, and users once and have them applied to all (or selected) machines
@@ -40,6 +44,7 @@ Larger deployments are still possible but massive scaling is not considered in t
 | [Extending ClusterConfig](doc/Extensions.md) | How to write cluster modules and extend the configuration |
 | [Command Reference](doc/CommandReference.md) | All generated `nix build` and `nix run` commands |
 | [Tests](tests/README.md) | Evaluation tests, integration tests, and performance benchmark |
+| [Package Tooling](doc/Tooling.md) | The `clusterConfig` browser/runner, completion, and package descriptions |
 | [Decisions](doc/Decisions.md) | Design decisions, including features that were deliberately not added |
 | [Open Issues](doc/OpenIssues.md) | Deferred features and known limitations |
 | [Examples](examples/readme.md) | Walkthrough examples from a minimal cluster to the different built in cluster services |

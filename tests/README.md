@@ -27,4 +27,14 @@ Run `tests/benchmark.sh` for a repeatable cold-process evaluation benchmark. It 
 
 The example flakes use the local project as an input. If their lock files are stale, refresh only that input with `nix flake update clusterConfigFlake --flake ./examples/01-simpleCluster` (substitute the relevant example). When testing an unstaged working tree, use `--override-input clusterConfigFlake path:/absolute/path/to/NixOs-Cluster-Config` and `--no-write-lock-file`.
 
+The package tooling smoke test is separate:
+
+```sh
+./tests/tooling.sh
+```
+
+It builds `clusterConfig`, checks package index/completion/tree/show output
+against `examples/01-simpleCluster`, verifies the `clcli` symlink and `nix run`
+alias, and confirms that the caller's working directory is unchanged.
+
 Live integration tests are separate: `examples/01-simpleCluster/test.sh` and `examples/04-secretDeployment/test.sh` require deployed VMs. The secret example's `test-helpers.sh` modifies example secret state; read its documentation before running it.

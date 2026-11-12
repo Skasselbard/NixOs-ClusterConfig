@@ -75,15 +75,32 @@ let
       modules.vms
       modules.simple-dns
       modules.nixos-anywhere
-      ({ pkgs, ... }: {
-        extensions.nodes.packages.shared =
-          { clusterConfig }: pkgs.writeShellScriptBin "shared" "echo ${clusterConfig.clusters.this.name}";
-        extensions.machines.packages.machineOnly =
+      ({ pkgs, clusterlib, ... }: {
+        extensions.nodes.packages.shared = {
+          description = "Shared test package";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "shared" "echo ${clusterConfig.clusters.this.name}";
+        };
+        extensions.machines.packages.machineOnly = {
+          description = "Machine-only test package";
+          action = "build";
+          destructive = true;
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "machineOnly" "echo ${clusterConfig.clusters.this.nodes.this.name}";
+        };
+        extensions.vms.packages.vmOnly = {
+          description = "VM-only test package";
+          package =
+            { clusterConfig }:
+            pkgs.writeShellScriptBin "vmOnly" "echo ${clusterConfig.clusters.this.nodes.this.name}";
+        };
+        extensions.nodes.packages.legacy =
           { clusterConfig }:
-          pkgs.writeShellScriptBin "machineOnly" "echo ${clusterConfig.clusters.this.nodes.this.name}";
-        extensions.vms.packages.vmOnly =
-          { clusterConfig }:
-          pkgs.writeShellScriptBin "vmOnly" "echo ${clusterConfig.clusters.this.nodes.this.name}";
+          clusterlib.describe "Legacy test package" (
+            pkgs.writeShellScriptBin "legacy" "echo ${clusterConfig.clusters.this.name}"
+          );
       })
     ];
     domain = baseDomain // {
@@ -145,6 +162,19 @@ let
       ({ pkgs, ... }: {
         extensions.nodes.packages.same = { clusterConfig }: pkgs.hello;
         extensions.machines.packages.same = { clusterConfig }: pkgs.hello;
+      })
+    ];
+    domain = baseDomain // {
+      clusters.lab.machines.node = node;
+    };
+  };
+  noForceIndex = buildCluster {
+    modules = [
+      ({ pkgs, ... }: {
+        extensions.machines.packages.broken = {
+          description = "Broken test package";
+          package = throw "the package body must not be forced by the index";
+        };
       })
     ];
     domain = baseDomain // {
@@ -473,6 +503,41 @@ in
         "create"
         "format"
       ];
+    packageDescriptions =
+      cluster.packages.x86_64-linux.alpha.host.shared.meta.description == "Shared test package"
+      && cluster.packages.x86_64-linux.alpha.host.machineOnly.meta.description == "Machine-only test package"
+      && cluster.packages.x86_64-linux.beta.guest.vmOnly.meta.description == "VM-only test package"
+      && cluster.packages.x86_64-linux.alpha.host.build.meta.description == "Build the machine configuration locally with nixos-rebuild build";
+    derivationMetadata =
+      cluster.packages.x86_64-linux.alpha.host.iso.meta.clusterConfig.action == "build"
+      && cluster.packages.x86_64-linux.alpha.host.create.meta.clusterConfig.destructive == true
+      && cluster.packages.x86_64-linux.alpha.host.format.meta.clusterConfig.destructive == true
+      && cluster.packages.x86_64-linux.alpha.host.machineOnly.meta.clusterConfig.action == "build"
+      && cluster.packages.x86_64-linux.alpha.host.machineOnly.meta.clusterConfig.destructive == true;
+    packageIndex =
+      let
+        entries = cluster.packageIndex.packages;
+        find = path: builtins.head (builtins.filter (entry: entry.attrPath == path) entries);
+      in
+      (find "alpha.host.iso").action == "build"
+      && (find "alpha.host.create").destructive == true
+      && (find "alpha.host.shared").description == "Shared test package"
+      && (find "alpha.host.legacy").description == ""
+      && (find "clusterConfig").kind == "tool";
+    appClusterConfig =
+      cluster.apps ? x86_64-linux
+      && cluster.apps.x86_64-linux ? clusterConfig
+      && cluster.apps.x86_64-linux ? clcli
+      && cluster.apps.x86_64-linux ? default
+      && lib.hasInfix "/bin/clusterConfig" cluster.apps.x86_64-linux.default.program;
+    flakeInfoOverview =
+      cluster.flakeInfo.clusters.alpha.machines.host.type == "machine"
+      && cluster.flakeInfo.clusters.beta.vms.guest.type == "vm"
+      && cluster.flakeInfo.clusters.beta.services ? dns
+      && cluster.flakeInfo.clusters.beta.services.dns.roles == [ "hosts" ]
+      && builtins.any (
+        entry: entry.name == "alpha-host" && entry.clusterName == "alpha" && entry.type == "machine"
+      ) cluster.flakeInfo.nixosConfigurations;
     secretSshTarget = lib.hasInfix "-p 2222 192.0.2.50" remoteKeyScript && !(lib.hasInfix "root@192.0.2.50" remoteKeyScript);
     secretLocalInstall = lib.hasInfix "mkdir -p \"$(dirname /var/lib/sops-nix/key.txt)\"" localKeyScript && !(lib.hasInfix "StrictHostKeyChecking=accept-new" localKeyScript);
     packageSystem =
@@ -480,6 +545,10 @@ in
       && !(arm.packages ? x86_64-linux);
     isoTarget = armTarget.packages.x86_64-linux.lab.node.iso.system == "aarch64-linux";
     packageConflict = failed conflictingPackages.nixosConfigurations;
+    packageIndexDoesNotForce =
+      (builtins.head (
+        builtins.filter (entry: entry.attrPath == "lab.node.broken") noForceIndex.packageIndex.packages
+      )).description == "Broken test package";
     nestedClusterOptions =
       extensionView.shared.deep.first == [ "cluster-first" ]
       && extensionView.shared.deep.second == "configured-cluster";

@@ -93,10 +93,13 @@ Add options, late-evaluated config, and packages at the cluster level.
       builtins.length (lib.attrNames clusterConfig.clusters.this.machines);
 
     # Packages available as: nix run .#<clusterName>.<packageName>
-    packages.myScript = { clusterConfig }:
-      pkgs.writeShellScriptBin "my-script" ''
-        echo "Cluster has machines: ${toString (lib.attrNames clusterConfig.clusters.this.machines)}"
-      '';
+    packages.myScript = {
+      description = "Print the machines in this cluster";
+      package = { clusterConfig }:
+        pkgs.writeShellScriptBin "my-script" ''
+          echo "Cluster has machines: ${toString (lib.attrNames clusterConfig.clusters.this.machines)}"
+        '';
+    };
   };
 }
 ```
@@ -125,18 +128,52 @@ Add options, NixOS modules, and packages at the per-node level (applies to **bot
       clusterConfig.clusters.this.nodes.this.fqdn;
 
     # Packages available as: nix run .#<clusterName>.<nodeName>.<packageName>
-    packages.myNodeScript = { clusterConfig }:
-      let
-        nodeName = clusterConfig.clusters.this.nodes.this.name;
-      in
-      pkgs.writeShellScriptBin "info-${nodeName}" ''
-        echo "Node: ${nodeName}"
-      '';
+    packages.myNodeScript = {
+      description = "Print information about this node";
+      package = { clusterConfig }:
+        let
+          nodeName = clusterConfig.clusters.this.nodes.this.name;
+        in
+        pkgs.writeShellScriptBin "info-${nodeName}" ''
+          echo "Node: ${nodeName}"
+        '';
+    };
   };
 }
 ```
 
 For packages, use `extensions.nodes.packages` for both kinds of node, `extensions.machines.packages` for standalone machines, and `extensions.vms.packages` for VMs. Defining the same package in both an applicable specific scope and the node scope is an error. Options and NixOS modules remain under `extensions.nodes`.
+
+#### Package metadata
+
+Describe a package directly in its declaration:
+
+```nix
+packages.myNodeScript = {
+  description = "Print information about this node";
+  longDescription = "Optional longer text for tooling.";
+  action = "run";          # run or build
+  destructive = false;
+  package = { clusterConfig }: pkgs.writeShellScriptBin "info" "...";
+};
+```
+
+The framework applies this metadata to the derivation through
+`lib.meta.addMetaAttrs`; metadata does not change the derivation hash. It is also
+exposed in the `packageIndex` flake output, which `clusterConfig` reads without
+forcing package closures. This is why packages whose evaluation recurses (for
+example an ISO that evaluates the node configuration) still get descriptions in
+the CLI.
+
+Legacy closure-style packages remain supported:
+
+```nix
+packages.legacy = { clusterConfig }: pkgs.writeShellScriptBin "legacy" "...";
+```
+
+They receive generic index metadata until migrated. Nested package namespaces
+such as `certificates.generate` are supported. See
+[Package Tooling](Tooling.md) for the complete metadata and CLI contract.
 
 ### 3. Service Definitions (`extensions.clusterServices`)
 
@@ -247,15 +284,18 @@ Here is a module that adds a `monitoring.enable` option to each node (machine or
       description = "Whether to enable monitoring on this node.";
     };
 
-    cluster.packages.check-status = { clusterConfig }:
-      let
-        nodes = lib.attrValues clusterConfig.clusters.this.nodes;
-        checks = map (n: ''
-          echo "Checking ${n.name} (${n.fqdn})..."
-          ssh root@${(builtins.head (builtins.attrValues n.ips))} "echo OK" 2>/dev/null || echo "  FAILED"
-        '') nodes;
-      in
-      pkgs.writeShellScriptBin "check-status" (lib.concatStringsSep "\n" checks);
+    cluster.packages.check-status = {
+      description = "Check the status of every node";
+      package = { clusterConfig }:
+        let
+          nodes = lib.attrValues clusterConfig.clusters.this.nodes;
+          checks = map (n: ''
+            echo "Checking ${n.name} (${n.fqdn})..."
+            ssh root@${(builtins.head (builtins.attrValues n.ips))} "echo OK" 2>/dev/null || echo "  FAILED"
+          '') nodes;
+        in
+        pkgs.writeShellScriptBin "check-status" (lib.concatStringsSep "\n" checks);
+    };
   };
 }
 ```

@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  clusterlib,
   flakeInputs,
   ...
 }:
@@ -149,52 +150,58 @@ in
       { clusterConfig }: (import ./accounts/defaultAccounts.nix { inherit lib clusterConfig kubeLib; });
 
     packages = {
-      createKubeConfigs =
-        { clusterConfig }:
-        let
-          controlPlaneMachines = clusterConfig.clusters.this.services.kubernetes.roles.controlPlane or [ ];
-          clusterFqdn = clusterConfig.clusters.this.fqdn;
-          clusterName = clusterConfig.clusters.this.name;
-          kubeConfigs = clusterConfig.clusters.this.services.kubernetes.kubeConfigs;
-          apiServer =
-            if kubeConfigs.apiServer == null then "kubernetes.${clusterFqdn}" else kubeConfigs.apiServer;
-        in
-        if controlPlaneMachines != [ ] then
-          (pkgs.writeShellScriptBin "createKubeConfigs" ''
-            export PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
-            for ACCOUNT_NAME in ${toString kubeConfigs.accountNames}; do
-              ${pkgs.bash}/bin/bash ${./scripts/create-kubeconfigs.sh}\
-                --role $ACCOUNT_NAME \
-                --server https://${apiServer}:6443 \
-                --cert-dir ${kubeConfigs.certDir} \
-                --ca-path ${kubeConfigs.caPath} \
-                --cluster-name ${clusterName} \
-                --output-dir ./kubeConfigs
-            done
-          '')
-        else
-          pkgs.writeShellScriptBin "createKubeConfigs" "echo \"no control-plane machine is configured for this cluster\"";
+      createKubeConfigs = {
+        description = "Create Kubernetes kubeconfig files for the configured accounts";
+        package =
+          { clusterConfig }:
+          let
+            controlPlaneMachines = clusterConfig.clusters.this.services.kubernetes.roles.controlPlane or [ ];
+            clusterFqdn = clusterConfig.clusters.this.fqdn;
+            clusterName = clusterConfig.clusters.this.name;
+            kubeConfigs = clusterConfig.clusters.this.services.kubernetes.kubeConfigs;
+            apiServer =
+              if kubeConfigs.apiServer == null then "kubernetes.${clusterFqdn}" else kubeConfigs.apiServer;
+          in
+          if controlPlaneMachines != [ ] then
+            (pkgs.writeShellScriptBin "createKubeConfigs" ''
+              export PATH=$PATH:${pkgs.certstrap}/bin:${pkgs.jq}/bin
+              for ACCOUNT_NAME in ${toString kubeConfigs.accountNames}; do
+                ${pkgs.bash}/bin/bash ${./scripts/create-kubeconfigs.sh}\
+                  --role $ACCOUNT_NAME \
+                  --server https://${apiServer}:6443 \
+                  --cert-dir ${kubeConfigs.certDir} \
+                  --ca-path ${kubeConfigs.caPath} \
+                  --cluster-name ${clusterName} \
+                  --output-dir ./kubeConfigs
+              done
+            '')
+          else
+            pkgs.writeShellScriptBin "createKubeConfigs" "echo \"no control-plane machine is configured for this cluster\"";
+      };
 
-      createServiceAccount =
-        { clusterConfig }:
-        let
-          controlPlaneMachines = clusterConfig.clusters.this.services.kubernetes.roles.controlPlane or [ ];
-          serviceAccountConfig = clusterConfig.clusters.this.services.kubernetes.serviceAccount;
-        in
-        if controlPlaneMachines != [ ] then
-          (pkgs.writeShellScriptBin "createServiceAccount" ''
-            set -euo pipefail
-            export PATH=$PATH:${pkgs.openssl}/bin:${pkgs.jq}/bin
-            export SA_KEY=${serviceAccountConfig.privateKeyPath}
-            export SA_PUB=${serviceAccountConfig.publicKeyPath}
-            export SA_ENCRYPT=${toString serviceAccountConfig.encrypt}
-            export SA_ALG=${serviceAccountConfig.algorithm}
+      createServiceAccount = {
+        description = "Create the Kubernetes service-account key pair";
+        package =
+          { clusterConfig }:
+          let
+            controlPlaneMachines = clusterConfig.clusters.this.services.kubernetes.roles.controlPlane or [ ];
+            serviceAccountConfig = clusterConfig.clusters.this.services.kubernetes.serviceAccount;
+          in
+          if controlPlaneMachines != [ ] then
+            (pkgs.writeShellScriptBin "createServiceAccount" ''
+              set -euo pipefail
+              export PATH=$PATH:${pkgs.openssl}/bin:${pkgs.jq}/bin
+              export SA_KEY=${serviceAccountConfig.privateKeyPath}
+              export SA_PUB=${serviceAccountConfig.publicKeyPath}
+              export SA_ENCRYPT=${toString serviceAccountConfig.encrypt}
+              export SA_ALG=${serviceAccountConfig.algorithm}
 
-            echo "[INFO] Generating Service Account Keys"
-            ${pkgs.bash}/bin/bash ${./scripts/create-sa-keys.sh}
-          '')
-        else
-          pkgs.writeShellScriptBin "createServiceAccount" "echo \"no control-plane machine is configured for this cluster\"";
+              echo "[INFO] Generating Service Account Keys"
+              ${pkgs.bash}/bin/bash ${./scripts/create-sa-keys.sh}
+            '')
+          else
+            pkgs.writeShellScriptBin "createServiceAccount" "echo \"no control-plane machine is configured for this cluster\"";
+      };
     };
 
   };

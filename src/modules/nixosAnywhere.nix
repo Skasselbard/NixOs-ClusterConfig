@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  clusterlib,
   flakeInputs,
   ...
 }:
@@ -51,10 +52,13 @@ in
 
     };
     machines.packages = {
-      create =
-        { clusterConfig }:
-        let
-          this = clusterConfig.clusters.this.nodes.this;
+      create = {
+        description = "Install NixOS on the target host with nixos-anywhere";
+        destructive = true;
+        package =
+          { clusterConfig }:
+          let
+            this = clusterConfig.clusters.this.nodes.this;
           nodeName = this.name;
           deploymentConfig = this.deployment;
           host =
@@ -95,8 +99,8 @@ in
               ''
             ) extraFiles
           );
-        in
-        pkgs.writeShellScriptBin "create" ''
+          in
+          pkgs.writeShellScriptBin "create" ''
           set -euo pipefail
           extra_files=()
           tmp_extra_dir=""
@@ -114,11 +118,15 @@ in
           }
           ${pkgs.nix}/bin/nix run path:${nixos-anywhere.outPath} -- -s ${formatScript.outPath} ${nixosConfig} ${port} "''${extra_files[@]}" ${lib.escapeShellArg target} "$@"
         '';
+      };
 
-      format =
-        { clusterConfig }:
-        let
-          this = clusterConfig.clusters.this.nodes.this;
+      format = {
+        description = "Run the configured disk format script on the target host";
+        destructive = true;
+        package =
+          { clusterConfig }:
+          let
+            this = clusterConfig.clusters.this.nodes.this;
           nodeName = this.name;
           formatScript = getFormatScript { inherit clusterConfig; };
           cfg = this.deployment;
@@ -135,21 +143,21 @@ in
           uri = "ssh://${lib.optionalString (cfg.targetUser != null) "${cfg.targetUser}@"}${uriHost}${
             lib.optionalString (cfg.targetPort != null) ":${toString cfg.targetPort}"
           }";
-        in
-        if this.deployment.formatScript == null then
-          pkgs.writeShellScriptBin "format" "echo no format script configured"
-        else
-          pkgs.writeShellScriptBin "format" ''
-            echo "Run format script on host ${nodeName}?"
-            echo "WARNING: disk content will be erased if you select yes!"
-            [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] && echo "Cancelled formatting." && exit
-            echo "Formatting ${nodeName}."
-            script=$(${pkgs.nix}/bin/nix build ${formatScript} --print-out-paths)
+          in
+          if this.deployment.formatScript == null then
+            pkgs.writeShellScriptBin "format" "echo no format script configured"
+          else
+            pkgs.writeShellScriptBin "format" ''
+              echo "Run format script on host ${nodeName}?"
+              echo "WARNING: disk content will be erased if you select yes!"
+              [[ ! "$(read -e -p "Y/n> "; echo $REPLY)" == [Yy]* ]] && echo "Cancelled formatting." && exit
+              echo "Formatting ${nodeName}."
+              script=$(${pkgs.nix}/bin/nix build ${formatScript} --print-out-paths)
 
-            ${pkgs.nix}/bin/nix copy --to ${lib.escapeShellArg uri} "$script"
-            ${pkgs.openssh}/bin/ssh ${port} -t ${lib.escapeShellArg target} "$script"
-          '';
+              ${pkgs.nix}/bin/nix copy --to ${lib.escapeShellArg uri} "$script"
+              ${pkgs.openssh}/bin/ssh ${port} -t ${lib.escapeShellArg target} "$script"
+            '';
+      };
     };
-    };
-
+  };
 }

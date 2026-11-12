@@ -82,6 +82,13 @@
         })
         // (import "${self}/src/lib.nix" { inherit lib nixpkgs flake-utils; });
 
+      packages.${system} = {
+        clusterConfig = import ./src/tooling {
+          inherit pkgs lib;
+        };
+        clcli = self.packages.${system}.clusterConfig;
+      };
+
       checks.x86_64-linux.evaluation =
         let
           tests = (import ./tests/eval.nix {

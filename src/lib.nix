@@ -23,6 +23,32 @@ let
 
   forEachAttrIn = attrSet: function: (attrsets.mapAttrs function attrSet);
 
+  # Add or override metadata on a package derivation.
+  #
+  # `metaOrDescription` can be a description string or an attribute set with
+  # standard meta attributes. Additional tooling metadata lives under
+  # `meta.clusterConfig`. `lib.meta.addMetaAttrs` keeps the derivation's
+  # `drvPath` and `outPath` unchanged when only metadata is added, so
+  # descriptions do not cause rebuilds.
+  describe =
+    metaOrDescription: drv:
+    let
+      newMeta =
+        if builtins.isString metaOrDescription then
+          { description = metaOrDescription; }
+        else
+          metaOrDescription;
+
+      oldMeta = drv.meta or { };
+
+      mergedMeta =
+        newMeta
+        // lib.optionalAttrs (newMeta ? clusterConfig) {
+          clusterConfig = (oldMeta.clusterConfig or { }) // newMeta.clusterConfig;
+        };
+    in
+    lib.meta.addMetaAttrs mergedMeta drv;
+
   ip = {
 
     # only generate metaData with an empty config attribute
@@ -631,6 +657,7 @@ in
   inherit
     add
     clusterType
+    describe
     domainType
     eval
     forEachAttrIn

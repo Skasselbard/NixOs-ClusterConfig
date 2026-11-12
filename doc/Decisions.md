@@ -53,3 +53,23 @@ This document records design decisions that are not obvious from the code, in pa
 - `clusterTransformations` no longer populate `node.services`; `moduleTransformations` do. See [Extensions](Extensions.md#4-transformations-extensionstransformations).
 - Prefer `filters.nodeOption` for declared data: it has no stage restrictions and does not need a node evaluation. `machineOption` forces every node's initial configuration up to the queried path, which costs a few hundred milliseconds per node.
 - Selection stays a single-direction relation: nodes are selected for services, never services for nodes. See [D1](#d1-service-level-tags-are-not-supported).
+
+
+## D4: Package metadata belongs to the package declaration; derivation meta is derived from it
+
+**Decision:** package declarations carry `description`, `longDescription`, `action`, `destructive`, and the `package` closure. The framework mirrors that metadata onto the generated derivation with `lib.meta.addMetaAttrs` and exposes it through the `packageIndex` flake output. There is no metadata sidecar.
+
+**Context:** the package index needs descriptions for Tab completion, the picker, and the flake overview, but forcing every package value during index generation is expensive and unsafe. Some package closures evaluate the full node configuration and recurse when forced.
+
+**Reasoning:**
+
+- Metadata is available from the declaration without evaluating the package closure. `tryEval` cannot catch infinite recursion, so a metadata expression that forces packages is not reliable.
+- The same data can still be mirrored onto `meta` for normal Nix tooling. `lib.meta.addMetaAttrs` leaves the derivation hash unchanged, so this adds no rebuild.
+- Keeping metadata in the declaration removes the duplicate sidecar API and the risk of the two sources drifting apart.
+- Legacy closure-style packages remain accepted; their index entries use generic metadata.
+
+**Consequences:**
+
+- `packageIndex` contains every framework package, including the `clusterConfig` tool, without forcing derivations.
+- `clusterConfig`/`clcli`, `nix flake show`, and direct `meta` inspection see consistent descriptions and flags.
+- A future cache can be built from `packageIndex` without evaluating packages.
